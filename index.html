@@ -127,6 +127,7 @@
   <!-- المكتبة -->
   <section class="screen" id="screen-library" hidden>
     <h1 class="screen-title">المكتبة</h1>
+    <div id="cloud-status" class="muted"></div>
     <div id="library-list"></div>
     <div class="row-gap lib-tools">
       <button type="button" class="ghost" id="book-mawaiz">ملف المواعظ لكل المواد</button>
@@ -149,6 +150,14 @@
       <button type="button" class="ghost" id="test-key">تجربة المفتاح</button>
     </div>
     <div id="key-status" class="muted"></div>
+
+    <label class="field">
+      <span>مفتاح GitHub (لحفظ دروسك في مخزنك الخاص)</span>
+      <input id="gh-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="github_pat_...">
+      <small class="muted">مع هذا المفتاح يُحفظ كل درس تلقائيًا في jund-notes-data، فيعود إليك على أي جوال.</small>
+    </label>
+    <div class="row-gap"><button type="button" class="primary" id="save-gh">حفظ واتصال</button></div>
+    <div id="gh-status" class="muted"></div>
 
     <label class="field">
       <span>الجودة</span>

@@ -45,6 +45,97 @@ const idb = (() => {
   };
 })();
 
+/* ---------- cloud copy in the private GitHub storage ---------- */
+const cloud = (() => {
+  const repo = () => store.get('ghRepo', 'dawajund-1/jund-notes-data');
+  const token = () => store.get('ghKey', '');
+  const shas = () => store.get('ghShas', {});
+  const setSha = (id, sha) => { const m = shas(); if (sha) m[id] = sha; else delete m[id]; store.set('ghShas', m); };
+  const b64 = s => { const b = new TextEncoder().encode(s); let x = ''; for (let i = 0; i < b.length; i += 0x8000) x += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(x); };
+  const api = async (path, opts = {}) => {
+    const r = await fetch(`https://api.github.com/repos/${repo()}${path}`, {
+      ...opts,
+      headers: { 'Authorization': 'Bearer ' + token(), 'Accept': opts.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    });
+    return r;
+  };
+  let status = '';
+  const setStatus = t => { status = t; const el = $('#cloud-status'); if (el) el.textContent = t; };
+  const queue = []; let busy = false;
+  async function run() {
+    if (busy) return; busy = true;
+    while (queue.length) {
+      const job = queue.shift();
+      try { await job(); } catch { setStatus('⚠ لم يُحفظ في السحابة الآن؛ سيُعاد عند فتح التطبيق مع الإنترنت.'); store.set('ghDirty', true); }
+    }
+    busy = false;
+  }
+  async function putLesson(l) {
+    const path = `/contents/lessons/${l.id}.json`;
+    let sha = shas()[l.id];
+    const body = () => JSON.stringify({ message: `حفظ: ${l.subject?.name || ''} — ${l.unit || l.id}`, content: b64(JSON.stringify(l)), ...(sha ? { sha } : {}) });
+    let r = await api(path, { method: 'PUT', body: body() });
+    if (r.status === 409 || r.status === 422) { // our copy of the version was old: fetch the current one and retry once
+      const g = await api(path); if (g.ok) { sha = (await g.json()).sha; r = await api(path, { method: 'PUT', body: body() }); }
+    }
+    if (!r.ok) throw new Error(r.status);
+    setSha(l.id, (await r.json()).content.sha);
+    setStatus('☁ محفوظ في مخزنك الخاص على GitHub.');
+  }
+  return {
+    on: () => !!token(),
+    push(l) { if (!token()) return; queue.push(() => putLesson(l)); run(); },
+    remove(id) {
+      if (!token()) return;
+      queue.push(async () => {
+        const path = `/contents/lessons/${id}.json`;
+        let sha = shas()[id];
+        if (!sha) { const g = await api(path); if (!g.ok) return; sha = (await g.json()).sha; }
+        await api(path, { method: 'DELETE', body: JSON.stringify({ message: 'حذف درس', sha }) });
+        setSha(id, null);
+      }); run();
+    },
+    // bring down lessons that are in the cloud but not on this phone (or changed elsewhere)
+    async pull() {
+      if (!token()) return 0;
+      const r = await api('/contents/lessons');
+      if (r.status === 404) return 0;
+      if (!r.ok) throw new Error(r.status);
+      const files = (await r.json()).filter(f => f.name.endsWith('.json'));
+      const known = shas(); let added = 0;
+      for (const f of files) {
+        const id = f.name.replace(/\.json$/, '');
+        if (known[id] === f.sha) continue;
+        const local = await idb.get(id).catch(() => null);
+        if (local && !known[id]) { setSha(id, f.sha); continue; }
+        const g = await api('/contents/lessons/' + f.name, { raw: true });
+        if (!g.ok) continue;
+        await idb.put(JSON.parse(await g.text()));
+        setSha(id, f.sha); added++;
+      }
+      // anything saved while offline goes up now
+      if (store.get('ghDirty')) {
+        store.set('ghDirty', false);
+        const all = await idb.all();
+        const k = shas();
+        all.filter(l => !k[l.id]).forEach(l => cloud.push(l));
+      }
+      setStatus('☁ متزامن مع مخزنك الخاص على GitHub.');
+      return added;
+    },
+    async test() {
+      const r = await api('');
+      if (r.status === 401) throw new Error('المفتاح غير صحيح.');
+      if (r.status === 404) throw new Error('لم أجد المخزن jund-notes-data، أو المفتاح لا يملك صلاحية عليه.');
+      if (!r.ok) throw new Error('خطأ ' + r.status);
+      return true;
+    },
+    status: () => status,
+  };
+})();
+async function saveLesson(l) { await idb.put(l); cloud.push(l); }
+async function removeLesson(id) { await idb.del(id); cloud.remove(id); }
+
 /* ---------- subjects ---------- */
 function familyOf(sub) {
   const o = store.get('families', {});
@@ -112,6 +203,21 @@ function initSettings() {
   $('#save-key').onclick = () => {
     store.set('key', $('#api-key').value.trim());
     $('#key-status').textContent = store.get('key') ? '✓ حُفظ المفتاح على هذا الجوال.' : 'حُذف المفتاح.';
+  };
+  $('#gh-key').value = store.get('ghKey', '');
+  $('#save-gh').onclick = async () => {
+    store.set('ghKey', $('#gh-key').value.trim());
+    const st = $('#gh-status');
+    if (!store.get('ghKey')) { st.textContent = 'أُوقف الحفظ في السحابة.'; return; }
+    st.textContent = 'جارٍ التجربة…';
+    try {
+      await cloud.test();
+      st.textContent = '✓ متصل. جارٍ رفع دروسك وجلب ما في السحابة…';
+      const n = await cloud.pull();
+      const all = await idb.all(); const k = store.get('ghShas', {});
+      all.filter(l => !k[l.id]).forEach(l => cloud.push(l));
+      st.textContent = `✓ متصل بمخزنك الخاص.${n ? ' جُلب ' + ar(n) + ' درس.' : ''}`;
+    } catch (e) { st.textContent = '✗ ' + e.message; }
   };
   $('#test-key').onclick = async () => {
     store.set('key', $('#api-key').value.trim());
@@ -293,7 +399,7 @@ ${src.name}>>>`;
     unit, kind, date: new Date().toISOString(), transcript: text, notes,
     chat: [{ who: 'ai', text: `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '') }],
   };
-  await idb.put(lesson);
+  await saveLesson(lesson);
   return lesson;
 }
 
@@ -718,7 +824,7 @@ ${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طل�
       current.notes = notes;
       current.chat.push({ who: 'ai', text: (reply || 'عدّلته.') + cost });
     }
-    await idb.put(current);
+    await saveLesson(current);
     await openLesson(current);
     $('.chat').scrollIntoView({ block: 'end' });
   } catch (e) {
@@ -733,8 +839,13 @@ ${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طل�
 /* ---------- library ---------- */
 async function allLessons() { try { return await idb.all(); } catch { return []; } }
 
+let lastPull = 0;
 async function renderLibrary() {
   const list = $('#library-list');
+  if (cloud.on() && Date.now() - lastPull > 60000) {
+    lastPull = Date.now();
+    cloud.pull().then(n => { if (n) renderLibrary(); }).catch(() => { const el = $('#cloud-status'); if (el) el.textContent = '⚠ تعذّر الاتصال بمخزنك على GitHub الآن.'; });
+  }
   const all = await allLessons();
   $('#book-mawaiz').hidden = !all.some(l => l.notes?.mawaiz?.length);
   if (!all.length) { list.innerHTML = '<p class="muted">لا توجد دروس محفوظة بعد. أول درس تصنعه سيظهر هنا.</p>'; return; }
@@ -751,7 +862,7 @@ async function renderLibrary() {
   $$('[data-open]', list).forEach(b => b.onclick = async () => openLesson(await idb.get(b.dataset.open)));
   $$('[data-book]', list).forEach(b => b.onclick = () => makeBook(b.dataset.book));
   $$('[data-del]', list).forEach(b => b.onclick = async () => {
-    if (b.dataset.sure) { await idb.del(b.dataset.del); if (current?.id === b.dataset.del) current = null; renderLibrary(); }
+    if (b.dataset.sure) { await removeLesson(b.dataset.del); if (current?.id === b.dataset.del) current = null; renderLibrary(); }
     else { b.dataset.sure = '1'; b.textContent = 'اضغط مرة ثانية للتأكيد'; }
   });
 }
@@ -864,7 +975,7 @@ $('#restore').onchange = async e => {
   try {
     const data = JSON.parse(await f.text());
     if (data.app !== 'jund-notes' || !Array.isArray(data.lessons)) throw new Error();
-    for (const l of data.lessons) await idb.put(l);
+    for (const l of data.lessons) await saveLesson(l);
     if (data.families) store.set('families', { ...data.families, ...store.get('families', {}) });
     st.textContent = `✓ استُرجع ${ar(data.lessons.length)} درس.`;
   } catch { st.textContent = '✗ هذا ليس ملف نسخة احتياطية من التطبيق.'; }
