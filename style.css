@@ -9,6 +9,7 @@
   --danger: #8f2a1c;
   --font: 'Amiri', 'Noto Naskh Arabic', 'Traditional Arabic', serif;
   --quran: 'Amiri Quran', 'Amiri', serif;
+  --page-size: 12.8pt;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -23,6 +24,10 @@
   --ink: #efe6d2; --ink-2: #b9ad95; --accent: #d9b27a; --danger: #e3826f;
   color-scheme: dark;
 }
+
+/* the reader's font choice */
+:root[data-font="sch"] { --font: 'Scheherazade New', 'Amiri', 'Noto Naskh Arabic', serif; --page-size: 13pt; }
+:root[data-font="amiri"] { --font: 'Amiri', 'Noto Naskh Arabic', serif; --page-size: 13.6pt; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -114,6 +119,17 @@ button.danger { color: var(--danger); }
 .lib-group h2 { font-size: 1.15rem; margin: 18px 0 6px; }
 .lib-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--cream-3); border-radius: 12px; margin-bottom: 8px; }
 .lib-item button.open { flex: 1; text-align: right; background: none; border: 0; padding: 0; min-width: 0; }
+.lib-group .book-btn { margin: -2px 0 10px; font-size: .9rem; }
+.lib-tools { margin-top: 18px; }
+.page.cover { justify-content: center; align-items: center; text-align: center; gap: 8mm; }
+.cover .c-sub { font-size: 34pt; font-weight: 700; color: var(--sub-head); line-height: 1.4; }
+.cover .c-book { font-size: 17pt; color: #4d4333; }
+.cover .c-place { font-size: 14pt; color: #5b5040; }
+.cover .c-rule { width: 50mm; border-top: 1.4px solid var(--sub-line); }
+.toc-row { display: flex; align-items: baseline; gap: 2mm; padding: .6mm 0; }
+.toc-row .dots { flex: 1; border-bottom: .8px dotted var(--sub-line); }
+.toc-row .pg { color: var(--sub-head); font-weight: 700; }
+.toc-h { font-size: 18pt; font-weight: 700; color: var(--sub-head); margin-bottom: 4mm; }
 .lib-item small { display: block; color: var(--ink-2); }
 .pal-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .pal-chip { width: 22px; height: 22px; border-radius: 6px; flex: none; }
@@ -126,7 +142,7 @@ button.danger { color: var(--danger); }
   background: #f7f0e1; color: #241d12;
   padding: 11mm 13mm 9mm;
   display: flex; flex-direction: column;
-  font-family: var(--font); font-size: 12.6pt; line-height: 1.85;
+  font-family: var(--font); font-size: var(--page-size); line-height: 1.8;
   overflow: hidden;
   margin: 0 0 8mm auto;
   box-shadow: 0 1px 6px rgb(0 0 0 / .18);

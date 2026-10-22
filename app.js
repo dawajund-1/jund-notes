@@ -229,62 +229,108 @@ function countWords() {
   $('#word-count').textContent = n ? ar(n) + ' كلمة' : '';
 }
 $('#transcript').addEventListener('input', countWords);
+
+// several files at once: each becomes its own lesson
+let pending = [];
+function renderPending() {
+  const box = $('#pending');
+  box.hidden = !pending.length;
+  $('#transcript').disabled = pending.length > 0;
+  $('#unit-wrap').hidden = pending.length > 1;
+  box.innerHTML = pending.length ? `<b>${pending.length > 1 ? 'سيُصنع ' + ar(pending.length) + ' دروس، كل درس في ملف وحده:' : 'الملف المختار:'}</b>
+    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${ar(p.text.split(/\s+/).length)} كلمة)</small>${p.status ? ' — ' + p.status : ''}</li>`).join('')}</ol>
+    <button type="button" class="ghost" id="clear-pending">إلغاء الملفات</button>` : '';
+  const c = $('#clear-pending'); if (c) c.onclick = () => { pending = []; renderPending(); };
+}
 $('#file').addEventListener('change', async e => {
-  const f = e.target.files[0]; if (!f) return;
-  $('#transcript').value = await f.text(); countWords();
-  if (!$('#unit').value) $('#unit').value = f.name.replace(/\.[^.]+$/, '');
+  const files = Array.from(e.target.files || []);
+  pending = [];
+  for (const f of files.sort((a, b) => a.name.localeCompare(b.name, 'ar', { numeric: true }))) {
+    pending.push({ text: (await f.text()).trim(), unit: f.name.replace(/\.[^.]+$/, '') });
+  }
+  if (pending.length === 1 && $('#unit').value) pending[0].unit = $('#unit').value;
+  e.target.value = '';
+  renderPending();
 });
 
 async function keepAwake() {
   try { return await navigator.wakeLock?.request('screen'); } catch { return null; }
 }
-
 $('#cancel').onclick = () => controller?.abort();
 
+const SOURCE_TEXT = {
+  transcript: { name: 'التفريغ', ask: 'هذا تفريغ آلي لتسجيل الدرس. اكتب منه الملف الدراسي والخريطة الذهنية وتقرير التحقق لهذا الدرس وحده:' },
+  notes: { name: 'الملاحظات', ask: 'هذه ملاحظات كتبها الطالب بنفسه (ليست تفريغًا صوتيًا، فلا تفترض فيها أخطاء سماع). أعد كتابتها بطريقته: الملف الدراسي والخريطة الذهنية وتقرير التحقق. التزم بما فيها ولا تضف:' },
+  book: { name: 'النص', ask: 'هذا مقطع من كتاب أو موضوع مكتوب. حوّله إلى ملاحظات بطريقة الطالب: الملف الدراسي والخريطة الذهنية وتقرير التحقق. التزم بنص المقطع وحده، واحفظ عبارات المؤلف المهمة بين «» ونسبتها إليه، واذكر أرقام الصفحات إن وُجدت:' },
+};
+
+async function makeOne({ text, unit, sub, kind }, onStatus) {
+  const src = SOURCE_TEXT[kind] || SOURCE_TEXT.transcript;
+  const t0 = Date.now();
+  const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}${sub.place ? ' — ' + sub.place : ''}
+الدرس / الوحدة: ${unit}
+نوع المدخل: ${src.name}
+
+${src.ask}
+
+<<<${src.name}
+${text}
+${src.name}>>>`;
+  const r = await callClaude({
+    system: window.JUND_METHOD,
+    messages: [{ role: 'user', content: user }],
+    signal: controller.signal,
+    onText: t => {
+      const mins = Math.floor((Date.now() - t0) / 60000);
+      onStatus(`يكتب الآن… ${ar(t.split(/\s+/).length)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`);
+    },
+  });
+  onStatus('يرتّب الصفحات…');
+  const notes = await getJSON(r.text, controller.signal);
+  const lesson = {
+    id: 'L' + Date.now() + Math.random().toString(36).slice(2, 6),
+    subject: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' },
+    unit, kind, date: new Date().toISOString(), transcript: text, notes,
+    chat: [{ who: 'ai', text: `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '') }],
+  };
+  await idb.put(lesson);
+  return lesson;
+}
+
 $('#make').onclick = async () => {
-  const transcript = $('#transcript').value.trim();
   const err = $('#new-error'); err.hidden = true;
   if (!store.get('key')) { show('settings'); $('#key-status').textContent = 'ضع مفتاحك هنا أولًا ثم اضغط حفظ.'; return; }
-  if (transcript.length < 200) { err.textContent = 'التفريغ قصير جدًا. الصق نص الدرس كاملًا.'; err.hidden = false; return; }
   const sub = subjectInfo();
-  const unit = $('#unit').value.trim() || 'درس بتاريخ ' + new Date().toLocaleDateString('ar-SA');
+  const kind = $('#kind').value;
+  const jobs = pending.length ? pending : [{ text: $('#transcript').value.trim(), unit: $('#unit').value.trim() }];
+  if (jobs.length === 1 && pending.length === 1 && $('#unit').value.trim()) jobs[0].unit = $('#unit').value.trim();
+  for (const j of jobs) j.unit ||= 'درس بتاريخ ' + new Date().toLocaleDateString('ar-SA');
+  if (jobs.some(j => j.text.length < 200)) { err.textContent = 'النص قصير جدًا. الصق النص كاملًا.'; err.hidden = false; return; }
   $('#make').disabled = true; $('#progress').hidden = false;
-  $('#progress-text').textContent = 'جارٍ القراءة والكتابة…';
   controller = new AbortController();
   const lock = await keepAwake();
-  const t0 = Date.now();
+  let last = null, failed = 0;
   try {
-    const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}${sub.place ? ' — ' + sub.place : ''}
-الدرس / الوحدة: ${unit}
-
-اكتب الملف الدراسي والخريطة الذهنية وتقرير التحقق لهذا الدرس وحده، من هذا التفريغ فقط:
-
-<<<التفريغ
-${transcript}
-التفريغ>>>`;
-    const r = await callClaude({
-      system: window.JUND_METHOD,
-      messages: [{ role: 'user', content: user }],
-      signal: controller.signal,
-      onText: t => {
-        const words = t.split(/\s+/).length;
-        const mins = Math.floor((Date.now() - t0) / 60000);
-        $('#progress-text').textContent = `يكتب الآن… ${ar(words)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`;
-      },
-    });
-    $('#progress-text').textContent = 'يرتّب الصفحات…';
-    const notes = await getJSON(r.text, controller.signal);
-    const lesson = {
-      id: 'L' + Date.now(),
-      subject: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' },
-      unit, date: new Date().toISOString(), transcript, notes,
-      chat: [{ who: 'ai', text: `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` + (r.stop === 'max_tokens' ? '\n⚠ الدرس طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا.' : '') }],
-    };
-    await idb.put(lesson);
-    $('#transcript').value = ''; $('#unit').value = ''; countWords();
-    await openLesson(lesson);
+    for (let i = 0; i < jobs.length; i++) {
+      const pre = jobs.length > 1 ? `(${ar(i + 1)} من ${ar(jobs.length)}) ${jobs[i].unit}: ` : '';
+      const status = s => { $('#progress-text').textContent = pre + s; };
+      status('جارٍ القراءة والكتابة…');
+      try {
+        last = await makeOne({ ...jobs[i], sub, kind }, status);
+        jobs[i].status = '✓ جاهز';
+      } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        failed++; jobs[i].status = '✗ ' + (e.message === 'no json' || e instanceof SyntaxError ? 'وصل الرد غير مرتب' : e.message);
+        if (jobs.length === 1) throw e;
+      }
+      if (pending.length) renderPending();
+    }
+    if (failed) { err.textContent = `انتهى، وتعذّر ${ar(failed)} منها. الملفات الجاهزة في المكتبة؛ أعد المحاولة للباقي.`; err.hidden = false; pending = pending.filter(p => !p.status?.startsWith('✓')); pending.forEach(p => delete p.status); renderPending(); }
+    else { pending = []; renderPending(); $('#transcript').value = ''; $('#unit').value = ''; countWords(); }
+    if (jobs.length > 1 && !failed) show('library');
+    else if (last && !failed) await openLesson(last);
   } catch (e) {
-    err.textContent = e.name === 'AbortError' ? 'أُوقف.' : (e.message === 'no json' || e instanceof SyntaxError ? 'وصل الرد ناقصًا أو غير مرتب. حاول مرة ثانية.' : e.message);
+    err.textContent = e.name === 'AbortError' ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : (e.message === 'no json' || e instanceof SyntaxError ? 'وصل الرد ناقصًا أو غير مرتب. حاول مرة ثانية.' : e.message);
     err.hidden = false;
   } finally {
     lock?.release?.(); controller = null;
@@ -375,7 +421,7 @@ function makePage(meta, kind) {
       <div class="n"></div>
     </div>
     ${kind === 'map' ? '<div class="pg-single"></div>' : '<div class="pg-body"><div class="col"></div><div class="col"></div></div>'}
-    <div class="pg-foot"><span>${esc(meta.subject)}${meta.place ? ' — ' + esc(meta.place) : ''}</span><span>${esc(meta.unit)}${kind === 'map' ? ' — الخريطة الذهنية' : ''}</span></div>`;
+    <div class="pg-foot"><span>${esc(meta.subject)}${meta.place ? ' — ' + esc(meta.place) : ''}</span><span>${esc(meta.unit)}${meta.footLabel ?? (kind === 'map' ? ' — الخريطة الذهنية' : '')}</span></div>`;
   return p;
 }
 const overflows = el => el.scrollHeight > el.clientHeight + 1;
@@ -405,7 +451,7 @@ function flattenNotes(n) {
   return items;
 }
 
-function paginateNotes(lesson, meta) {
+function paginateNotes(lesson, meta, finish = true) {
   const host = $('#measure'); host.innerHTML = '';
   const pages = [];
   let page, cols, ci;
@@ -458,19 +504,19 @@ function paginateNotes(lesson, meta) {
   }
   // drop a trailing empty page
   if (pages.length > 1 && $$('.col', pages.at(-1)).every(c => !c.children.length)) pages.pop().remove();
-  finishPages(pages);
+  if (finish) finishPages(pages);
   return pages;
 }
 
 function finishPages(pages) {
   const total = pages.length;
-  pages.forEach((p, i) => { $('.n', p).textContent = `صفحة ${ar(i + 1)} / ${ar(total)}`; });
-  // cross references → page numbers
+  pages.forEach((p, i) => { const n = $('.n', p); if (n) n.textContent = `صفحة ${ar(i + 1)} / ${ar(total)}`; });
+  // cross references → page numbers (only inside the same lesson)
   const secPage = [];
-  pages.forEach((p, i) => $$('.b-h', p).forEach(h => secPage.push([norm(h.dataset.sec), i + 1])));
+  pages.forEach((p, i) => $$('.b-h', p).forEach(h => secPage.push([norm(h.dataset.sec), i + 1, p.dataset.ch || ''])));
   pages.forEach(p => $$('.xref', p).forEach(x => {
     const want = norm(x.dataset.ref);
-    const hit = secPage.find(([s]) => s && (s.includes(want) || want.includes(s)));
+    const hit = secPage.find(([s, , ch]) => ch === (p.dataset.ch || '') && s && (s.includes(want) || want.includes(s)));
     if (hit) x.textContent = `[انظر ص ${ar(hit[1])}]`;
   }));
 }
@@ -509,7 +555,7 @@ function drawLinks(mm) {
   const left = $$('.mm-left .mm-cloud', mm).map(cl => { const r = cl.getBoundingClientRect(); return path(c.left - box.left, r.right - box.left, r.top + r.height / 2 - box.top); });
   svg.innerHTML = right.concat(left).join('');
 }
-function paginateMap(lesson, meta) {
+function paginateMap(lesson, meta, finish = true) {
   const host = $('#measure'); host.innerHTML = '';
   const pages = [];
   const place = (m, cont) => {
@@ -550,25 +596,34 @@ function paginateMap(lesson, meta) {
       start += n; first = false;
     }
   }
-  finishPages(pages);
+  if (finish) finishPages(pages);
   return pages;
 }
 
 /* ---------- open a lesson ---------- */
+async function fontsReady() {
+  try {
+    await Promise.all(['16px Amiri', 'bold 16px Amiri', '16px "Amiri Quran"', '16px "Scheherazade New"', 'bold 16px "Scheherazade New"'].map(f => document.fonts.load(f)));
+    await document.fonts.ready;
+  } catch {}
+}
+function metaFor(lesson) {
+  const sub = subjectById(lesson.subject.id);
+  return {
+    title: lesson.notes.title || lesson.unit, subtitle: lesson.notes.subtitle || '',
+    subject: lesson.subject.name, place: lesson.subject.place, unit: lesson.unit,
+    palette: window.paletteFor(sub ? familyOf(sub) : 'slate'),
+  };
+}
 async function openLesson(lesson) {
   current = lesson;
+  setBookMode(false);
   const n = lesson.notes;
-  const sub = subjectById(lesson.subject.id);
-  const fam = sub ? familyOf(sub) : 'slate';
-  const meta = {
-    title: n.title || lesson.unit, subtitle: n.subtitle || '',
-    subject: lesson.subject.name, place: lesson.subject.place, unit: lesson.unit,
-    palette: window.paletteFor(fam),
-  };
+  const meta = metaFor(lesson);
   $('#result-title').textContent = meta.title;
   $('#result-meta').textContent = `${lesson.subject.name}${lesson.subject.place ? ' — ' + lesson.subject.place : ''} · ${lesson.unit}`;
   show('result');
-  try { await document.fonts.ready; await document.fonts.load('16px Amiri'); await document.fonts.load('16px "Amiri Quran"'); } catch {}
+  await fontsReady();
   const notesPages = paginateNotes(lesson, meta);
   $('#pages-notes').replaceChildren(...notesPages);
   const mapPages = paginateMap(lesson, meta);
@@ -620,7 +675,7 @@ $('#save-pdf').onclick = () => {
   $$('.pages-frame').forEach(f => f.classList.remove('print-me'));
   $('#frame-' + currentTab).classList.add('print-me');
   const old = document.title;
-  document.title = `${current.subject.name} - ${current.unit}${currentTab === 'map' ? ' - خريطة ذهنية' : ''}`;
+  document.title = current ? `${current.subject.name} - ${current.unit}${currentTab === 'map' ? ' - خريطة ذهنية' : ''}` : bookTitle;
   setTimeout(() => { window.print(); setTimeout(() => { document.title = old; }, 1000); }, 50);
 };
 
@@ -640,9 +695,9 @@ $('#chat-send').onclick = async () => {
     const history = current.chat.slice(-9, -1).map(m => (m.who === 'me' ? 'الطالب: ' : 'أنت: ') + m.text).join('\n');
     const user = `المادة: ${current.subject.name} — ${current.unit}
 
-<<<التفريغ الأصلي
+<<<النص الأصلي
 ${current.transcript}
-التفريغ الأصلي>>>
+النص الأصلي>>>
 
 <<<الملاحظات الحالية
 ${JSON.stringify(current.notes)}
@@ -676,26 +731,151 @@ ${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طل�
 };
 
 /* ---------- library ---------- */
+async function allLessons() { try { return await idb.all(); } catch { return []; } }
+
 async function renderLibrary() {
   const list = $('#library-list');
-  let all = [];
-  try { all = await idb.all(); } catch {}
+  const all = await allLessons();
+  $('#book-mawaiz').hidden = !all.some(l => l.notes?.mawaiz?.length);
   if (!all.length) { list.innerHTML = '<p class="muted">لا توجد دروس محفوظة بعد. أول درس تصنعه سيظهر هنا.</p>'; return; }
   all.sort((a, b) => b.date.localeCompare(a.date));
   const groups = {};
-  for (const l of all) (groups[l.subject.name] ??= []).push(l);
-  list.innerHTML = Object.entries(groups).map(([name, ls]) => `
-    <div class="lib-group"><h2>${esc(name)}</h2>
+  for (const l of all) (groups[l.subject.id] ??= []).push(l);
+  list.innerHTML = Object.entries(groups).map(([sid, ls]) => `
+    <div class="lib-group"><h2>${esc(ls[0].subject.name)}${ls[0].subject.place ? ' <small class="muted">' + esc(ls[0].subject.place) + '</small>' : ''}</h2>
+    ${ls.length > 1 ? `<button type="button" class="ghost book-btn" data-book="${esc(sid)}">اصنع كتاب المادة (${ar(ls.length)} دروس)</button>` : ''}
     ${ls.map(l => `<div class="lib-item">
       <button type="button" class="open" data-open="${l.id}">${esc(l.notes?.title || l.unit)}<small>${esc(l.unit)} · ${new Date(l.date).toLocaleDateString('ar-SA')}</small></button>
       <button type="button" class="ghost danger" data-del="${l.id}">حذف</button>
     </div>`).join('')}</div>`).join('');
   $$('[data-open]', list).forEach(b => b.onclick = async () => openLesson(await idb.get(b.dataset.open)));
+  $$('[data-book]', list).forEach(b => b.onclick = () => makeBook(b.dataset.book));
   $$('[data-del]', list).forEach(b => b.onclick = async () => {
     if (b.dataset.sure) { await idb.del(b.dataset.del); if (current?.id === b.dataset.del) current = null; renderLibrary(); }
     else { b.dataset.sure = '1'; b.textContent = 'اضغط مرة ثانية للتأكيد'; }
   });
 }
+
+/* ---------- year-end books (put together by the app, no AI cost) ---------- */
+let bookTitle = '';
+function setBookMode(on) {
+  $('.tabs').hidden = on; $('.chat').hidden = on;
+  if (on) { $('#frame-map').hidden = true; $('#frame-report').hidden = true; $('#frame-notes').hidden = false; currentTab = 'notes'; }
+}
+function coverPage(meta, lines) {
+  const p = document.createElement('div');
+  p.className = 'page cover';
+  Object.entries(meta.palette).forEach(([k, v]) => p.style.setProperty(k, v));
+  p.innerHTML = lines;
+  return p;
+}
+function tocPages(meta, rows) {
+  const per = 26, pages = [];
+  for (let i = 0; i < Math.max(rows.length, 1); i += per) {
+    const p = makePage({ ...meta, title: 'المحتويات', subtitle: meta.subject, footLabel: '' }, 'map');
+    $('.pg-single', p).innerHTML = (i ? '' : '<div class="toc-h">المحتويات</div>') +
+      rows.slice(i, i + per).map(r => `<div class="toc-row"><span>${inline(r.title)}${r.sub ? ' <small style="color:#5b5040">— ' + esc(r.sub) + '</small>' : ''}</span><span class="dots"></span><span class="pg"></span></div>`).join('');
+    pages.push(p);
+  }
+  return pages;
+}
+async function showBook(title, metaLine, pages, rows, tocStart) {
+  // page numbers in the contents, then the whole book's numbering
+  let k = 0;
+  pages.forEach(p => $$('.toc-row .pg', p).forEach(el => { const r = rows[k++]; if (r) el.textContent = ar(r.page); }));
+  finishPages(pages);
+  current = null; bookTitle = title;
+  setBookMode(true);
+  $('#result-title').textContent = title;
+  $('#result-meta').textContent = metaLine;
+  $('#pages-notes').replaceChildren(...pages);
+  $('#measure').innerHTML = '';
+  show('result');
+  fitPages();
+}
+async function makeBook(subjectId) {
+  const ls = (await allLessons()).filter(l => l.subject.id === subjectId).sort((a, b) => a.date.localeCompare(b.date));
+  if (!ls.length) return;
+  $('#book-progress').hidden = false; $('#book-progress-text').textContent = 'جارٍ تجهيز الكتاب…';
+  await fontsReady();
+  const meta = { ...metaFor(ls[0]), title: ls[0].subject.name, subtitle: '', unit: '' };
+  const year = new Date().toLocaleDateString('ar-SA', { year: 'numeric' });
+  const cover = coverPage(meta, `<div class="c-sub">${esc(ls[0].subject.name)}</div>
+    ${ls[0].subject.book ? `<div class="c-book">${esc(ls[0].subject.book)}</div>` : ''}<div class="c-rule"></div>
+    <div class="c-place">${esc(ls[0].subject.place || '')}${ls[0].subject.place ? ' — ' : ''}${esc(year)}</div>
+    <div class="c-place">جُنيد محمد بن عبدالسلام</div>`);
+  const rows = [];
+  const chapters = [];
+  ls.forEach((l, i) => {
+    $('#book-progress-text').textContent = `يرتّب الدرس ${ar(i + 1)} من ${ar(ls.length)}…`;
+    const m = metaFor(l);
+    const np = paginateNotes(l, m, false);
+    const mp = paginateMap(l, m, false);
+    [...np, ...mp].forEach(p => { p.dataset.ch = l.id; });
+    chapters.push({ l, pages: [...np, ...mp] });
+  });
+  const toc = tocPages(meta, ls.map(l => ({ title: l.notes.title || l.unit, sub: l.unit })));
+  let pageNo = 1 + toc.length;
+  for (const c of chapters) { rows.push({ title: c.l.notes.title || c.l.unit, sub: c.l.unit, page: pageNo + 1 }); pageNo += c.pages.length; }
+  const pages = [cover, ...toc, ...chapters.flatMap(c => c.pages)];
+  $('#book-progress').hidden = true;
+  await showBook(`كتاب ${ls[0].subject.name}`, `${ar(ls.length)} دروس · ${ar(pages.length)} صفحة`, pages, rows, 1);
+}
+$('#book-mawaiz').onclick = async () => {
+  const all = (await allLessons()).filter(l => l.notes?.mawaiz?.length).sort((a, b) => a.date.localeCompare(b.date));
+  if (!all.length) return;
+  await fontsReady();
+  const bySub = {};
+  for (const l of all) (bySub[l.subject.id] ??= []).push(l);
+  const meta = { title: 'المواعظ', subtitle: '', subject: 'المواعظ', place: '', unit: '', palette: window.paletteFor('umber') };
+  const notes = {
+    sections: Object.values(bySub).map(ls => ({
+      heading: ls[0].subject.name + (ls[0].subject.place ? ' — ' + ls[0].subject.place : ''),
+      blocks: ls.flatMap(l => [{ t: 'appx-h', text: l.notes.title || l.unit }, { t: 'list', ordered: false, items: l.notes.mawaiz }]),
+    })),
+  };
+  const pages = paginateNotes({ notes }, meta, false);
+  const cover = coverPage(meta, `<div class="c-sub">المواعظ</div><div class="c-rule"></div><div class="c-book">من دروس العام في كل المواد</div><div class="c-place">جُنيد محمد بن عبدالسلام</div>`);
+  await showBook('المواعظ', `${ar(Object.keys(bySub).length)} مواد`, [cover, ...pages], [], 1);
+};
+
+/* ---------- backup to Google Drive (or anywhere) ---------- */
+$('#backup').onclick = async () => {
+  const st = $('#backup-status');
+  const lessons = await allLessons();
+  const data = { app: 'jund-notes', version: 1, saved: new Date().toISOString(), families: store.get('families', {}), lessons };
+  const name = `نسخة ملاحظات جنيد ${new Date().toISOString().slice(0, 10)}.json`;
+  const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      st.textContent = `✓ اختر Google Drive من القائمة لحفظها هناك. (${ar(lessons.length)} درس)`;
+      return;
+    }
+  } catch (e) { if (e.name === 'AbortError') { st.textContent = 'أُلغي.'; return; } }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  st.textContent = `✓ نُزّلت النسخة (${ar(lessons.length)} درس). ارفعها إلى Google Drive من ملفات الجوال.`;
+};
+$('#restore').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const st = $('#backup-status');
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app !== 'jund-notes' || !Array.isArray(data.lessons)) throw new Error();
+    for (const l of data.lessons) await idb.put(l);
+    if (data.families) store.set('families', { ...data.families, ...store.get('families', {}) });
+    st.textContent = `✓ استُرجع ${ar(data.lessons.length)} درس.`;
+  } catch { st.textContent = '✗ هذا ليس ملف نسخة احتياطية من التطبيق.'; }
+  e.target.value = '';
+};
+
+/* ---------- font ---------- */
+function applyFont() { document.documentElement.dataset.font = store.get('font', 'sch'); }
+$('#font').value = store.get('font', 'sch');
+$('#font').onchange = () => { store.set('font', $('#font').value); applyFont(); };
+applyFont();
 
 /* ---------- text shared from another app (Samsung recorder → Share) ---------- */
 async function receiveShared() {
@@ -726,5 +906,5 @@ show('new');
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 // for testing only
-window.__jn = { openLesson, paginateNotes, idb };
+window.__jn = { openLesson, paginateNotes, idb, makeBook };
 })();

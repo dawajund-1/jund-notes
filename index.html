@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Amiri+Quran&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Amiri+Quran&family=Scheherazade+New:wght@400;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -45,21 +45,32 @@
     </label>
 
     <label class="field">
+      <span>ماذا ستعطيه؟</span>
+      <select id="kind">
+        <option value="transcript">تفريغ درس (من مسجّل سامسونج)</option>
+        <option value="notes">ملاحظات كتبتها بنفسي</option>
+        <option value="book">مقطع من كتاب أو موضوع</option>
+      </select>
+    </label>
+
+    <label class="field" id="unit-wrap">
       <span>الدرس أو الوحدة</span>
       <input id="unit" type="text" placeholder="مثل: الدرس الثالث">
     </label>
 
     <div class="field">
-      <span>التفريغ</span>
-      <textarea id="transcript" rows="9" placeholder="الصق هنا النص الذي أخرجه مسجّل سامسونج"></textarea>
+      <span>النص</span>
+      <textarea id="transcript" rows="9" placeholder="الصق هنا التفريغ أو الملاحظات أو المقطع"></textarea>
       <div class="row-between">
         <label class="file-btn">
-          <input id="file" type="file" accept=".txt,text/plain">
-          أو اختر ملف نصي
+          <input id="file" type="file" accept=".txt,text/plain" multiple>
+          أو اختر ملفًا أو عدة ملفات
         </label>
         <small id="word-count" class="muted"></small>
       </div>
     </div>
+
+    <div class="intro" id="pending" hidden></div>
 
     <button type="button" class="primary big" id="make">اصنع الملاحظات</button>
 
@@ -117,6 +128,10 @@
   <section class="screen" id="screen-library" hidden>
     <h1 class="screen-title">المكتبة</h1>
     <div id="library-list"></div>
+    <div class="row-gap lib-tools">
+      <button type="button" class="ghost" id="book-mawaiz">ملف المواعظ لكل المواد</button>
+    </div>
+    <div class="progress small" id="book-progress" hidden><div class="spinner" aria-hidden="true"></div><div id="book-progress-text">جارٍ تجهيز الكتاب…</div></div>
   </section>
 
   <!-- الإعدادات -->
@@ -142,6 +157,24 @@
         <option value="claude-sonnet-5-5">جيد وأرخص (Sonnet) — نحو ١ ريال للدرس</option>
       </select>
     </label>
+
+    <label class="field">
+      <span>الخط</span>
+      <select id="font">
+        <option value="sch">Scheherazade New — أوضح وأكبر</option>
+        <option value="amiri">Amiri — بحجم أكبر</option>
+      </select>
+    </label>
+
+    <div class="field">
+      <span>النسخة الاحتياطية</span>
+      <small class="muted">دروسك محفوظة على هذا الجوال فقط. احفظ نسخة في Google Drive بين حين وآخر، وخاصة قبل تغيير الجوال.</small>
+      <div class="row-gap">
+        <button type="button" class="primary" id="backup">احفظ نسخة احتياطية</button>
+        <label class="file-btn"><input id="restore" type="file" accept=".json,application/json">استرجع من نسخة</label>
+      </div>
+      <div id="backup-status" class="muted"></div>
+    </div>
 
     <div class="field">
       <span>المصروف حتى الآن</span>
