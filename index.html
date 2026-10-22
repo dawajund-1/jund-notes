@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ملاحظات جُنيد</title>
+<meta name="theme-color" content="#2b2418">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Amiri+Quran&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="bar">
+  <button class="brand" id="go-home" type="button">ملاحظات جُنيد</button>
+  <nav class="bar-actions">
+    <button type="button" class="ghost" id="go-library">المكتبة</button>
+    <button type="button" class="ghost" id="go-settings">الإعدادات</button>
+  </nav>
+</header>
+
+<main id="app">
+
+  <!-- درس جديد -->
+  <section class="screen" id="screen-new">
+    <div class="intro" id="key-missing" hidden>
+      <b>خطوة واحدة قبل البدء:</b> ضع مفتاحك في
+      <button type="button" class="link" data-go="settings">الإعدادات</button>.
+    </div>
+
+    <h1 class="screen-title">درس جديد</h1>
+
+    <label class="field">
+      <span>المادة</span>
+      <select id="subject"></select>
+    </label>
+
+    <label class="field" id="custom-subject-wrap" hidden>
+      <span>اسم المادة</span>
+      <input id="custom-subject" type="text" placeholder="اكتب اسم المادة">
+    </label>
+
+    <label class="field">
+      <span>الدرس أو الوحدة</span>
+      <input id="unit" type="text" placeholder="مثل: الدرس الثالث">
+    </label>
+
+    <div class="field">
+      <span>التفريغ</span>
+      <textarea id="transcript" rows="9" placeholder="الصق هنا النص الذي أخرجه مسجّل سامسونج"></textarea>
+      <div class="row-between">
+        <label class="file-btn">
+          <input id="file" type="file" accept=".txt,text/plain">
+          أو اختر ملف نصي
+        </label>
+        <small id="word-count" class="muted"></small>
+      </div>
+    </div>
+
+    <button type="button" class="primary big" id="make">اصنع الملاحظات</button>
+
+    <div class="progress" id="progress" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <div id="progress-text">جارٍ الكتابة…</div>
+        <small class="muted">أبقِ هذه الصفحة مفتوحة حتى ينتهي. يأخذ عادة من ٣ إلى ٨ دقائق.</small>
+      </div>
+      <button type="button" class="ghost" id="cancel">إيقاف</button>
+    </div>
+    <div class="error" id="new-error" hidden></div>
+  </section>
+
+  <!-- النتيجة -->
+  <section class="screen" id="screen-result" hidden>
+    <div class="result-head">
+      <div>
+        <h1 class="screen-title" id="result-title"></h1>
+        <div class="muted" id="result-meta"></div>
+      </div>
+      <button type="button" class="primary" id="save-pdf">حفظ PDF</button>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" class="tab" data-tab="notes" aria-selected="true">الملف الدراسي</button>
+      <button type="button" role="tab" class="tab" data-tab="map" aria-selected="false">الخريطة الذهنية</button>
+      <button type="button" role="tab" class="tab" data-tab="report" aria-selected="false">تقرير التحقق</button>
+    </div>
+
+    <div class="pages-frame" id="frame-notes"><div class="pages" id="pages-notes"></div></div>
+    <div class="pages-frame" id="frame-map" hidden><div class="pages" id="pages-map"></div></div>
+    <div class="report" id="frame-report" hidden></div>
+
+    <div class="pdf-tip muted" id="pdf-tip">
+      عند الضغط على «حفظ PDF» تفتح نافذة الطباعة: اختر «حفظ بتنسيق PDF» ثم اضغط زر الحفظ.
+    </div>
+
+    <!-- المحادثة -->
+    <section class="chat">
+      <h2>اطلب تعديلًا أو اسأل</h2>
+      <div class="chat-log" id="chat-log"></div>
+      <div class="chat-input">
+        <textarea id="chat-text" rows="2" placeholder="مثل: اجعل جدول الأقوال أوضح، أو أضف مثال الشيخ عن…"></textarea>
+        <button type="button" class="primary" id="chat-send">أرسل</button>
+      </div>
+      <div class="progress small" id="chat-progress" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <div id="chat-progress-text">جارٍ التعديل…</div>
+      </div>
+    </section>
+  </section>
+
+  <!-- المكتبة -->
+  <section class="screen" id="screen-library" hidden>
+    <h1 class="screen-title">المكتبة</h1>
+    <div id="library-list"></div>
+  </section>
+
+  <!-- الإعدادات -->
+  <section class="screen" id="screen-settings" hidden>
+    <h1 class="screen-title">الإعدادات</h1>
+
+    <label class="field">
+      <span>مفتاح الذكاء الاصطناعي</span>
+      <input id="api-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="sk-ant-...">
+      <small class="muted">يبقى المفتاح على جوالك فقط، ولا يُرسل إلا إلى Anthropic عند صنع الملاحظات.</small>
+    </label>
+    <div class="row-gap">
+      <button type="button" class="ghost" id="toggle-key">إظهار</button>
+      <button type="button" class="primary" id="save-key">حفظ</button>
+      <button type="button" class="ghost" id="test-key">تجربة المفتاح</button>
+    </div>
+    <div id="key-status" class="muted"></div>
+
+    <label class="field">
+      <span>الجودة</span>
+      <select id="model">
+        <option value="claude-opus-5-5">الأقوى في العربية (Opus) — نحو ٢ ريال للدرس</option>
+        <option value="claude-sonnet-5-5">جيد وأرخص (Sonnet) — نحو ١ ريال للدرس</option>
+      </select>
+    </label>
+
+    <div class="field">
+      <span>المصروف حتى الآن</span>
+      <div id="spend" class="muted"></div>
+    </div>
+
+    <details class="field">
+      <summary>ألوان المواد</summary>
+      <div id="palette-list"></div>
+    </details>
+  </section>
+
+</main>
+
+<div id="measure" aria-hidden="true"></div>
+
+<script src="prompt.js"></script>
+<script src="subjects.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
