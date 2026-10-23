@@ -75,13 +75,14 @@
     <button type="button" class="primary big" id="make">اصنع الملاحظات</button>
 
     <div class="progress" id="progress" hidden>
-      <div class="spinner" aria-hidden="true"></div>
-      <div>
-        <div id="progress-text">جارٍ الكتابة…</div>
-        <small class="muted">أبقِ هذه الصفحة مفتوحة حتى ينتهي. يأخذ عادة من ٣ إلى ٨ دقائق.</small>
+      <div class="pg-wrap">
+        <div class="row-between"><b id="progress-text">جارٍ الكتابة…</b><b id="progress-pct"></b></div>
+        <div class="bar" id="progress-bar-wrap"><i id="progress-bar"></i></div>
+        <small class="muted" id="progress-eta">أبقِ التطبيق مفتوحًا والشاشة مضاءة حتى ينتهي.</small>
       </div>
       <button type="button" class="ghost" id="cancel">إيقاف</button>
     </div>
+    <div class="intro" id="confirm-long" hidden></div>
     <div class="error" id="new-error" hidden></div>
   </section>
 
@@ -159,7 +160,10 @@
         <button type="button" class="primary" id="phone-download">نزّل الذكاء إلى جوالي</button>
         <button type="button" class="ghost danger" id="phone-remove" hidden>احذف الذكاء من الجوال</button>
       </div>
+      <div class="bar" id="phone-bar-wrap" hidden><i id="phone-bar"></i></div>
       <div id="phone-status" class="muted"></div>
+      <div class="row-gap"><button type="button" class="ghost" id="phone-test">اختبر الذكاء على جوالي</button></div>
+      <div id="phone-test-out" class="muted" style="white-space:pre-wrap"></div>
       <small class="muted">يُنزّل مرة واحدة، ثم يكتب على جوالك بلا إنترنت. الآيات تُطابق تلقائيًا على نص المصحف.</small>
     </div>
 

@@ -222,9 +222,11 @@ function initSettings() {
   $('#phone-download').onclick = async () => {
     const st = $('#phone-status'); $('#phone-download').disabled = true;
     try {
-      await window.LocalAI.load(phoneSize(), p => { st.textContent = progressText(p); });
+      $('#phone-bar-wrap').hidden = false;
+      await window.LocalAI.load(phoneSize(), p => { st.textContent = progressText(p); setBar('#phone-bar-wrap', '#phone-bar', p.progress); });
+      $('#phone-bar-wrap').hidden = true;
       st.textContent = '✓ نُزّل الذكاء. صار يعمل على جوالك بلا إنترنت.';
-    } catch (e) { st.textContent = '✗ ' + (e.message || 'تعذّر التنزيل. تأكد من الإنترنت والمساحة ثم حاول.'); }
+    } catch (e) { st.textContent = '✗ ' + errText(e); $('#phone-bar-wrap').hidden = true; }
     $('#phone-download').disabled = false; syncEngine();
   };
   $('#phone-remove').onclick = async () => {
@@ -233,6 +235,27 @@ function initSettings() {
     delete b.dataset.sure; b.textContent = 'احذف الذكاء من الجوال';
     try { await window.LocalAI.remove(phoneSize()); } catch {}
     syncEngine();
+  };
+  $('#phone-test').onclick = async () => {
+    const out = $('#phone-test-out'); const b = $('#phone-test'); b.disabled = true;
+    try {
+      const sup = await window.LocalAI.support();
+      out.textContent = sup.ok ? `✓ الجوال يدعم تشغيل الذكاء${sup.f16 ? '' : ' (وضع أبطأ قليلًا)'}.\nجارٍ التشغيل…` : '✗ ' + sup.why;
+      if (!sup.ok) return;
+      $('#phone-bar-wrap').hidden = false;
+      const t0 = Date.now(); let t1 = 0;
+      const r = await window.LocalAI.generate({
+        size: phoneSize(), maxTokens: 200,
+        system: 'أجب بكائن JSON فقط.',
+        user: 'اكتب {"تعريف":"..."} فيه تعريف الحديث الصحيح في سطر واحد.',
+        onProgress: p => { out.textContent = progressText(p); setBar('#phone-bar-wrap', '#phone-bar', p.progress); },
+        onText: t => { t1 ||= Date.now(); out.textContent = 'يكتب: ' + t; },
+      });
+      const secs = ((Date.now() - (t1 || t0)) / 1000).toFixed(1);
+      const words = r.text.split(/\s+/).length;
+      out.textContent = `✓ الذكاء يعمل على جوالك.\nالرد: ${r.text}\nالسرعة: نحو ${ar(Math.round(words / Math.max(0.5, secs) * 60))} كلمة في الدقيقة.`;
+    } catch (e) { out.textContent = '✗ ' + errText(e); }
+    finally { b.disabled = false; $('#phone-bar-wrap').hidden = true; syncEngine(); }
   };
   window.__syncEngine = syncEngine;
   $('#gh-key').value = store.get('ghKey', '');
@@ -347,6 +370,24 @@ async function getJSON(text, signal) {
   }
 }
 
+/* ---------- progress bar and readable errors ---------- */
+function setBar(wrapSel, barSel, frac) {
+  const w = $(wrapSel), b = $(barSel); if (!w || !b) return;
+  if (frac == null || !isFinite(frac)) { w.classList.add('busy'); return; }
+  w.classList.remove('busy'); b.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+}
+function errText(e) {
+  if (!e) return 'حدث خطأ غير معروف.';
+  if (e.name === 'AbortError') return 'أُوقف.';
+  let raw = (e.message || (typeof e === 'string' ? e : '') || e.name || '').toString();
+  if (!raw) { try { raw = JSON.stringify(e); } catch { raw = String(e); } if (raw === '{}' || raw === '[object Object]') raw = ''; }
+  if (e.message === 'no json' || e instanceof SyntaxError) return 'وصل الرد ناقصًا أو غير مرتب. حاول مرة ثانية.';
+  if (/out of memory|OOM|allocate|device (was )?lost|DXGI|GPUDevice/i.test(raw)) return 'ذاكرة الجوال لم تكفِ للذكاء الآن. أغلق التطبيقات الأخرى، أو اختر الحجم «سريع»، ثم حاول.\n(' + raw.slice(0, 160) + ')';
+  if (/quota|storage|space/i.test(raw)) return 'لا توجد مساحة كافية على الجوال لتنزيل الذكاء. فرّغ مساحة ثم حاول.\n(' + raw.slice(0, 160) + ')';
+  if (/fetch|network|Failed to fetch|NetworkError|load failed/i.test(raw)) return 'انقطع الإنترنت أثناء تنزيل الذكاء. اتصل بالواي فاي ثم حاول؛ يكمل من حيث توقف.\n(' + raw.slice(0, 160) + ')';
+  return raw ? 'حدث خطأ: ' + raw.slice(0, 300) : 'حدث خطأ غير معروف. أرسل لي صورة من هذه الرسالة.';
+}
+
 /* ---------- which AI writes the notes ---------- */
 const engineKind = () => store.get('engine', 'phone');          // 'phone' (free, on this phone) or 'claude' (own key)
 const phoneSize = () => store.get('phoneSize', 'fast');
@@ -410,10 +451,17 @@ function mergeParts(list) {
 
 async function writeOnPhone({ text, unit, sub, src }, onStatus) {
   const parts = splitText(text);
-  const results = []; let cut = false;
+  const results = []; let cut = false, partial = '';
+  const started = Date.now(); let firstPartStart = 0;
   for (let i = 0; i < parts.length; i++) {
-    const t0 = Date.now();
+    const t0 = Date.now(); if (i === 0) firstPartStart = t0;
     const pre = parts.length > 1 ? `الجزء ${ar(i + 1)} من ${ar(parts.length)}: ` : '';
+    const expect = Math.max(250, parts[i].split(/\s+/).length * 0.55);
+    const eta = () => {
+      if (i === 0) return '';
+      const per = (t0 - firstPartStart) / i, left = Math.round(per * (parts.length - i) / 60000);
+      return left >= 1 ? `بقي نحو ${ar(left)} دقيقة` : 'قارب الانتهاء';
+    };
     const before = results.flatMap(r => (r.sections || []).map(s => s.heading)).filter(Boolean);
     const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}
 الدرس: ${unit}
@@ -424,16 +472,27 @@ ${src.ask}
 <<<النص
 ${parts[i]}
 النص>>>`;
-    const r = await window.LocalAI.generate({
-      size: phoneSize(), system: window.JUND_METHOD_SMALL, user, signal: controller.signal,
-      onProgress: p => onStatus(pre + progressText(p)),
-      onText: t => { const s = Math.floor((Date.now() - t0) / 1000); onStatus(`${pre}يكتب على جوالك… ${ar(t.split(/\s+/).length)} كلمة — ${ar(Math.floor(s / 60))}:${ar(String(s % 60).padStart(2, '0'))}`); },
-    });
+    let r;
+    try {
+      r = await window.LocalAI.generate({
+        size: phoneSize(), system: window.JUND_METHOD_SMALL, user, signal: controller.signal,
+        onProgress: p => onStatus(pre + progressText(p), p.progress ?? null, 'download'),
+        onText: t => {
+          const w = t.split(/\s+/).length, s = Math.floor((Date.now() - t0) / 1000);
+          onStatus(`${pre}يكتب على جوالك… ${ar(w)} كلمة — ${ar(Math.floor(s / 60))}:${ar(String(s % 60).padStart(2, '0'))}`,
+            (i + Math.min(0.95, w / expect)) / parts.length, 'write', eta());
+        },
+      });
+    } catch (e) {
+      if (e.name === 'AbortError' || !results.length) throw e;
+      partial = `⚠ توقف عند الجزء ${ar(i + 1)} من ${ar(parts.length)} (${errText(e).split('\n')[0]}). حُفظ ما اكتمل؛ اصنع الصفحات الباقية وحدها.`;
+      break;
+    }
     if (r.stop === 'max_tokens') cut = true;
     try { results.push(parseJSON(r.text)); }
     catch { results.push({ report: { maybe_wrong: [`تعذّرت قراءة الجزء ${ar(i + 1)}؛ أعد صنعه إن كان ناقصًا.`] } }); }
   }
-  return { notes: mergeParts(results), cut };
+  return { notes: mergeParts(results), cut, partial };
 }
 
 /* ---------- making notes ---------- */
@@ -608,7 +667,7 @@ async function makeOne({ text, unit, sub, kind }, onStatus) {
   if (engineKind() === 'phone') {
     const r = await writeOnPhone({ text, unit, sub, src }, onStatus);
     notes = r.notes;
-    note = 'جاهز. كُتب على جوالك مجانًا.' + (r.cut ? '\n⚠ جزء طال أكثر من اللازم فقد يكون آخره ناقصًا.' : '');
+    note = 'جاهز. كُتب على جوالك مجانًا.' + (r.cut ? '\n⚠ جزء طال أكثر من اللازم فقد يكون آخره ناقصًا.' : '') + (r.partial ? '\n' + r.partial : '');
   } else {
     const t0 = Date.now();
     const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}${sub.place ? ' — ' + sub.place : ''}
@@ -626,14 +685,14 @@ ${src.name}>>>`;
       signal: controller.signal,
       onText: t => {
         const mins = Math.floor((Date.now() - t0) / 60000);
-        onStatus(`يكتب الآن… ${ar(t.split(/\s+/).length)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`);
+        onStatus(`يكتب الآن… ${ar(t.split(/\s+/).length)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`, null, 'write');
       },
     });
     onStatus('يرتّب الصفحات…');
     notes = await getJSON(r.text, controller.signal);
     note = `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '');
   }
-  onStatus('يطابق الآيات على المصحف…');
+  onStatus('يطابق الآيات على المصحف…', 1, 'write');
   try { await window.Mushaf.check(notes); } catch {}
   const lesson = {
     id: 'L' + Date.now() + Math.random().toString(36).slice(2, 6),
@@ -659,21 +718,49 @@ $('#make').onclick = async () => {
   for (const j of jobs) j.unit ||= 'درس بتاريخ ' + new Date().toLocaleDateString('ar-SA');
   if (jobs.some(j => j.bad)) { err.textContent = 'في الملفات ملف لا يُقرأ (انظر ✗ فوق). احذفه بزر «إلغاء الملفات» أو اختر غيره.'; err.hidden = false; return; }
   if (jobs.some(j => j.text.length < 200)) { err.textContent = 'النص قصير جدًا. الصق النص كاملًا أو اختر صفحات أكثر.'; err.hidden = false; return; }
+  // long jobs on the phone: show the expected time and ask for a second tap
+  if (engineKind() === 'phone') {
+    const words = jobs.reduce((n, j) => n + j.text.split(/\s+/).filter(Boolean).length, 0);
+    const partsN = jobs.reduce((n, j) => n + splitText(j.text).length, 0);
+    const mins = Math.round(partsN * (phoneSize() === 'strong' ? 5 : 2.5));
+    const box = $('#confirm-long');
+    if (mins >= 15 && box.dataset.ok !== String(words)) {
+      box.innerHTML = `<b>⚠ هذا نص طويل:</b> ${ar(words)} كلمة في ${ar(partsN)} ${partsN >= 3 && partsN <= 10 ? 'أجزاء' : 'جزءًا'}. سيأخذ على جوالك نحو <b>${ar(mins)} دقيقة</b>، والتطبيق مفتوح والشاشة مضاءة طوال الوقت (والأفضل أن يكون الجوال على الشاحن).<br>للتجربة الأولى اختر ٣–٥ صفحات فقط. للمتابعة على كل حال اضغط «اصنع الملاحظات» مرة ثانية.`;
+      box.hidden = false; box.dataset.ok = String(words);
+      box.scrollIntoView({ block: 'center' });
+      return;
+    }
+    box.hidden = true; delete box.dataset.ok;
+  }
   $('#make').disabled = true; $('#progress').hidden = false;
+  setBar('#progress-bar-wrap', '#progress-bar', 0); $('#progress-pct').textContent = '';
+  $('#progress-eta').textContent = 'أبقِ التطبيق مفتوحًا والشاشة مضاءة حتى ينتهي.';
   controller = new AbortController();
   const lock = await keepAwake();
   let last = null, failed = 0;
   try {
     for (let i = 0; i < jobs.length; i++) {
       const pre = jobs.length > 1 ? `(${ar(i + 1)} من ${ar(jobs.length)}) ${jobs[i].unit}: ` : '';
-      const status = s => { $('#progress-text').textContent = pre + s; };
+      const status = (s, frac, phase, eta) => {
+        $('#progress-text').textContent = pre + s;
+        if (phase === 'download') {
+          setBar('#progress-bar-wrap', '#progress-bar', frac);
+          $('#progress-pct').textContent = frac != null ? ar(Math.round(frac * 100)) + '٪' : '';
+          $('#progress-eta').textContent = 'التنزيل مرة واحدة فقط. أبقِ الواي فاي متصلًا.';
+          return;
+        }
+        const all = frac == null ? null : (i + frac) / jobs.length;
+        setBar('#progress-bar-wrap', '#progress-bar', all);
+        $('#progress-pct').textContent = all != null ? ar(Math.round(all * 100)) + '٪' : '';
+        $('#progress-eta').textContent = (eta ? eta + ' — ' : '') + 'أبقِ التطبيق مفتوحًا والشاشة مضاءة.';
+      };
       status('جارٍ القراءة والكتابة…');
       try {
         last = await makeOne({ ...jobs[i], sub, kind }, status);
         jobs[i].status = '✓ جاهز';
       } catch (e) {
         if (e.name === 'AbortError') throw e;
-        failed++; jobs[i].status = '✗ ' + (e.message === 'no json' || e instanceof SyntaxError ? 'وصل الرد غير مرتب' : e.message);
+        failed++; jobs[i].status = '✗ ' + errText(e);
         if (jobs.length === 1) throw e;
       }
       if (pending.length) renderPending();
@@ -683,7 +770,7 @@ $('#make').onclick = async () => {
     if (jobs.length > 1 && !failed) show('library');
     else if (last && !failed) await openLesson(last);
   } catch (e) {
-    err.textContent = e.name === 'AbortError' ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : (e.message === 'no json' || e instanceof SyntaxError ? 'وصل الرد ناقصًا أو غير مرتب. حاول مرة ثانية.' : e.message);
+    err.textContent = e?.name === 'AbortError' ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : errText(e);
     err.hidden = false;
   } finally {
     lock?.release?.(); controller = null;

@@ -88,6 +88,12 @@ button.danger { color: var(--danger); }
 .progress { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; background: var(--cream-2); border-radius: 12px; }
 .progress > div:nth-child(2) { flex: 1; min-width: 0; }
 .progress.small { padding: 8px 12px; }
+.pg-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.bar { height: 12px; border-radius: 99px; background: var(--cream-3); overflow: hidden; position: relative; }
+.bar > i { position: absolute; inset: 0 0 0 auto; width: 0%; background: var(--accent); border-radius: 99px; transition: width .4s ease; }
+.bar.busy > i { width: 35% !important; animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { 0% { right: -35%; } 100% { right: 100%; } }
+@media (prefers-reduced-motion: reduce) { .bar.busy > i { animation-duration: 4s; } }
 .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--cream-3); border-top-color: var(--accent); animation: spin 1s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
