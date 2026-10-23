@@ -8,8 +8,9 @@ const MODELS = {
 };
 // memory the AI may use: a normal setting, and a lighter one used after the phone's graphics chip gives up once
 const CONTEXTS = [8192, 6144];
-let lite = false;
-try { lite = localStorage.getItem('jn_aiLite') === '1'; } catch {}
+let lite = false, compat = false;
+try { lite = localStorage.getItem('jn_aiLite') === '1'; compat = localStorage.getItem('jn_aiCompat') === '1'; } catch {}
+// compatibility mode: the full-precision build of the same AI, which avoids a known graphics-chip problem on some phones
 
 let lib = null, engine = null, worker = null, loadedId = null, loading = null, grammarOk = true;
 
@@ -26,7 +27,7 @@ async function pick(size) {
   const m = MODELS[size] || MODELS.fast;
   const s = await support();
   if (!s.ok) throw new Error(s.why);
-  return s.f16 ? m.id : m.f32;
+  return s.f16 && !compat ? m.id : m.f32;
 }
 
 async function isDownloaded(size) {
@@ -68,7 +69,8 @@ async function generate(opts) {
   catch (e) {
     if (opts.signal?.aborted || !gpuTrouble(e)) throw e;
     opts.onProgress?.({ progress: 0, text: 'restart' });
-    lite = true; try { localStorage.setItem('jn_aiLite', '1'); } catch {}
+    lite = true; compat = true;
+    try { localStorage.setItem('jn_aiLite', '1'); localStorage.setItem('jn_aiCompat', '1'); } catch {}
     await reset();
     try { return await generateOnce(opts); }
     catch (e2) {
@@ -115,5 +117,6 @@ async function remove(size) {
   await lib.deleteModelAllInfoInCache(id);
 }
 
-window.LocalAI = { MODELS, support, isDownloaded, load, generate, remove, reset, isLite: () => lite };
+function setCompat(on) { compat = !!on; try { localStorage.setItem('jn_aiCompat', on ? '1' : '0'); } catch {} }
+window.LocalAI = { MODELS, support, isDownloaded, load, generate, remove, reset, isLite: () => lite, isCompat: () => compat, setCompat };
 })();

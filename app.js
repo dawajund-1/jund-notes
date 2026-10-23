@@ -213,11 +213,13 @@ function initSettings() {
       const sup = await window.LocalAI.support();
       if (!sup.ok) { $('#phone-status').textContent = '✗ ' + sup.why; return; }
       const have = await window.LocalAI.isDownloaded(phoneSize());
+      $('#phone-compat').checked = window.LocalAI.isCompat();
       $('#phone-status').textContent = have ? '✓ الذكاء مُنزّل على جوالك ويعمل بلا إنترنت.' : `لم يُنزّل بعد (${window.LocalAI.MODELS[phoneSize()].size}). يُفضّل التنزيل على الواي فاي.`;
       $('#phone-download').hidden = have; $('#phone-remove').hidden = !have;
     }
   };
   $('#engine').onchange = () => { store.set('engine', $('#engine').value); syncEngine(); };
+  $('#phone-compat').onchange = () => { window.LocalAI.setCompat($('#phone-compat').checked); window.LocalAI.reset(); syncEngine(); };
   $('#phone-size').onchange = () => { store.set('phoneSize', $('#phone-size').value); syncEngine(); };
   $('#phone-download').onclick = async () => {
     const st = $('#phone-status'); $('#phone-download').disabled = true;
@@ -414,7 +416,7 @@ function errText(e) {
 const engineKind = () => store.get('engine', 'phone');          // 'phone' (free, on this phone) or 'claude' (own key)
 const phoneSize = () => store.get('phoneSize', 'fast');
 function progressText(p) {
-  if (p.text === 'restart') return 'يعيد تشغيل الذكاء بإعداد أخف…';
+  if (p.text === 'restart') return 'يعيد تشغيل الذكاء في وضع التوافق (يُنزّل نسخة متوافقة مرة واحدة)…';
   const pct = Math.round((p.progress || 0) * 100);
   return /fetch|download|param|cache/i.test(p.text || '') && pct < 100
     ? `يُنزّل الذكاء إلى جوالك (مرة واحدة فقط)… ${ar(pct)}٪`
@@ -1421,7 +1423,7 @@ fillSubjects();
 initSettings();
 receiveShared();
 show('new');
-const APP_VERSION = '1.9';
+const APP_VERSION = '2.0';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
   // when a new version takes over, reload once so every file is the new one
