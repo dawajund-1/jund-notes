@@ -140,6 +140,31 @@
     <h1 class="screen-title">الإعدادات</h1>
 
     <label class="field">
+      <span>من يكتب الملاحظات؟</span>
+      <select id="engine">
+        <option value="phone">الذكاء على جوالي — مجاني، بلا مفاتيح</option>
+        <option value="claude">Claude — بمفتاحي المدفوع</option>
+      </select>
+    </label>
+
+    <div id="phone-box">
+      <label class="field">
+        <span>حجم الذكاء</span>
+        <select id="phone-size">
+          <option value="fast">سريع — نحو ٢٫٥ جيجا</option>
+          <option value="strong">أقوى — نحو ٥ جيجا، أبطأ</option>
+        </select>
+      </label>
+      <div class="row-gap">
+        <button type="button" class="primary" id="phone-download">نزّل الذكاء إلى جوالي</button>
+        <button type="button" class="ghost danger" id="phone-remove" hidden>احذف الذكاء من الجوال</button>
+      </div>
+      <div id="phone-status" class="muted"></div>
+      <small class="muted">يُنزّل مرة واحدة، ثم يكتب على جوالك بلا إنترنت. الآيات تُطابق تلقائيًا على نص المصحف.</small>
+    </div>
+
+    <div id="claude-box" hidden>
+    <label class="field">
       <span>مفتاح الذكاء الاصطناعي</span>
       <input id="api-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="sk-ant-...">
       <small class="muted">يبقى المفتاح على جوالك فقط، ولا يُرسل إلا إلى Anthropic عند صنع الملاحظات.</small>
@@ -152,6 +177,15 @@
     <div id="key-status" class="muted"></div>
 
     <label class="field">
+      <span>الجودة</span>
+      <select id="model">
+        <option value="claude-opus-5-5">الأقوى في العربية (Opus) — نحو ٢ ريال للدرس</option>
+        <option value="claude-sonnet-5-5">جيد وأرخص (Sonnet) — نحو ١ ريال للدرس</option>
+      </select>
+    </label>
+    </div>
+
+    <label class="field">
       <span>مفتاح GitHub (لحفظ دروسك في مخزنك الخاص)</span>
       <input id="gh-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="github_pat_...">
       <small class="muted">مع هذا المفتاح يُحفظ كل درس تلقائيًا في jund-notes-data، فيعود إليك على أي جوال.</small>
@@ -159,13 +193,7 @@
     <div class="row-gap"><button type="button" class="primary" id="save-gh">حفظ واتصال</button></div>
     <div id="gh-status" class="muted"></div>
 
-    <label class="field">
-      <span>الجودة</span>
-      <select id="model">
-        <option value="claude-opus-5-5">الأقوى في العربية (Opus) — نحو ٢ ريال للدرس</option>
-        <option value="claude-sonnet-5-5">جيد وأرخص (Sonnet) — نحو ١ ريال للدرس</option>
-      </select>
-    </label>
+
 
     <label class="field">
       <span>الخط</span>
@@ -190,6 +218,8 @@
       <div id="spend" class="muted"></div>
     </div>
 
+    <p class="muted" style="font-size:.8rem">نص المصحف: موسوعة القرآن الكريم (quranenc.com)، برخصة CC BY-SA 4.0. الذكاء على الجوال: Qwen عبر WebLLM.</p>
+
     <details class="field">
       <summary>ألوان المواد</summary>
       <div id="palette-list"></div>
@@ -201,6 +231,8 @@
 <div id="measure" aria-hidden="true"></div>
 
 <script src="prompt.js"></script>
+<script src="quran.js"></script>
+<script src="local-ai.js"></script>
 <script src="subjects.js"></script>
 <script src="app.js"></script>
 </body>

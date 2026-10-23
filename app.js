@@ -181,8 +181,8 @@ function renderPaletteSettings() {
 function show(name) {
   for (const s of ['new', 'result', 'library', 'settings']) $('#screen-' + s).hidden = s !== name;
   if (name === 'library') renderLibrary();
-  if (name === 'settings') { renderPaletteSettings(); renderSpend(); }
-  if (name === 'new') $('#key-missing').hidden = !!store.get('key');
+  if (name === 'settings') { renderPaletteSettings(); renderSpend(); window.__syncEngine?.(); }
+  if (name === 'new') $('#key-missing').hidden = engineKind() === 'phone' || !!store.get('key');
   if (name === 'result') requestAnimationFrame(fitPages);
   window.scrollTo(0, 0);
 }
@@ -204,6 +204,37 @@ function initSettings() {
     store.set('key', $('#api-key').value.trim());
     $('#key-status').textContent = store.get('key') ? '✓ حُفظ المفتاح على هذا الجوال.' : 'حُذف المفتاح.';
   };
+  // which AI
+  const syncEngine = async () => {
+    const phone = engineKind() === 'phone';
+    $('#engine').value = engineKind(); $('#phone-size').value = phoneSize();
+    $('#phone-box').hidden = !phone; $('#claude-box').hidden = phone;
+    if (phone) {
+      const sup = await window.LocalAI.support();
+      if (!sup.ok) { $('#phone-status').textContent = '✗ ' + sup.why; return; }
+      const have = await window.LocalAI.isDownloaded(phoneSize());
+      $('#phone-status').textContent = have ? '✓ الذكاء مُنزّل على جوالك ويعمل بلا إنترنت.' : `لم يُنزّل بعد (${window.LocalAI.MODELS[phoneSize()].size}). يُفضّل التنزيل على الواي فاي.`;
+      $('#phone-download').hidden = have; $('#phone-remove').hidden = !have;
+    }
+  };
+  $('#engine').onchange = () => { store.set('engine', $('#engine').value); syncEngine(); };
+  $('#phone-size').onchange = () => { store.set('phoneSize', $('#phone-size').value); syncEngine(); };
+  $('#phone-download').onclick = async () => {
+    const st = $('#phone-status'); $('#phone-download').disabled = true;
+    try {
+      await window.LocalAI.load(phoneSize(), p => { st.textContent = progressText(p); });
+      st.textContent = '✓ نُزّل الذكاء. صار يعمل على جوالك بلا إنترنت.';
+    } catch (e) { st.textContent = '✗ ' + (e.message || 'تعذّر التنزيل. تأكد من الإنترنت والمساحة ثم حاول.'); }
+    $('#phone-download').disabled = false; syncEngine();
+  };
+  $('#phone-remove').onclick = async () => {
+    const b = $('#phone-remove');
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'اضغط مرة ثانية لحذفه من الجوال'; return; }
+    delete b.dataset.sure; b.textContent = 'احذف الذكاء من الجوال';
+    try { await window.LocalAI.remove(phoneSize()); } catch {}
+    syncEngine();
+  };
+  window.__syncEngine = syncEngine;
   $('#gh-key').value = store.get('ghKey', '');
   $('#save-gh').onclick = async () => {
     store.set('ghKey', $('#gh-key').value.trim());
@@ -316,6 +347,95 @@ async function getJSON(text, signal) {
   }
 }
 
+/* ---------- which AI writes the notes ---------- */
+const engineKind = () => store.get('engine', 'phone');          // 'phone' (free, on this phone) or 'claude' (own key)
+const phoneSize = () => store.get('phoneSize', 'fast');
+function progressText(p) {
+  const pct = Math.round((p.progress || 0) * 100);
+  return /fetch|download|param|cache/i.test(p.text || '') && pct < 100
+    ? `يُنزّل الذكاء إلى جوالك (مرة واحدة فقط)… ${ar(pct)}٪`
+    : `يجهّز الذكاء… ${ar(pct)}٪`;
+}
+
+// cut a long text into parts the phone AI can read at once, on sentence ends
+function splitText(text, maxWords = 1100) {
+  const units = text.split(/(?<=[.؟!؛\n])\s+/);
+  const parts = []; let cur = [], n = 0;
+  for (const u of units) {
+    const w = u.split(/\s+/).filter(Boolean).length;
+    if (n + w > maxWords && cur.length) { parts.push(cur.join(' ')); cur = []; n = 0; }
+    if (w > maxWords) { // one very long run-on piece: cut by words
+      const ws = u.split(/\s+/);
+      for (let i = 0; i < ws.length; i += maxWords) parts.push(ws.slice(i, i + maxWords).join(' '));
+      continue;
+    }
+    cur.push(u); n += w;
+  }
+  if (cur.length) parts.push(cur.join(' '));
+  return parts;
+}
+
+function mergeParts(list) {
+  const out = { title: '', subtitle: '', opening_dua: '', sections: [], mindmap: [], mnemonics: [],
+    appendix: { rules: [], poems: [], vocab: [], questions: [], admin: '' }, closing_duas: [], mawaiz: [],
+    report: { inferred: [], left_out: [], maybe_wrong: [], added: [] } };
+  const nk = x => norm(x).replace(/^ال/, '');
+  for (const r of list) {
+    out.title ||= r.title || ''; out.subtitle ||= r.subtitle || ''; out.opening_dua ||= r.opening_dua || '';
+    for (const sec of r.sections || []) {
+      const same = out.sections.find(x => nk(x.heading) === nk(sec.heading));
+      if (same) same.blocks.push(...(sec.blocks || [])); else out.sections.push({ heading: sec.heading || '', blocks: sec.blocks || [] });
+    }
+    for (const m of r.mindmap || []) {
+      const same = out.mindmap.find(x => nk(x.center) === nk(m.center));
+      if (same) same.branches.push(...(m.branches || [])); else out.mindmap.push({ center: m.center || '', branches: m.branches || [] });
+    }
+    out.mnemonics.push(...(r.mnemonics || []));
+    const a = r.appendix || {};
+    for (const k of ['rules', 'poems', 'vocab', 'questions']) out.appendix[k].push(...(a[k] || []).filter(x => x && (typeof x === 'string' ? x : (x.term || x.text))));
+    if (a.admin) out.appendix.admin = [out.appendix.admin, a.admin].filter(Boolean).join(' · ');
+    out.closing_duas.push(...(r.closing_duas || []));
+    out.mawaiz.push(...(r.mawaiz || []));
+    for (const k of Object.keys(out.report)) out.report[k].push(...(r.report?.[k] || []));
+  }
+  // a map with too many branches is split into several aspects of 4
+  out.mindmap = out.mindmap.flatMap(m => {
+    const br = m.branches.filter(b => b && b.label);
+    if (br.length <= 6) return [{ ...m, branches: br }];
+    const parts = []; for (let i = 0; i < br.length; i += 4) parts.push({ center: m.center, branches: br.slice(i, i + 4) });
+    return parts;
+  });
+  return out;
+}
+
+async function writeOnPhone({ text, unit, sub, src }, onStatus) {
+  const parts = splitText(text);
+  const results = []; let cut = false;
+  for (let i = 0; i < parts.length; i++) {
+    const t0 = Date.now();
+    const pre = parts.length > 1 ? `الجزء ${ar(i + 1)} من ${ar(parts.length)}: ` : '';
+    const before = results.flatMap(r => (r.sections || []).map(s => s.heading)).filter(Boolean);
+    const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}
+الدرس: ${unit}
+نوع النص: ${src.name}${parts.length > 1 ? `\nهذا الجزء ${i + 1} من ${parts.length} من الدرس نفسه.` : ''}${before.length ? '\nأقسام كُتبت من الأجزاء السابقة (لا تكررها، وإن أكملت أحدها فاستعمل العنوان نفسه): ' + before.join('، ') : ''}
+
+${src.ask}
+
+<<<النص
+${parts[i]}
+النص>>>`;
+    const r = await window.LocalAI.generate({
+      size: phoneSize(), system: window.JUND_METHOD_SMALL, user, signal: controller.signal,
+      onProgress: p => onStatus(pre + progressText(p)),
+      onText: t => { const s = Math.floor((Date.now() - t0) / 1000); onStatus(`${pre}يكتب على جوالك… ${ar(t.split(/\s+/).length)} كلمة — ${ar(Math.floor(s / 60))}:${ar(String(s % 60).padStart(2, '0'))}`); },
+    });
+    if (r.stop === 'max_tokens') cut = true;
+    try { results.push(parseJSON(r.text)); }
+    catch { results.push({ report: { maybe_wrong: [`تعذّرت قراءة الجزء ${ar(i + 1)}؛ أعد صنعه إن كان ناقصًا.`] } }); }
+  }
+  return { notes: mergeParts(results), cut };
+}
+
 /* ---------- making notes ---------- */
 let current = null;   // the open lesson
 let controller = null;
@@ -372,8 +492,14 @@ const SOURCE_TEXT = {
 
 async function makeOne({ text, unit, sub, kind }, onStatus) {
   const src = SOURCE_TEXT[kind] || SOURCE_TEXT.transcript;
-  const t0 = Date.now();
-  const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}${sub.place ? ' — ' + sub.place : ''}
+  let notes, note;
+  if (engineKind() === 'phone') {
+    const r = await writeOnPhone({ text, unit, sub, src }, onStatus);
+    notes = r.notes;
+    note = 'جاهز. كُتب على جوالك مجانًا.' + (r.cut ? '\n⚠ جزء طال أكثر من اللازم فقد يكون آخره ناقصًا.' : '');
+  } else {
+    const t0 = Date.now();
+    const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}${sub.place ? ' — ' + sub.place : ''}
 الدرس / الوحدة: ${unit}
 نوع المدخل: ${src.name}
 
@@ -382,22 +508,26 @@ ${src.ask}
 <<<${src.name}
 ${text}
 ${src.name}>>>`;
-  const r = await callClaude({
-    system: window.JUND_METHOD,
-    messages: [{ role: 'user', content: user }],
-    signal: controller.signal,
-    onText: t => {
-      const mins = Math.floor((Date.now() - t0) / 60000);
-      onStatus(`يكتب الآن… ${ar(t.split(/\s+/).length)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`);
-    },
-  });
-  onStatus('يرتّب الصفحات…');
-  const notes = await getJSON(r.text, controller.signal);
+    const r = await callClaude({
+      system: window.JUND_METHOD,
+      messages: [{ role: 'user', content: user }],
+      signal: controller.signal,
+      onText: t => {
+        const mins = Math.floor((Date.now() - t0) / 60000);
+        onStatus(`يكتب الآن… ${ar(t.split(/\s+/).length)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`);
+      },
+    });
+    onStatus('يرتّب الصفحات…');
+    notes = await getJSON(r.text, controller.signal);
+    note = `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '');
+  }
+  onStatus('يطابق الآيات على المصحف…');
+  try { await window.Mushaf.check(notes); } catch {}
   const lesson = {
     id: 'L' + Date.now() + Math.random().toString(36).slice(2, 6),
     subject: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' },
-    unit, kind, date: new Date().toISOString(), transcript: text, notes,
-    chat: [{ who: 'ai', text: `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '') }],
+    unit, kind, engine: engineKind(), date: new Date().toISOString(), transcript: text, notes,
+    chat: [{ who: 'ai', text: note }],
   };
   await saveLesson(lesson);
   return lesson;
@@ -405,7 +535,11 @@ ${src.name}>>>`;
 
 $('#make').onclick = async () => {
   const err = $('#new-error'); err.hidden = true;
-  if (!store.get('key')) { show('settings'); $('#key-status').textContent = 'ضع مفتاحك هنا أولًا ثم اضغط حفظ.'; return; }
+  if (engineKind() === 'claude' && !store.get('key')) { show('settings'); $('#key-status').textContent = 'ضع مفتاحك هنا أولًا ثم اضغط حفظ.'; return; }
+  if (engineKind() === 'phone') {
+    const sup = await window.LocalAI.support();
+    if (!sup.ok) { err.textContent = sup.why; err.hidden = false; return; }
+  }
   const sub = subjectInfo();
   const kind = $('#kind').value;
   const jobs = pending.length ? pending : [{ text: $('#transcript').value.trim(), unit: $('#unit').value.trim() }];
@@ -786,6 +920,44 @@ $('#save-pdf').onclick = () => {
 };
 
 /* ---------- chat: edits and questions ---------- */
+// On the phone the AI sees only the sections it needs, so even long lessons fit.
+async function editOnPhone(ask) {
+  const secs = current.notes.sections || [];
+  const words = norm(ask).split(' ').filter(w => w.length > 2);
+  let pick = secs.map((s, i) => i).filter(i => words.some(w => norm(secs[i].heading).includes(w)));
+  const sizeOf = list => JSON.stringify(list.map(i => secs[i])).length;
+  if (!pick.length) pick = secs.map((s, i) => i);
+  while (pick.length > 1 && sizeOf(pick) > 9000) pick.pop();
+  const user = `المادة: ${current.subject.name} — ${current.unit}
+كل عناوين الأقسام: ${secs.map((s, i) => i + '. ' + s.heading).join(' | ')}
+
+الأقسام المرسلة للتعديل:
+${JSON.stringify(pick.map(i => ({ i, heading: secs[i].heading, blocks: secs[i].blocks })))}
+
+طلب الطالب: ${ask}`;
+  const r = await window.LocalAI.generate({
+    size: phoneSize(), system: window.JUND_EDIT_SMALL + '\n\nأنواع الكتل كما في هذا الدليل:\n' + window.JUND_METHOD_SMALL.split('أنواع الكتل في blocks:')[1].split('أعد هذا الشكل فقط:')[0],
+    user, maxTokens: 3000,
+    onProgress: p => { $('#chat-progress-text').textContent = progressText(p); },
+    onText: t => { $('#chat-progress-text').textContent = `يعدّل على جوالك… ${ar(t.split(/\s+/).length)} كلمة`; },
+  });
+  let out; try { out = parseJSON(r.text); } catch { throw new Error('وصل الرد غير مرتب. أعد الطلب بكلمات أوضح.'); }
+  if (!out.no_change && Array.isArray(out.changed)) {
+    for (const c of out.changed) {
+      if (c.i >= 0 && c.i < secs.length) {
+        if (Array.isArray(c.blocks) && !c.blocks.length) secs[c.i] = null;
+        else secs[c.i] = { heading: c.heading || secs[c.i].heading, blocks: c.blocks || secs[c.i].blocks };
+      } else if (c.blocks?.length) secs.push({ heading: c.heading || '', blocks: c.blocks });
+    }
+    current.notes.sections = secs.filter(Boolean);
+    try { await window.Mushaf.check(current.notes); } catch {}
+  }
+  current.chat.push({ who: 'ai', text: out.reply || (out.no_change ? 'تم.' : 'عدّلته.') });
+  await saveLesson(current);
+  await openLesson(current);
+  $('.chat').scrollIntoView({ block: 'end' });
+}
+
 function renderChat() {
   $('#chat-log').innerHTML = (current.chat || []).map(m => `<div class="msg ${m.who}">${esc(m.text)}</div>`).join('');
 }
@@ -797,6 +969,12 @@ $('#chat-send').onclick = async () => {
   $('#chat-send').disabled = true; $('#chat-progress').hidden = false;
   $('#chat-progress-text').textContent = 'جارٍ العمل…';
   const lock = await keepAwake();
+  if (engineKind() === 'phone') {
+    try { await editOnPhone(ask); }
+    catch (e) { current.chat.push({ who: 'ai', text: '✗ ' + e.message }); renderChat(); }
+    finally { lock?.release?.(); $('#chat-send').disabled = false; $('#chat-progress').hidden = true; }
+    return;
+  }
   try {
     const history = current.chat.slice(-9, -1).map(m => (m.who === 'me' ? 'الطالب: ' : 'أنت: ') + m.text).join('\n');
     const user = `المادة: ${current.subject.name} — ${current.unit}
