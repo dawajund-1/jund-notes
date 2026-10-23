@@ -354,9 +354,31 @@ async function callClaude({ system, messages, maxTokens = 32000, model, onText, 
 }
 
 function parseJSON(text) {
-  const a = text.indexOf('{'), b = text.lastIndexOf('}');
-  if (a < 0 || b <= a) throw new Error('no json');
-  return JSON.parse(text.slice(a, b + 1));
+  let t = String(text || '').replace(/```(?:json)?/gi, '').replace(/<think>[\s\S]*?<\/think>/g, '');
+  const a = t.indexOf('{');
+  if (a < 0) throw new Error('no json');
+  t = t.slice(a);
+  try { return JSON.parse(t.slice(0, t.lastIndexOf('}') + 1)); } catch {}
+  return JSON.parse(repairJSON(t));
+}
+// close what a cut-off or slightly broken answer left open
+function repairJSON(t) {
+  let out = '', stack = [], inStr = false, esc = false;
+  for (const ch of t) {
+    if (inStr) {
+      if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false;
+      else if (ch === '\n') { out += '\\n'; continue; }
+      out += ch; continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') { if (stack.at(-1) === ch) stack.pop(); else continue; }
+    out += ch;
+  }
+  if (inStr) out += '"';
+  out = out.replace(/[,:\s]+$/, '').replace(/,\s*([}\]])/g, '$1');
+  out = out.replace(/"[^"]*"\s*$/, m => /[{,]\s*"[^"]*"\s*$/.test(out) ? '' : m).replace(/[,\s]+$/, '');
+  return out + stack.reverse().join('');
 }
 async function getJSON(text, signal) {
   try { return parseJSON(text); }

@@ -7,7 +7,7 @@ const MODELS = {
 };
 const CONTEXT = 12288;
 
-let lib = null, engine = null, loadedId = null, loading = null;
+let lib = null, engine = null, loadedId = null, loading = null, grammarOk = true;
 
 async function support() {
   if (!('gpu' in navigator)) return { ok: false, why: 'هذا المتصفح لا يدعم تشغيل الذكاء على الجوال. افتح التطبيق في Chrome محدّث.' };
@@ -56,17 +56,26 @@ async function generate({ size, system, user, maxTokens = 3500, onText, onProgre
   const stopper = () => { try { eng.interruptGenerate(); } catch {} };
   signal?.addEventListener('abort', stopper, { once: true });
   let text = '', stop = '';
-  try {
+  const run = async (fmt) => {
+    text = ''; stop = '';
     const chunks = await eng.chat.completions.create({
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       stream: true, temperature: 0.3, top_p: 0.9, max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
+      ...(fmt ? { response_format: fmt } : {}),
       extra_body: { enable_thinking: false },
     });
     for await (const c of chunks) {
       const d = c.choices?.[0]?.delta?.content || '';
       if (d) { text += d; onText?.(text); }
       stop = c.choices?.[0]?.finish_reason || stop;
+    }
+  };
+  try {
+    // the JSON rule needs a schema given as text; any object is allowed
+    try { await run(grammarOk ? { type: 'json_object', schema: '{"type":"object"}' } : null); }
+    catch (e) {
+      if (!/Grammar|xgrammar|schema|std::string/i.test(String(e?.message || e))) throw e;
+      grammarOk = false; await run(null);   // this phone cannot use the JSON rule: write freely, the app repairs it
     }
   } finally { signal?.removeEventListener('abort', stopper); }
   if (signal?.aborted) { const e = new Error('أُوقف'); e.name = 'AbortError'; throw e; }
