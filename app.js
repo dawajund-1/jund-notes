@@ -1420,7 +1420,14 @@ fillSubjects();
 initSettings();
 receiveShared();
 show('new');
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+const APP_VERSION = '1.8';
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  // when a new version takes over, reload once so every file is the new one
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded && !controller) { reloaded = true; location.reload(); } });
+}
+{ const v = document.createElement('p'); v.className = 'muted'; v.style.fontSize = '.8rem'; v.textContent = 'الإصدار ' + APP_VERSION; $('#screen-settings').appendChild(v); }
 
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, pending: () => pending };

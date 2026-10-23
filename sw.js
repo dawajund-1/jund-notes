@@ -1,5 +1,5 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v7';
+const CACHE = 'jn-app-v8';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
 
 self.addEventListener('install', e => {
@@ -32,7 +32,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Network first so updates arrive; cache when offline
   e.respondWith(
-    fetch(e.request).then(r => {
+    fetch(e.request, { cache: 'no-cache' }).then(r => {
       const copy = r.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
       return r;
