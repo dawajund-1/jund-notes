@@ -1,6 +1,6 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v4';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js'];
+const CACHE = 'jn-app-v5';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -17,7 +17,10 @@ self.addEventListener('fetch', e => {
       const form = await e.request.formData();
       let text = form.get('text') || '';
       const file = form.get('file');
-      if (file && typeof file.text === 'function') text = (await file.text()) || text;
+      const c0 = await caches.open('jn-share');
+      if (file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || ''))) {
+        await c0.put('shared-file', new Response(file, { headers: { 'content-type': 'application/pdf', 'x-name': encodeURIComponent(file.name || 'ملف.pdf') } }));
+      } else if (file && typeof file.text === 'function') text = (await file.text()) || text;
       const title = form.get('title') || (file && file.name ? file.name.replace(/\.[^.]+$/, '') : '');
       const c = await caches.open('jn-share');
       await c.put('shared-text', new Response(text));

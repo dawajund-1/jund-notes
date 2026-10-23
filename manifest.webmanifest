@@ -19,7 +19,7 @@
     "params": {
       "title": "title",
       "text": "text",
-      "files": [{ "name": "file", "accept": ["text/plain", ".txt"] }]
+      "files": [{ "name": "file", "accept": ["text/plain", ".txt", "application/pdf", ".pdf"] }]
     }
   }
 }

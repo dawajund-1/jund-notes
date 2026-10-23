@@ -458,25 +458,137 @@ $('#transcript').addEventListener('input', countWords);
 
 // several files at once: each becomes its own lesson
 let pending = [];
+const pdfSlice = p => p.pages.slice(p.from - 1, p.to).join('\n\n').trim();
 function renderPending() {
   const box = $('#pending');
   box.hidden = !pending.length;
   $('#transcript').disabled = pending.length > 0;
   $('#unit-wrap').hidden = pending.length > 1;
-  box.innerHTML = pending.length ? `<b>${pending.length > 1 ? 'سيُصنع ' + ar(pending.length) + ' دروس، كل درس في ملف وحده:' : 'الملف المختار:'}</b>
-    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${ar(p.text.split(/\s+/).length)} كلمة)</small>${p.status ? ' — ' + p.status : ''}</li>`).join('')}</ol>
+  const one = pending.length === 1 ? pending[0] : null;
+  box.innerHTML = pending.length ? `<b>${pending.length > 1 ? 'سيُصنع ' + ar(pending.length) + ' دروس، كل ملف في ملف وحده:' : 'الملف المختار:'}</b>
+    <ol>${pending.map(p => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' صفحة، ' : ''}${ar(p.text.split(/\s+/).filter(Boolean).length)} كلمة)</small>${p.status ? ' — ' + p.status : ''}</li>`).join('')}</ol>
+    ${one?.pages && !one.bad ? `<div class="row-gap" style="align-items:center">
+      <span>الصفحات: من</span><input id="pg-from" type="number" min="1" max="${one.pages.length}" value="${one.from}" style="width:5.5em">
+      <span>إلى</span><input id="pg-to" type="number" min="1" max="${one.pages.length}" value="${one.to}" style="width:5.5em">
+    </div><small class="muted" id="pg-warn" ${one.to - one.from + 1 > 20 ? '' : 'hidden'}>⚠ صفحات كثيرة تأخذ وقتًا طويلًا على الجوال؛ الأفضل ١٠–٢٠ صفحة في المرة.</small>` : ''}
     <button type="button" class="ghost" id="clear-pending">إلغاء الملفات</button>` : '';
   const c = $('#clear-pending'); if (c) c.onclick = () => { pending = []; renderPending(); };
+  const f = $('#pg-from'), t = $('#pg-to');
+  if (f && t) {
+    const upd = () => {
+      const n = one.pages.length;
+      one.from = Math.min(Math.max(1, parseInt(f.value) || 1), n);
+      one.to = Math.min(Math.max(one.from, parseInt(t.value) || n), n);
+      one.text = pdfSlice(one);
+      one.unit = one.baseUnit + (one.from === 1 && one.to === n ? '' : ` (ص ${ar(one.from)}–${ar(one.to)})`);
+      const li = $('#pending li'); // update the line only, so typing is not interrupted
+      if (li) li.innerHTML = `${esc(one.unit)} <small class="muted">(${ar(one.to - one.from + 1)} من ${ar(n)} صفحة، ${ar(one.text.split(/\s+/).filter(Boolean).length)} كلمة)</small>`;
+      const w = $('#pg-warn'); if (w) w.hidden = one.to - one.from + 1 <= 20;
+    };
+    f.oninput = upd; t.oninput = upd; f.onchange = upd; t.onchange = upd;
+  }
+}
+
+/* reading PDFs (text PDFs; scanned books with no text layer are detected and explained) */
+let pdfLib = null;
+async function readPdf(file) {
+  pdfLib ??= await import('./vendor/pdfjs/pdf.min.mjs');
+  pdfLib.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.mjs', location.href).href;
+  const doc = await pdfLib.getDocument({ data: await file.arrayBuffer(), cMapUrl: new URL('vendor/pdfjs/cmaps/', location.href).href, cMapPacked: true }).promise;
+  const pages = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const W = page.getViewport({ scale: 1 }).width;
+    const tc = await page.getTextContent();
+    // 1. pieces → lines (same height)
+    const lines = [];
+    for (const it of tc.items) {
+      if (!it.str) continue;
+      const y = it.transform[5], x = it.transform[4], w = it.width || 0, h = it.height || Math.abs(it.transform[3]) || 10;
+      let line = lines.find(l => Math.abs(l.y - y) < Math.max(2, h * 0.45));
+      if (!line) lines.push(line = { y, h, parts: [] });
+      line.parts.push({ x0: x, x1: x + w, s: it.str });
+    }
+    // 2. each line → segments split at wide gaps (columns), words joined by real gaps only
+    const segs = [];
+    for (const l of lines) {
+      const all = l.parts.map(p => p.s).join('');
+      const rtl = (all.match(/[؀-ۿ]/g) || []).length >= (all.match(/[A-Za-z]/g) || []).length;
+      l.parts.sort((a, b) => a.x0 - b.x0);
+      let cur = null;
+      for (const p of l.parts) {
+        if (cur && p.x0 - cur.x1 > W * 0.035) { segs.push(cur); cur = null; }
+        if (!cur) cur = { y: l.y, x0: p.x0, x1: p.x1, items: [] };
+        cur.items.push(p); cur.x1 = Math.max(cur.x1, p.x1);
+      }
+      if (cur) segs.push(cur);
+      for (const sg of segs.filter(z => !z.done)) {
+        sg.done = true;
+        const items = rtl ? [...sg.items].sort((a, b) => b.x0 - a.x0) : sg.items;
+        let txt = '';
+        for (let k = 0; k < items.length; k++) {
+          const p = items[k], q = items[k - 1];
+          if (q) { const gap = rtl ? q.x0 - p.x1 : p.x0 - q.x1; if (gap > l.h * 0.18 && !/\s$/.test(txt) && !/^\s/.test(p.s)) txt += ' '; }
+          txt += p.s;
+        }
+        txt = txt.replace(/\s+/g, ' ').replace(/\s+([\u064B-\u0652\u0670])/g, '$1').trim();
+        sg.rtl = rtl;
+        sg.text = txt;
+      }
+    }
+    // brackets often come out mirrored from Arabic PDFs: decide once per page, then fix every Arabic line
+    const joined = segs.filter(z => z.rtl).map(z => z.text).join(' ');
+    const firstOf = (t, a, b) => { const i = t.indexOf(a), j = t.indexOf(b); return i >= 0 && (j < 0 || i < j); };
+    const mirrored = firstOf(joined, '»', '«') || (!/[«»]/.test(joined) && firstOf(joined, ')', '('));
+    if (mirrored) for (const z of segs) if (z.rtl) z.text = z.text.replace(/[«»()]/g, c => ({ '«': '»', '»': '«', '(': ')', ')': '(' }[c]));
+    for (const z of segs) z.text = (z.text || '').replace(/ملسو هيلع هللا ىلص/g, 'ﷺ');
+    // 3. two columns? read the right column fully, then the left (Arabic order)
+    const mid = W / 2;
+    const left = segs.filter(z => z.x1 < mid + W * 0.02), right = segs.filter(z => z.x0 > mid - W * 0.02);
+    const twoCol = left.length > 3 && right.length > 3 && left.length + right.length >= segs.length * 0.8;
+    const order = (list) => list.sort((a, b) => b.y - a.y || b.x0 - a.x0).map(z => z.text).filter(Boolean).join('\n');
+    let text;
+    if (twoCol) {
+      const spans = segs.filter(z => !left.includes(z) && !right.includes(z));
+      text = [order(spans.filter(z => z.y > Math.max(...right.map(r => r.y), ...left.map(r => r.y)))), order(right), order(left),
+        order(spans.filter(z => z.y <= Math.max(...right.map(r => r.y), ...left.map(r => r.y))))].filter(Boolean).join('\n');
+    } else text = order(segs);
+    pages.push(text.normalize('NFKC'));
+  }
+  return pages;
+}
+
+async function addFiles(files) {
+  pending = [];
+  const box = $('#pending'); box.hidden = false; box.textContent = 'جارٍ قراءة الملفات…';
+  let sawPdf = false;
+  for (const f of files.sort((a, b) => a.name.localeCompare(b.name, 'ar', { numeric: true }))) {
+    const unit = f.name.replace(/\.[^.]+$/, '');
+    const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    if (!isPdf) { pending.push({ text: (await f.text()).trim(), unit }); continue; }
+    sawPdf = true;
+    try {
+      const pages = await readPdf(f);
+      const chars = pages.join('').replace(/\s/g, '').length;
+      const item = { pages, from: 1, to: pages.length, baseUnit: unit, unit };
+      item.text = pdfSlice(item);
+      if (chars < pages.length * 40) {
+        item.bad = true; item.text = '';
+        item.status = '✗ هذا ملف مصوّر (صور بلا نص مكتوب)، فلا أستطيع قراءته بعد. أرسل ملف PDF نصيًا أو انسخ النص والصقه.';
+      }
+      pending.push(item);
+    } catch {
+      pending.push({ text: '', unit, bad: true, status: '✗ تعذّر فتح هذا الملف. قد يكون محميًا بكلمة مرور أو تالفًا.' });
+    }
+  }
+  if (pending.length === 1 && $('#unit').value) pending[0].unit = pending[0].baseUnit = $('#unit').value;
+  if (sawPdf && $('#kind').value === 'transcript') $('#kind').value = 'book';
+  renderPending();
 }
 $('#file').addEventListener('change', async e => {
   const files = Array.from(e.target.files || []);
-  pending = [];
-  for (const f of files.sort((a, b) => a.name.localeCompare(b.name, 'ar', { numeric: true }))) {
-    pending.push({ text: (await f.text()).trim(), unit: f.name.replace(/\.[^.]+$/, '') });
-  }
-  if (pending.length === 1 && $('#unit').value) pending[0].unit = $('#unit').value;
   e.target.value = '';
-  renderPending();
+  if (files.length) await addFiles(files);
 });
 
 async function keepAwake() {
@@ -545,7 +657,8 @@ $('#make').onclick = async () => {
   const jobs = pending.length ? pending : [{ text: $('#transcript').value.trim(), unit: $('#unit').value.trim() }];
   if (jobs.length === 1 && pending.length === 1 && $('#unit').value.trim()) jobs[0].unit = $('#unit').value.trim();
   for (const j of jobs) j.unit ||= 'درس بتاريخ ' + new Date().toLocaleDateString('ar-SA');
-  if (jobs.some(j => j.text.length < 200)) { err.textContent = 'النص قصير جدًا. الصق النص كاملًا.'; err.hidden = false; return; }
+  if (jobs.some(j => j.bad)) { err.textContent = 'في الملفات ملف لا يُقرأ (انظر ✗ فوق). احذفه بزر «إلغاء الملفات» أو اختر غيره.'; err.hidden = false; return; }
+  if (jobs.some(j => j.text.length < 200)) { err.textContent = 'النص قصير جدًا. الصق النص كاملًا أو اختر صفحات أكثر.'; err.hidden = false; return; }
   $('#make').disabled = true; $('#progress').hidden = false;
   controller = new AbortController();
   const lock = await keepAwake();
@@ -1176,6 +1289,12 @@ async function receiveShared() {
       const c = await caches.open('jn-share');
       const r = await c.match('shared-text');
       if (r) { text = await r.text(); await c.delete('shared-text'); }
+      const fr = await c.match('shared-file');
+      if (fr) {
+        const name = decodeURIComponent(fr.headers.get('x-name') || 'ملف.pdf');
+        const blob = await fr.blob(); await c.delete('shared-file');
+        await addFiles([new File([blob], name, { type: blob.type || 'application/pdf' })]);
+      }
       const t = await c.match('shared-title');
       if (t) { if (!$('#unit').value) $('#unit').value = await t.text(); await c.delete('shared-title'); }
     } catch {}
@@ -1195,5 +1314,5 @@ show('new');
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 // for testing only
-window.__jn = { openLesson, paginateNotes, idb, makeBook };
+window.__jn = { openLesson, paginateNotes, idb, makeBook, pending: () => pending };
 })();
