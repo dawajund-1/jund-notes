@@ -2,12 +2,16 @@
 (() => {
 'use strict';
 const MODELS = {
+  light:  { id: 'Qwen3.5-2B-q4f16_1-MLC', f32: 'Qwen3.5-2B-q4f32_1-MLC', name: 'خفيف', size: 'نحو ١٫٥ جيجا' },
   fast:   { id: 'Qwen3.5-4B-q4f16_1-MLC', f32: 'Qwen3.5-4B-q4f32_1-MLC', name: 'سريع', size: 'نحو ٢٫٥ جيجا' },
   strong: { id: 'Qwen3.5-9B-q4f16_1-MLC', f32: 'Qwen3.5-9B-q4f32_1-MLC', name: 'أقوى', size: 'نحو ٥ جيجا' },
 };
-const CONTEXT = 12288;
+// memory the AI may use: a normal setting, and a lighter one used after the phone's graphics chip gives up once
+const CONTEXTS = [8192, 6144];
+let lite = false;
+try { lite = localStorage.getItem('jn_aiLite') === '1'; } catch {}
 
-let lib = null, engine = null, loadedId = null, loading = null, grammarOk = true;
+let lib = null, engine = null, worker = null, loadedId = null, loading = null, grammarOk = true;
 
 async function support() {
   if (!('gpu' in navigator)) return { ok: false, why: 'هذا المتصفح لا يدعم تشغيل الذكاء على الجوال. افتح التطبيق في Chrome محدّث.' };
@@ -39,19 +43,41 @@ async function load(size, onProgress) {
   loading = (async () => {
     lib ??= await import('./vendor/web-llm.js');
     try { await navigator.storage?.persist?.(); } catch {}
-    if (engine) { try { await engine.unload(); } catch {} engine = null; }
-    const worker = new Worker(new URL('./ai-worker.js', location.href), { type: 'module' });
+    await reset();
+    worker = new Worker(new URL('./ai-worker.js', location.href), { type: 'module' });
     engine = await lib.CreateWebWorkerMLCEngine(worker, id, {
       initProgressCallback: p => onProgress?.(p),
-    }, { context_window_size: CONTEXT });
+    }, { context_window_size: CONTEXTS[lite ? 1 : 0] });
     loadedId = id;
     return engine;
   })();
   try { return await loading; } finally { loading = null; }
 }
 
+async function reset() {
+  if (engine) { try { await engine.unload(); } catch {} }
+  if (worker) { try { worker.terminate(); } catch {} }
+  engine = null; worker = null; loadedId = null;
+}
+const gpuTrouble = e => /GPU|mapAsync|device (was )?lost|Buffer was|out of memory|OOM|DXGI|instance reference|disposed/i.test(String(e?.message || e) + ' ' + (e?.name || ''));
+
 // Same shape as the Claude call: returns { text, stop }.
-async function generate({ size, system, user, maxTokens = 3500, onText, onProgress, signal }) {
+// If the phone's graphics chip drops the work (low memory, screen off), start the AI again once, lighter.
+async function generate(opts) {
+  try { return await generateOnce(opts); }
+  catch (e) {
+    if (opts.signal?.aborted || !gpuTrouble(e)) throw e;
+    opts.onProgress?.({ progress: 0, text: 'restart' });
+    lite = true; try { localStorage.setItem('jn_aiLite', '1'); } catch {}
+    await reset();
+    try { return await generateOnce(opts); }
+    catch (e2) {
+      if (gpuTrouble(e2)) { const x = new Error('GPU: ذاكرة الجوال لم تكفِ أو انطفأت الشاشة أثناء الكتابة.'); x.gpu = true; throw x; }
+      throw e2;
+    }
+  }
+}
+async function generateOnce({ size, system, user, maxTokens = 2500, onText, onProgress, signal }) {
   const eng = await load(size, onProgress);
   const stopper = () => { try { eng.interruptGenerate(); } catch {} };
   signal?.addEventListener('abort', stopper, { once: true });
@@ -89,5 +115,5 @@ async function remove(size) {
   await lib.deleteModelAllInfoInCache(id);
 }
 
-window.LocalAI = { MODELS, support, isDownloaded, load, generate, remove };
+window.LocalAI = { MODELS, support, isDownloaded, load, generate, remove, reset, isLite: () => lite };
 })();

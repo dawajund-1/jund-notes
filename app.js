@@ -400,11 +400,11 @@ function setBar(wrapSel, barSel, frac) {
 }
 function errText(e) {
   if (!e) return 'حدث خطأ غير معروف.';
-  if (e.name === 'AbortError') return 'أُوقف.';
+  if (e.name === 'AbortError' && !/GPU|mapAsync|Buffer/i.test(e.message || '')) return 'أُوقف.';
   let raw = (e.message || (typeof e === 'string' ? e : '') || e.name || '').toString();
   if (!raw) { try { raw = JSON.stringify(e); } catch { raw = String(e); } if (raw === '{}' || raw === '[object Object]') raw = ''; }
   if (e.message === 'no json' || e instanceof SyntaxError) return 'وصل الرد ناقصًا أو غير مرتب. حاول مرة ثانية.';
-  if (/out of memory|OOM|allocate|device (was )?lost|DXGI|GPUDevice/i.test(raw)) return 'ذاكرة الجوال لم تكفِ للذكاء الآن. أغلق التطبيقات الأخرى، أو اختر الحجم «سريع»، ثم حاول.\n(' + raw.slice(0, 160) + ')';
+  if (/out of memory|OOM|allocate|device (was )?lost|DXGI|GPUDevice|GPU|mapAsync|Buffer was/i.test(raw)) return 'توقف الذكاء على الجوال: إما أن الذاكرة لم تكفِ، أو انطفأت الشاشة أو خرجت من التطبيق أثناء الكتابة.\nأغلق التطبيقات الأخرى، وأبقِ الشاشة مضاءة والتطبيق أمامك، واختر صفحات أقل، ثم حاول.\n(' + raw.slice(0, 120) + ')';
   if (/quota|storage|space/i.test(raw)) return 'لا توجد مساحة كافية على الجوال لتنزيل الذكاء. فرّغ مساحة ثم حاول.\n(' + raw.slice(0, 160) + ')';
   if (/fetch|network|Failed to fetch|NetworkError|load failed/i.test(raw)) return 'انقطع الإنترنت أثناء تنزيل الذكاء. اتصل بالواي فاي ثم حاول؛ يكمل من حيث توقف.\n(' + raw.slice(0, 160) + ')';
   return raw ? 'حدث خطأ: ' + raw.slice(0, 300) : 'حدث خطأ غير معروف. أرسل لي صورة من هذه الرسالة.';
@@ -414,6 +414,7 @@ function errText(e) {
 const engineKind = () => store.get('engine', 'phone');          // 'phone' (free, on this phone) or 'claude' (own key)
 const phoneSize = () => store.get('phoneSize', 'fast');
 function progressText(p) {
+  if (p.text === 'restart') return 'يعيد تشغيل الذكاء بإعداد أخف…';
   const pct = Math.round((p.progress || 0) * 100);
   return /fetch|download|param|cache/i.test(p.text || '') && pct < 100
     ? `يُنزّل الذكاء إلى جوالك (مرة واحدة فقط)… ${ar(pct)}٪`
@@ -421,7 +422,7 @@ function progressText(p) {
 }
 
 // cut a long text into parts the phone AI can read at once, on sentence ends
-function splitText(text, maxWords = 1100) {
+function splitText(text, maxWords = (window.LocalAI?.isLite?.() ? 450 : 650)) {
   const units = text.split(/(?<=[.؟!؛\n])\s+/);
   const parts = []; let cur = [], n = 0;
   for (const u of units) {
@@ -506,7 +507,7 @@ ${parts[i]}
         },
       });
     } catch (e) {
-      if (e.name === 'AbortError' || !results.length) throw e;
+      if (controller.signal.aborted || !results.length) throw e;
       partial = `⚠ توقف عند الجزء ${ar(i + 1)} من ${ar(parts.length)} (${errText(e).split('\n')[0]}). حُفظ ما اكتمل؛ اصنع الصفحات الباقية وحدها.`;
       break;
     }
@@ -781,7 +782,7 @@ $('#make').onclick = async () => {
         last = await makeOne({ ...jobs[i], sub, kind }, status);
         jobs[i].status = '✓ جاهز';
       } catch (e) {
-        if (e.name === 'AbortError') throw e;
+        if (controller?.signal.aborted) throw e;
         failed++; jobs[i].status = '✗ ' + errText(e);
         if (jobs.length === 1) throw e;
       }
@@ -792,7 +793,7 @@ $('#make').onclick = async () => {
     if (jobs.length > 1 && !failed) show('library');
     else if (last && !failed) await openLesson(last);
   } catch (e) {
-    err.textContent = e?.name === 'AbortError' ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : errText(e);
+    err.textContent = controller?.signal.aborted ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : errText(e);
     err.hidden = false;
   } finally {
     lock?.release?.(); controller = null;
@@ -1420,7 +1421,7 @@ fillSubjects();
 initSettings();
 receiveShared();
 show('new');
-const APP_VERSION = '1.8';
+const APP_VERSION = '1.9';
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
   // when a new version takes over, reload once so every file is the new one
