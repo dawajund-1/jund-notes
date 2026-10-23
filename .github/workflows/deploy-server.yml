@@ -1,0 +1,51 @@
+name: Deploy the app's server
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/deploy-server.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: deploy-server
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Are the keys in place?
+        id: chk
+        env:
+          A: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          B: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          C: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "Keys not added yet; skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Deploy to Cloudflare
+        if: steps.chk.outputs.ok == 'true'
+        id: wr
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: server
+          secrets: |
+            GEMINI_API_KEY
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Tell the app where its server is
+        if: steps.chk.outputs.ok == 'true'
+        run: |
+          URL="${{ steps.wr.outputs.deployment-url }}"
+          if [ -z "$URL" ]; then URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' <<< "${{ steps.wr.outputs.command-output }}" | head -1); fi
+          echo "Server: $URL"
+          test -n "$URL"
+          printf '{"url":"%s"}\n' "$URL" > server.json
+          if ! git diff --quiet -- server.json 2>/dev/null || [ -z "$(git ls-files server.json)" ]; then
+            git config user.name "jund-notes bot"; git config user.email "actions@github.com"
+            git add server.json && git commit -m "Server address" && git push
+          fi
+      - name: Check the server answers
+        if: steps.chk.outputs.ok == 'true'
+        run: |
+          URL=$(sed -E 's/.*"url":"([^"]+)".*/\1/' server.json)
+          for i in 1 2 3 4 5 6; do curl -fsS "$URL/" && exit 0; sleep 5; done; exit 1

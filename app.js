@@ -182,7 +182,7 @@ function show(name) {
   for (const s of ['new', 'result', 'library', 'settings']) $('#screen-' + s).hidden = s !== name;
   if (name === 'library') renderLibrary();
   if (name === 'settings') { renderPaletteSettings(); renderSpend(); window.__syncEngine?.(); }
-  if (name === 'new') $('#key-missing').hidden = engineKind() === 'phone' || !!store.get('key');
+  if (name === 'new') $('#key-missing').hidden = engineKind() !== 'claude' || !!store.get('key');
   if (name === 'result') requestAnimationFrame(fitPages);
   window.scrollTo(0, 0);
 }
@@ -208,7 +208,7 @@ function initSettings() {
   const syncEngine = async () => {
     const phone = engineKind() === 'phone';
     $('#engine').value = engineKind(); $('#phone-size').value = phoneSize();
-    $('#phone-box').hidden = !phone; $('#claude-box').hidden = phone;
+    $('#phone-box').hidden = !phone; $('#claude-box').hidden = engineKind() !== 'claude';
     if (phone) {
       const sup = await window.LocalAI.support();
       if (!sup.ok) { $('#phone-status').textContent = '✗ ' + sup.why; return; }
@@ -218,7 +218,7 @@ function initSettings() {
       $('#phone-download').hidden = have; $('#phone-remove').hidden = !have;
     }
   };
-  $('#engine').onchange = () => { store.set('engine', $('#engine').value); syncEngine(); };
+  $('#engine').onchange = () => { store.set('engine2', $('#engine').value); syncEngine(); };
   $('#phone-compat').onchange = () => { window.LocalAI.setCompat($('#phone-compat').checked); window.LocalAI.reset(); syncEngine(); };
   $('#phone-size').onchange = () => { store.set('phoneSize', $('#phone-size').value); syncEngine(); };
   $('#phone-download').onclick = async () => {
@@ -382,9 +382,60 @@ function repairJSON(t) {
   out = out.replace(/"[^"]*"\s*$/, m => /[{,]\s*"[^"]*"\s*$/.test(out) ? '' : m).replace(/[,\s]+$/, '');
   return out + stack.reverse().join('');
 }
+/* ---------- the app's own free server ---------- */
+let serverUrl = null;
+async function getServer() {
+  if (serverUrl) return serverUrl;
+  try { const j = await (await fetch('server.json', { cache: 'no-cache' })).json(); serverUrl = j.url.replace(/\/$/, ''); store.set('serverUrl', serverUrl); }
+  catch { serverUrl = store.get('serverUrl', null); }
+  if (!serverUrl) throw Object.assign(new Error('خادم التطبيق لم يُجهَّز بعد. أكمل الخطوات التي أرسلتها لك ثم حاول.'), { code: 'noserver' });
+  return serverUrl;
+}
+async function callServer({ system, user, maxTokens = 30000, onText, signal }) {
+  const base = await getServer();
+  let res;
+  try {
+    res = await fetch(base + '/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens }) });
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw Object.assign(new Error('لا يوجد اتصال بالإنترنت الآن.'), { code: 'offline' });
+  }
+  if (!res.ok) {
+    let j = {}; try { j = await res.json(); } catch {}
+    if (j.code === 'quota') throw Object.assign(new Error('انتهى الحد المجاني اليومي لخادم التطبيق. يتجدد كل يوم نحو الساعة ١٠–١١ صباحًا بتوقيت السعودية.'), { code: 'quota' });
+    if (j.code === 'toolong') throw new Error('النص طويل جدًا لمرة واحدة. اختر صفحات أقل.');
+    if (j.code === 'key' || j.code === 'nokey') throw new Error('مفتاح الخادم غير صحيح. أخبر جُنيد ليصلحه.');
+    throw new Error('الخادم لم يستطع الكتابة الآن (' + (res.status) + '). حاول بعد دقائق.');
+  }
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '', text = '', stop = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line.startsWith('data:')) continue;
+      let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+      const c = ev.candidates?.[0];
+      const t = (c?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
+      if (t) { text += t; onText?.(text); }
+      if (c?.finishReason) stop = c.finishReason;
+    }
+  }
+  return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop };
+}
+// the strong AI: the free server, or Claude with the owner's own key
+async function callBig({ system, messages, onText, signal, maxTokens }) {
+  if (engineKind() === 'claude') return callClaude({ system, messages, onText, signal, maxTokens });
+  return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens });
+}
+
 async function getJSON(text, signal) {
   try { return parseJSON(text); }
-  catch {
+  catch (e) {
+    if (engineKind() !== 'claude') throw e;
     // one repair attempt with the cheaper model
     const r = await callClaude({
       system: 'أنت مصلح JSON. أعد النص نفسه كائن JSON صالحًا فقط، دون تغيير أي محتوى، وأغلق ما لم يُغلق.',
@@ -406,6 +457,7 @@ function errText(e) {
   let raw = (e.message || (typeof e === 'string' ? e : '') || e.name || '').toString();
   if (!raw) { try { raw = JSON.stringify(e); } catch { raw = String(e); } if (raw === '{}' || raw === '[object Object]') raw = ''; }
   if (e.message === 'no json' || e instanceof SyntaxError) return 'وصل الرد ناقصًا أو غير مرتب. حاول مرة ثانية.';
+  if (e.code) return e.message;
   if (/out of memory|OOM|allocate|device (was )?lost|DXGI|GPUDevice|GPU|mapAsync|Buffer was/i.test(raw)) return 'توقف الذكاء على الجوال: إما أن الذاكرة لم تكفِ، أو انطفأت الشاشة أو خرجت من التطبيق أثناء الكتابة.\nأغلق التطبيقات الأخرى، وأبقِ الشاشة مضاءة والتطبيق أمامك، واختر صفحات أقل، ثم حاول.\n(' + raw.slice(0, 120) + ')';
   if (/quota|storage|space/i.test(raw)) return 'لا توجد مساحة كافية على الجوال لتنزيل الذكاء. فرّغ مساحة ثم حاول.\n(' + raw.slice(0, 160) + ')';
   if (/fetch|network|Failed to fetch|NetworkError|load failed/i.test(raw)) return 'انقطع الإنترنت أثناء تنزيل الذكاء. اتصل بالواي فاي ثم حاول؛ يكمل من حيث توقف.\n(' + raw.slice(0, 160) + ')';
@@ -413,7 +465,7 @@ function errText(e) {
 }
 
 /* ---------- which AI writes the notes ---------- */
-const engineKind = () => store.get('engine', 'phone');          // 'phone' (free, on this phone) or 'claude' (own key)
+const engineKind = () => store.get('engine2', 'server');       // 'server' (free app server), 'phone' (on this phone, trial) or 'claude' (own key)
 const phoneSize = () => store.get('phoneSize', 'fast');
 function progressText(p) {
   if (p.text === 'restart') return 'يعيد تشغيل الذكاء في وضع التوافق (يُنزّل نسخة متوافقة مرة واحدة)…';
@@ -704,18 +756,19 @@ ${src.ask}
 <<<${src.name}
 ${text}
 ${src.name}>>>`;
-    const r = await callClaude({
+    const expect = Math.max(400, text.split(/\s+/).length * 0.6);
+    const r = await callBig({
       system: window.JUND_METHOD,
       messages: [{ role: 'user', content: user }],
       signal: controller.signal,
       onText: t => {
-        const mins = Math.floor((Date.now() - t0) / 60000);
-        onStatus(`يكتب الآن… ${ar(t.split(/\s+/).length)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`, null, 'write');
+        const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
+        onStatus(`يكتب الآن… ${ar(w)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`, Math.min(0.95, w / expect), 'write');
       },
     });
-    onStatus('يرتّب الصفحات…');
+    onStatus('يرتّب الصفحات…', 0.97, 'write');
     notes = await getJSON(r.text, controller.signal);
-    note = `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '');
+    note = (engineKind() === 'claude' ? `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` : 'جاهز. كُتب مجانًا على خادم التطبيق.') + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '');
   }
   onStatus('يطابق الآيات على المصحف…', 1, 'write');
   try { await window.Mushaf.check(notes); } catch {}
@@ -728,6 +781,43 @@ ${src.name}>>>`;
   await saveLesson(lesson);
   return lesson;
 }
+
+/* ---------- offline queue: lessons pasted without internet are written when it returns ---------- */
+const queue = { get: () => store.get('queue', []), set: q => store.set('queue', q) };
+function enqueue(jobs, sub, kind) {
+  const q = queue.get();
+  for (const j of jobs) q.push({ text: j.text, unit: j.unit, kind, sub: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' } });
+  queue.set(q);
+  if (queue.get().length < q.length) throw new Error('لا توجد مساحة لحفظ النص على الجوال. اختر صفحات أقل.');
+  renderQueue();
+}
+function renderQueue(status) {
+  const q = queue.get(), b = $('#queue-banner');
+  b.hidden = !q.length;
+  if (q.length) b.innerHTML = status || `<b>☁ ${ar(q.length)} ${q.length === 1 ? 'درس ينتظر' : 'دروس تنتظر'} الإنترنت.</b> ستُكتب تلقائيًا حين يعود الاتصال والتطبيق مفتوح.`;
+}
+let queueBusy = false;
+async function processQueue() {
+  if (queueBusy || controller || !navigator.onLine || engineKind() === 'phone') return;
+  let q = queue.get(); if (!q.length) return;
+  queueBusy = true; controller = new AbortController();
+  const lock = await keepAwake();
+  let done = 0;
+  try {
+    while ((q = queue.get()).length) {
+      const j = q[0];
+      renderQueue(`<b>☁ يكتب الدروس المحفوظة (${ar(done + 1)} من ${ar(done + q.length)}):</b> ${esc(j.unit)}…`);
+      try { await makeOne({ text: j.text, unit: j.unit, sub: j.sub, kind: j.kind }, () => {}); }
+      catch (e) { if (e.code === 'offline' || controller.signal.aborted) break; j.tries = (j.tries || 0) + 1; if (j.tries < 3) { queue.set([...q.slice(1), j]); continue; } }
+      queue.set(queue.get().slice(1)); done++;
+    }
+  } finally {
+    lock?.release?.(); controller = null; queueBusy = false;
+    renderQueue();
+    if (done) { const b = $('#queue-banner'); b.hidden = false; b.innerHTML = `✓ كُتب ${ar(done)} ${done === 1 ? 'درس' : 'دروس'} من المحفوظة. افتح <button type="button" class="link" data-go="library">المكتبة</button>.`; }
+  }
+}
+addEventListener('online', () => setTimeout(processQueue, 1500));
 
 $('#make').onclick = async () => {
   const err = $('#new-error'); err.hidden = true;
@@ -757,6 +847,12 @@ $('#make').onclick = async () => {
     }
     box.hidden = true; delete box.dataset.ok;
   }
+  if (engineKind() !== 'phone' && navigator.onLine === false) {
+    try { enqueue(jobs, sub, kind); } catch (e) { err.textContent = e.message; err.hidden = false; return; }
+    pending = []; renderPending(); $('#transcript').value = ''; $('#unit').value = ''; countWords();
+    err.textContent = '📴 لا يوجد إنترنت الآن. حُفظ النص، وسيُكتب تلقائيًا حين يعود الاتصال.'.replace('📴 ', ''); err.hidden = false;
+    return;
+  }
   $('#make').disabled = true; $('#progress').hidden = false;
   setBar('#progress-bar-wrap', '#progress-bar', 0); $('#progress-pct').textContent = '';
   $('#progress-eta').textContent = 'أبقِ التطبيق مفتوحًا والشاشة مضاءة حتى ينتهي.';
@@ -785,6 +881,11 @@ $('#make').onclick = async () => {
         jobs[i].status = '✓ جاهز';
       } catch (e) {
         if (controller?.signal.aborted) throw e;
+        if (e.code === 'offline') {
+          enqueue(jobs.slice(i), sub, kind);
+          for (const jj of jobs.slice(i)) jj.status = '☁ ينتظر الإنترنت';
+          throw Object.assign(new Error('انقطع الإنترنت. حُفظ ما بقي، وسيُكتب تلقائيًا حين يعود الاتصال.'), { queued: true });
+        }
         failed++; jobs[i].status = '✗ ' + errText(e);
         if (jobs.length === 1) throw e;
       }
@@ -795,7 +896,8 @@ $('#make').onclick = async () => {
     if (jobs.length > 1 && !failed) show('library');
     else if (last && !failed) await openLesson(last);
   } catch (e) {
-    err.textContent = controller?.signal.aborted ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : errText(e);
+    err.textContent = controller?.signal.aborted ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : e.queued ? e.message : errText(e);
+    if (e.queued) { pending = pending.filter(p => !p.status?.startsWith('☁')); renderPending(); }
     err.hidden = false;
   } finally {
     lock?.release?.(); controller = null;
@@ -1213,13 +1315,13 @@ ${JSON.stringify(current.notes)}
 الملاحظات الحالية>>>
 
 ${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طلب الطالب الآن: ${ask}`;
-    const r = await callClaude({
+    const r = await callBig({
       system: window.JUND_METHOD + '\n\n' + window.JUND_EDIT_RULES,
       messages: [{ role: 'user', content: user }],
       onText: t => { $('#chat-progress-text').textContent = `جارٍ العمل… ${ar(t.split(/\s+/).length)} كلمة`; },
     });
     const out = await getJSON(r.text);
-    const cost = ` (${ar((r.usd * SAR).toFixed(2))} ريال)`;
+    const cost = engineKind() === 'claude' ? ` (${ar((r.usd * SAR).toFixed(2))} ريال)` : '';
     if (out.no_change || !out.sections) {
       current.chat.push({ who: 'ai', text: (out.reply || 'تم.') + cost });
     } else {
@@ -1231,7 +1333,7 @@ ${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طل�
     await openLesson(current);
     $('.chat').scrollIntoView({ block: 'end' });
   } catch (e) {
-    current.chat.push({ who: 'ai', text: '✗ ' + (e instanceof SyntaxError || e.message === 'no json' ? 'وصل الرد غير مرتب. أعد الطلب.' : e.message) });
+    current.chat.push({ who: 'ai', text: '✗ ' + errText(e) });
     renderChat();
   } finally {
     lock?.release?.();
@@ -1423,7 +1525,8 @@ fillSubjects();
 initSettings();
 receiveShared();
 show('new');
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
+renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
   // when a new version takes over, reload once so every file is the new one
