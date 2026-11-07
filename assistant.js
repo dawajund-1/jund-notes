@@ -19,7 +19,7 @@ function build() {
   s.innerHTML = `
     <div class="row-between home-head"><div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
       <button type="button" class="ghost small" id="as-clear">New chat</button></div>
-    <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name and where you study, so the notes and the Assistant fit you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
+    <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="hm-sec"><div class="row-between"><div class="card-h" style="margin:0">Up next</div><button type="button" class="link" data-go="calendar">Calendar</button></div>
       <div class="upnext" id="hm-next"></div></div>
     <div class="quick" id="hm-quick">
@@ -34,7 +34,7 @@ function build() {
     <div class="as-try" id="as-try"></div>
     <div class="as-input">
       <button type="button" class="icon-btn as-mic" id="as-mic" aria-label="Speak"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-      <textarea id="as-text" rows="1" dir="auto" placeholder="Message Jund Notes…"></textarea>
+      <textarea id="as-text" rows="1" dir="auto" placeholder="Message Daftar…"></textarea>
       <button type="button" class="primary" id="as-send">Send</button>
     </div>
     <div class="muted as-hint" id="as-hint"></div>`;
@@ -62,6 +62,7 @@ async function renderHome() {
   $('#hm-date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const nm = J.me().name ? ', ' + J.me().name : '';
   $('#hm-hello').textContent = (h < 12 ? 'Good morning' : h < 18 ? 'Salam' : 'Good evening') + nm;
+  $('#as-clear').hidden = !log.length;
   const ask = $('#hm-about');
   if (ask) ask.hidden = !!J.me().name;
   const up = window.JundCal?.upcoming(7, 8) || [];
@@ -81,7 +82,9 @@ function render() {
   box.innerHTML = log.length ? log.map(m => `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto">${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${m.open ? `<button type="button" class="link" data-open="${esc(m.open)}">Open the lesson</button>` : ''}</div>`).join('')
     : '';
   $$('[data-open]', box).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
-  const tries = ['What do I have this week?', 'Add Usul exam next Tuesday at 9am', 'ذكرني بمراجعة الفقه يوم الخميس الساعة ٨ مساءً', 'Summarise my last lesson'];
+  const tries = J.me().use === 'work'
+    ? ['What do I have this week?', 'Add a meeting with the sales team Sunday 10am', 'Remind me to send the report tomorrow at 9', 'Summarise my last meeting']
+    : ['What do I have this week?', 'Add Usul exam next Tuesday at 9am', 'ذكرني بمراجعة الفقه يوم الخميس الساعة ٨ مساءً', 'Summarise my last lesson'];
   $('#as-try').innerHTML = log.length ? '' : tries.map(t => `<button type="button" class="chip-b" dir="auto">${esc(t)}</button>`).join('');
   $$('#as-try button').forEach(b => b.onclick = () => { $('#as-text').value = b.textContent; send(); });
   if (log.length) box.lastElementChild?.scrollIntoView({ block: 'end' });
@@ -105,7 +108,7 @@ async function context(q) {
     .sort((a, b) => b.s - a.s).slice(0, 3).filter(x => x.s > 0);
   let notes = '', budget = 24000;
   for (const { l } of scored) { const tx = lessonText(l).slice(0, budget); budget -= tx.length; notes += tx + '\n\n'; if (budget < 1000) break; }
-  const subs = (window.SUBJECTS || []).map(s => `${s.name}${s.book ? ' (' + s.book + ')' : ''}${s.place ? ' — ' + s.place : ''}`).join('; ');
+  const subs = (J.me().use === 'work' ? [] : (window.SUBJECTS || [])).map(s => `${s.name}${s.book ? ' (' + s.book + ')' : ''}${s.place ? ' — ' + s.place : ''}`).join('; ');
   return `${subs ? 'HIS SUBJECTS: ' + subs + '\n' : ''}Today: ${t} (${DAYS[now.getDay()]}), time ${pad(now.getHours())}:${pad(now.getMinutes())}, Saudi Arabia.
 Week starts on ${DAYS[Number(store.get('weekStart', 0))]}.
 
@@ -118,7 +121,7 @@ ${all.slice(0, 80).map(l => `- id ${l.id} | ${l.date.slice(0, 10)} | ${l.subject
 MOST RELEVANT LESSON NOTES:
 ${notes || '(none matched)'}`;
 }
-const SYSTEM = () => `You are the assistant inside "Jund Notes", the personal study app of ${J.me().name || 'a student'}${J.me().study ? ', who studies at: ' + J.me().study : ''}. He talks to you in Arabic or English; always answer in the language of his last message, briefly and plainly, like a helpful friend.
+const SYSTEM = () => `You are the assistant inside "Daftar", the personal notes and planning app of ${J.me().name || 'its owner'}${J.me().study ? ' (' + (J.me().use === 'work' ? 'work: ' : 'studies at: ') + J.me().study + ')' : ''}. He or she talks to you in Arabic or English; always answer in the language of his last message, briefly and plainly, like a helpful friend.
 You can act on his calendar. Reply with JSON only, in this shape:
 {"reply": "what you say to him",
  "actions": [

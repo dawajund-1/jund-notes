@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Jund Notes</title>
-<meta name="theme-color" content="#0b1324">
+<title>Daftar</title>
+<meta name="theme-color" content="#0A1222">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Amiri+Quran&family=Scheherazade+New:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Amiri+Quran&family=Scheherazade+New:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header class="topbar">
-  <button class="brand" id="go-home" type="button"><span class="logo" aria-hidden="true">J</span>Jund Notes</button>
+  <button class="brand" id="go-home" type="button"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#173A7A"/><path d="M8 8.5c2.6-.9 5.2-.6 8 1v14c-2.8-1.6-5.4-1.9-8-1z" fill="#E8EDF6"/><path d="M24 8.5c-2.6-.9-5.2-.6-8 1v14c2.8-1.6 5.4-1.9 8-1z" fill="#C5D3EE"/><path d="M19.5 9.2v7.6l1.6-1.3 1.6 1.3V8.6" fill="#D9B36C"/></svg><span>Daftar</span></button>
   <div class="bar-right">
     <span class="server-dot" id="server-dot" title="Server"></span>
     <button type="button" class="chip" id="go-today">Today</button>
@@ -214,10 +214,11 @@
 
     <div class="card" id="about-card">
       <div class="card-h">About you</div>
-      <label class="field"><span>Your name</span><input id="me-name" type="text" dir="auto" placeholder="e.g. Junaid"></label>
+      <label class="field"><span>I use the app for</span><select id="me-use"><option value="study">Study — lessons, subjects, exams</option><option value="work">Work — meetings, projects, tasks</option></select></label>
+      <label class="field"><span>Your name</span><input id="me-name" type="text" dir="auto" placeholder="Your first name"></label>
       <label class="field"><span>Full name in Arabic (for book covers)</span><input id="me-name-ar" type="text" dir="rtl" placeholder="الاسم الكامل"></label>
-      <label class="field"><span>Where and what you study</span><textarea id="me-study" rows="3" dir="auto" placeholder="e.g. Dar al-Hadith al-Khayriyyah and Kulliyat al-Masjid al-Haram, Makkah"></textarea>
-        <small class="muted">The Assistant and your notes use this, so they know your places and subjects.</small></label>
+      <label class="field"><span id="me-study-label">Where and what you study</span><textarea id="me-study" rows="3" dir="auto" placeholder="e.g. Dar al-Hadith al-Khayriyyah and Kulliyat al-Masjid al-Haram, Makkah"></textarea>
+        <small class="muted">The Assistant and your notes use this, so they fit you.</small></label>
       <div class="row-gap"><button type="button" class="primary" id="me-save">Save</button><span class="muted" id="me-status"></span></div>
     </div>
 
@@ -332,6 +333,13 @@
     </div>
 
     <div class="card">
+      <div class="card-h">Your own AI key (optional)</div>
+      <p class="muted" style="margin:0 0 10px;font-size:.9rem">Everyone without a key shares one free daily limit. Add your own free key and you get your own limit. It takes 2 minutes: open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--accent)">aistudio.google.com/apikey</a>, sign in with Google, press “Create API key”, copy it and paste it here.</p>
+      <label class="field"><span>Gemini key</span><input id="user-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="AIza..."></label>
+      <div class="row-gap"><button type="button" class="primary" id="user-key-save">Save</button><span class="muted" id="user-key-status"></span></div>
+    </div>
+
+    <div class="card">
       <div class="card-h">Server</div>
       <div class="row-gap"><button type="button" class="ghost" id="server-check">Check the server</button></div>
       <div id="server-status" class="muted"></div>
@@ -362,7 +370,7 @@
       <div id="palette-list"></div>
     </details>
 
-    <p class="muted fine">Jund Notes <span id="app-version"></span> · Quran text: Quran Encyclopedia (quranenc.com), CC BY-SA 4.0 · Phone AI: Qwen via WebLLM · Video audio: mp4box.js</p>
+    <p class="muted fine">Daftar <span id="app-version"></span> · Quran text: Quran Encyclopedia (quranenc.com), CC BY-SA 4.0 · Phone AI: Qwen via WebLLM · Video audio: mp4box.js</p>
   </section>
 
   <div class="toast" id="toast" hidden></div>

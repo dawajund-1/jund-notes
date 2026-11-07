@@ -161,17 +161,29 @@ function familyOf(sub) {
 }
 function subjectById(id) { return window.SUBJECTS.find(s => s.id === id); }
 
+const workMode = () => (store.get('me', {}).use || 'study') === 'work';
 function fillSubjects() {
-  const sel = $('#subject');
+  const sel = $('#subject'), work = workMode();
+  const mine = store.get('mySubjects', []);
   const groups = {};
-  for (const s of window.SUBJECTS) (groups[s.place] ??= []).push(s);
-  sel.innerHTML = Object.entries(groups).map(([place, list]) =>
+  if (!work) for (const s of window.SUBJECTS) (groups[s.place] ??= []).push(s);
+  const mineHtml = mine.length ? `<optgroup label="${work ? 'My projects' : 'My subjects'}">${mine.map(n => `<option value="mine:${esc(n)}">${esc(n)}</option>`).join('')}</optgroup>` : '';
+  sel.innerHTML = mineHtml + Object.entries(groups).map(([place, list]) =>
     `<optgroup label="${esc(place)}">${list.map(s => `<option value="${s.id}">${esc(s.name)}${s.book ? ' — ' + esc(s.book) : ''}</option>`).join('')}</optgroup>`
-  ).join('') + `<option value="other">Another subject…</option>`;
-  sel.value = store.get('lastSubject', window.SUBJECTS[0].id);
-  if (!sel.value) sel.value = window.SUBJECTS[0].id;
+  ).join('') + `<option value="other">${work ? 'New project or area…' : 'Another subject…'}</option>`;
+  sel.value = store.get('lastSubject', '');
+  if (!sel.value) sel.value = sel.options[0]?.value || 'other';
+  // words that fit the person: study or work
+  const lab = (id, t) => { const el = $(id)?.closest('.field')?.querySelector('span'); if (el) el.textContent = t; };
+  lab('#subject', work ? 'Project or area' : 'Subject');
+  lab('#custom-subject', work ? 'Project name' : 'Subject name');
+  lab('#unit', work ? 'Title' : 'Lesson or unit');
+  $('#custom-subject').placeholder = work ? 'e.g. Sales team' : 'Type the subject';
+  $('#unit').placeholder = work ? 'e.g. Weekly sales meeting' : 'e.g. Lesson 3';
+  if (work && !store.get('kindChosen')) $('#kind').value = 'meeting';
   const sync = () => { $('#custom-subject-wrap').hidden = sel.value !== 'other'; store.set('lastSubject', sel.value); };
-  sel.addEventListener('change', sync); sync();
+  if (!sel.dataset.wired) { sel.addEventListener('change', sync); sel.dataset.wired = '1'; $('#kind').addEventListener('change', () => store.set('kindChosen', true)); }
+  sync();
 }
 
 function renderPaletteSettings() {
@@ -425,8 +437,10 @@ async function getServer() {
   return serverUrl;
 }
 // one call to the app's server; the answer streams back as it is written
-async function serverFetch(path, init) {
+async function serverFetch(path, init = {}) {
   const base = await getServer();
+  const uk = store.get('userKey', '');  // a person's own free AI key: their own daily limit
+  if (uk) init = { ...init, headers: { ...(init.headers || {}), 'x-user-key': uk } };
   let res;
   try { res = await fetch(base + path, init); }
   catch (e) {
@@ -435,8 +449,9 @@ async function serverFetch(path, init) {
   }
   if (!res.ok) {
     let j = {}; try { j = await res.json(); } catch {}
-    if (j.code === 'quota') throw Object.assign(new Error('The free daily limit of the app server is used up. It resets every day at about 10–11 am Saudi time.'), { code: 'quota' });
+    if (j.code === 'quota') throw Object.assign(new Error(store.get('userKey') ? 'Your own free daily AI limit is used up. It resets every day at about 10–11 am Saudi time.' : 'The shared free daily AI limit is used up. It resets every day at about 10–11 am Saudi time. Tip: add your own free AI key in Settings → AI key, to get your own limit.'), { code: 'quota' });
     if (j.code === 'toolong') throw Object.assign(new Error('Too big for one go. Choose fewer pages or a shorter file.'), { code: 'toolong' });
+    if ((j.code === 'key' || j.code === 'nokey') && store.get('userKey')) throw Object.assign(new Error('Your own AI key is not working. Check it in Settings → AI key, or remove it.'), { code: 'key' });
     if (j.code === 'key' || j.code === 'nokey') throw Object.assign(new Error('The server key is wrong or not added yet. Finish the server setup steps.'), { code: 'key' });
     if (j.code === 'bad') throw Object.assign(new Error('The AI refused this request.'), { code: 'bad', status: 400, detail: j.error || '' });
     throw Object.assign(new Error('The server could not write right now (' + (res.status) + '). Try again in a few minutes.'), { code: 'server', status: res.status });
@@ -699,8 +714,12 @@ let controller = null;
 
 function subjectInfo() {
   const v = $('#subject').value;
+  if (v.startsWith('mine:')) { const name = v.slice(5); return { id: 'other:' + name, name, place: '', family: 'slate' }; }
   if (v === 'other') {
-    const name = $('#custom-subject').value.trim() || 'Other subject';
+    const name = $('#custom-subject').value.trim() || (workMode() ? 'General' : 'Other subject');
+    // remember it, so next time it is in the list
+    const mine = store.get('mySubjects', []);
+    if (!mine.includes(name)) { mine.push(name); store.set('mySubjects', mine); store.set('lastSubject', 'mine:' + name); setTimeout(fillSubjects, 0); }
     return { id: 'other:' + name, name, place: '', family: 'slate' };
   }
   const s = subjectById(v);
@@ -1023,7 +1042,7 @@ async function makeOne({ text, unit, sub, kind, lang, id }, onStatus) {
     const user = en ? `Subject: ${sub.name}${sub.book ? ' (book: ' + sub.book + ')' : ''}
 Lesson / unit: ${unit}
 Input type: ${src.name}
-Student: ${me().name || 'the student'}${me().study ? ' — studies at: ' + me().study : ''}
+${workMode() ? 'User' : 'Student'}: ${me().name || 'the user'}${me().study ? (workMode() ? ' — works as: ' : ' — studies at: ') + me().study : ''}
 Today's date: ${todayISO()} (${new Date().toLocaleDateString('en-GB', { weekday: 'long' })})
 
 ${src.ask}
@@ -1739,7 +1758,7 @@ async function makeYearBook() {
   if (!ls.length) return;
   $('#book-progress').hidden = false; $('#book-progress-text').textContent = 'Preparing your year book…';
   await fontsReady();
-  const meta = { title: String(y), subtitle: '', subject: 'Jund Notes ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
+  const meta = { title: String(y), subtitle: '', subject: 'Daftar ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
   const cover = coverPage(meta, `<div class="c-sub">${y}</div><div class="c-rule"></div>
     <div class="c-book">ملاحظات العام · Notes of the year</div><div class="c-place">${arD(ls.length)} درسًا · ${new Set(ls.map(l => l.subject.id)).size} subjects</div>
     <div class="c-place">${esc(me().nameAr || me().name || '')}</div>`);
@@ -1813,7 +1832,7 @@ $('#backup').onclick = async () => {
   const lessons = await allLessons();
   const data = { app: 'jund-notes', version: 2, saved: new Date().toISOString(), families: store.get('families', {}), lessons,
     events: store.get('events', []), studio: store.get('studioSaved', []) };
-  const name = `Jund Notes backup ${new Date().toISOString().slice(0, 10)}.json`;
+  const name = `Daftar backup ${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   try {
     if (navigator.canShare?.({ files: [file] })) {
@@ -1847,9 +1866,19 @@ function me() { return store.get('me', {}); }
 function initMe() {
   const m = me();
   $('#me-name').value = m.name || ''; $('#me-name-ar').value = m.nameAr || ''; $('#me-study').value = m.study || '';
+  $('#me-use').value = m.use || 'study';
+  const lbl = () => { const w = $('#me-use').value === 'work'; $('#me-study-label').textContent = w ? 'Your work (job, company, team)' : 'Where and what you study'; $('#me-study').placeholder = w ? 'e.g. Operations manager at a logistics company, team of 12' : 'e.g. Dar al-Hadith al-Khayriyyah and Kulliyat al-Masjid al-Haram, Makkah'; };
+  $('#me-use').onchange = lbl; lbl();
   $('#me-save').onclick = () => {
-    store.set('me', { name: $('#me-name').value.trim(), nameAr: $('#me-name-ar').value.trim(), study: $('#me-study').value.trim() });
-    $('#me-status').textContent = '✓ Saved'; window.JundAssistant?.home();
+    store.set('me', { name: $('#me-name').value.trim(), nameAr: $('#me-name-ar').value.trim(), study: $('#me-study').value.trim(), use: $('#me-use').value });
+    $('#me-status').textContent = '✓ Saved'; fillSubjects(); window.JundAssistant?.home();
+  };
+  // a person's own free AI key
+  $('#user-key').value = store.get('userKey', '');
+  $('#user-key-save').onclick = () => {
+    const k = $('#user-key').value.trim();
+    if (k && !/^AIza[\w-]{30,60}$/.test(k)) { $('#user-key-status').textContent = '✗ That does not look like a Gemini key (it starts with AIza).'; return; }
+    store.set('userKey', k); $('#user-key-status').textContent = k ? '✓ Saved. You now have your own daily limit.' : 'Removed. The shared key is used.';
   };
 }
 
@@ -1857,7 +1886,7 @@ function initMe() {
 function applyTheme() {
   const t = store.get('theme', 'navy');
   document.documentElement.dataset.theme = t;
-  $('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#f4f7fc' : '#0b1324');
+  $('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#F3F5FA' : '#0A1222');
 }
 applyTheme();
 
@@ -1921,7 +1950,7 @@ initSettings();
 initMe();
 show('assistant');
 receiveShared();
-const APP_VERSION = '3.3';
+const APP_VERSION = '4.0';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});

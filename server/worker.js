@@ -26,7 +26,7 @@ function cors(origin) {
   return {
     'Access-Control-Allow-Origin': ok ? origin : ALLOWED[0],
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Headers': 'content-type, x-user-key',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   };
@@ -116,6 +116,9 @@ const unxml = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/
 export default {
   async fetch(req, env) {
     if (env.GEMINI_BASE) G = env.GEMINI_BASE;
+    // someone using their own free AI key gets their own daily limit
+    const own = req.headers.get('x-user-key') || '';
+    if (/^AIza[\w-]{30,60}$/.test(own)) env = { ...env, GEMINI_API_KEY: own };
     const origin = req.headers.get('origin') || '';
     const h = cors(origin);
     const url = new URL(req.url);

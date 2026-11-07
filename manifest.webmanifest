@@ -1,13 +1,13 @@
 {
-  "name": "Jund Notes",
-  "short_name": "Jund Notes",
+  "name": "Daftar — notes, tasks and calendar",
+  "short_name": "Daftar",
   "lang": "en",
   "dir": "ltr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0b1324",
-  "theme_color": "#0b1324",
+  "background_color": "#0A1222",
+  "theme_color": "#0A1222",
   "icons": [
     {
       "src": "icon-192.png",
@@ -72,5 +72,6 @@
       "name": "Studio",
       "url": "./?view=studio"
     }
-  ]
+  ],
+  "description": "Your notebook: notes from lessons and meetings, tasks, calendar and an assistant, in Arabic and English."
 }

@@ -1,5 +1,5 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v16';
+const CACHE = 'jn-app-v17';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js', 'assistant.js'];
 
 self.addEventListener('install', e => {
