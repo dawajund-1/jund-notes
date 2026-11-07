@@ -26,6 +26,7 @@ window.JUND_METHOD = `
 - استعمل الجداول للمقارنات والأقوال، والتسلسل (flow) للخطوات والمراحل، والقوائم المرقمة للأقسام والشروط والأركان.
 - صناديق ★★ (exam) فقط حيث قال الشيخ صراحة إن هذا يأتي في الاختبار أو نبّه على أهميته للاختبار.
 - المواعظ والكلام الوعظي الخالص: لا يُكتب في الملف. ضعه في حقل mawaiz مختصرًا (لملف المواعظ آخر السنة).
+- كل واجب أو اختبار أو موعد تسليم أو موعد قادم ذكره الشيخ أو المتكلم (مثل: "غدًا نكمل باب كذا"، "سلّموا البحث يوم الخميس") ضعه في حقل tasks. احسب التاريخ من "تاريخ اليوم" المذكور في الرسالة. إن لم يُحدد يوم فاترك date فارغًا. إن لم يُذكر شيء فاجعل tasks مصفوفة فارغة. وفي الاجتماعات: كل مهمة كُلّف بها أحد مع اسمه في note.
 - القصص والآيات التي هي دليل على مسألة: تبقى في مكانها.
 - الأمور الإدارية (مواعيد، واجبات، غياب): سطر واحد فقط في الملحق (admin).
 - دعاء الافتتاح يوضع في opening_dua، وبقية الأدعية في closing_duas.
@@ -71,6 +72,7 @@ window.JUND_METHOD = `
   },
   "closing_duas": ["دعاء"],
   "mawaiz": ["خلاصة موعظة وردت في الدرس"],
+  "tasks": [{"title": "واجب أو اختبار أو موعد ذُكر في الدرس", "date": "YYYY-MM-DD أو \"\"", "time": "HH:MM أو \"\"", "type": "homework|exam|class|meeting|task", "note": "تفصيل قصير"}],
   "mindmap": [
     {
       "center": "الموضوع الرئيس لهذا الجانب",
@@ -201,6 +203,7 @@ It replaces full notes: everything important for the exam, everything the studen
 - Use tables for comparisons and differing views, flows for steps and stages, numbered lists for types, conditions and parts.
 - Exam boxes (exam) only where the teacher said clearly that this comes in the exam or stressed it for the exam.
 - Pure motivational talk does not go in the file: put it briefly in "mawaiz".
+- Every homework, exam, deadline or upcoming appointment mentioned (e.g. "tomorrow we continue chapter X", "submit the essay on Thursday") goes in "tasks". Work out the date from "Today's date" in the message; leave date empty if no day is given; use an empty array if there are none. In meetings, every action item goes in tasks with the person's name in note.
 - Stories and quotations that prove a point stay where they are.
 - Admin matters (dates, homework, deadlines, absences): one line only in appendix.admin.
 - An opening prayer goes in opening_dua; other closing prayers in closing_duas.
@@ -241,6 +244,7 @@ Return one valid JSON object only, with nothing before or after it and no \`\`\`
   },
   "closing_duas": [],
   "mawaiz": ["short summary of a motivational part"],
+  "tasks": [{"title": "homework, exam, deadline or appointment mentioned", "date": "YYYY-MM-DD or \"\"", "time": "HH:MM or \"\"", "type": "homework|exam|class|meeting|task", "note": "short detail"}],
   "mindmap": [ { "center": "main topic of this aspect", "branches": [ {"label": "Definition", "children": [{"label": "short phrase", "mark": "", "children": []}]} ] } ],
   "report": {"inferred": [], "left_out": [], "maybe_wrong": [], "added": []}
 }

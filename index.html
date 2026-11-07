@@ -1,277 +1,430 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="en" dir="ltr" data-theme="navy">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ملاحظات جُنيد</title>
-<meta name="theme-color" content="#2b2418">
+<title>Jund Notes</title>
+<meta name="theme-color" content="#0b1324">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Amiri+Quran&family=Scheherazade+New:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Amiri+Quran&family=Scheherazade+New:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header class="bar">
-  <button class="brand" id="go-home" type="button">ملاحظات جُنيد</button>
-  <nav class="bar-actions">
-    <button type="button" class="ghost" id="go-library">المكتبة</button>
-    <button type="button" class="ghost" id="go-settings">الإعدادات</button>
-  </nav>
+<header class="topbar">
+  <button class="brand" id="go-home" type="button"><span class="logo" aria-hidden="true">J</span>Jund Notes</button>
+  <div class="bar-right">
+    <span class="server-dot" id="server-dot" title="Server"></span>
+    <button type="button" class="chip" id="go-today">Today</button>
+  </div>
 </header>
 
 <main id="app">
 
-  <!-- درس جديد -->
+  <!-- new lesson -->
   <section class="screen" id="screen-new">
     <div class="intro" id="key-missing" hidden>
-      <b>خطوة واحدة قبل البدء:</b> ضع مفتاحك في
-      <button type="button" class="link" data-go="settings">الإعدادات</button>.
+      <b>One step first:</b> add your key in
+      <button type="button" class="link" data-go="settings">Settings</button>.
     </div>
-
     <div class="intro" id="queue-banner" hidden></div>
+    <div class="intro due" id="due-banner" hidden></div>
 
-    <h1 class="screen-title">درس جديد</h1>
+    <h1 class="screen-title">New notes</h1>
 
-    <label class="field">
-      <span>المادة</span>
-      <select id="subject"></select>
-    </label>
+    <div class="card">
+      <div class="card-h">1 · Add what you heard or read</div>
+      <label class="file-btn big-pick">
+        <input id="file" type="file" accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm" multiple>
+        <span class="pick-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 15V3m0 0 4.5 4.5M12 3 7.5 7.5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="pick-text"><b>Choose files</b><small>Audio, video, PDF or text — one or many</small></span>
+      </label>
 
-    <label class="field" id="custom-subject-wrap" hidden>
-      <span>اسم المادة</span>
-      <input id="custom-subject" type="text" placeholder="اكتب اسم المادة">
-    </label>
+      <div class="field">
+        <span>YouTube link</span>
+        <div class="yt-row">
+          <input id="yt" type="text" dir="ltr" placeholder="Paste a video or playlist link">
+          <button type="button" class="ghost" id="yt-go">Add</button>
+        </div>
+      </div>
 
-    <label class="field">
-      <span>ماذا ستعطيه؟</span>
-      <select id="kind">
-        <option value="transcript">تفريغ درس (من مسجّل سامسونج)</option>
-        <option value="notes">ملاحظات كتبتها بنفسي</option>
-        <option value="book">مقطع من كتاب أو موضوع</option>
-      </select>
-    </label>
-
-    <label class="field">
-      <span>لغة الملاحظات</span>
-      <select id="lang">
-        <option value="auto">تلقائي — بلغة الدرس</option>
-        <option value="ar">العربية</option>
-        <option value="en">English</option>
-      </select>
-    </label>
-
-    <label class="field" id="unit-wrap">
-      <span>الدرس أو الوحدة</span>
-      <input id="unit" type="text" placeholder="مثل: الدرس الثالث">
-    </label>
-
-    <div class="field">
-      <span>النص</span>
-      <textarea id="transcript" rows="9" placeholder="الصق هنا التفريغ أو الملاحظات أو المقطع"></textarea>
-      <div class="row-between">
-        <label class="file-btn">
-          <input id="file" type="file" accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm" multiple>
-          أو اختر ملفات: صوت، فيديو، PDF، نص
-        </label>
+      <details class="paste" id="paste-box">
+        <summary>Or paste text</summary>
+        <textarea id="transcript" rows="8" dir="auto" placeholder="Paste a transcript, your own notes, or a passage"></textarea>
         <small id="word-count" class="muted"></small>
+      </details>
+
+      <div class="intro" id="pending" hidden></div>
+
+      <section class="script-box" id="script-box" hidden>
+        <div class="row-between"><b id="script-title">Clean script</b><button type="button" class="ghost small" id="script-close">Close</button></div>
+        <textarea id="script-text" rows="12" readonly dir="auto"></textarea>
+        <div class="row-gap">
+          <button type="button" class="primary" id="script-copy">Copy</button>
+          <button type="button" class="ghost" id="script-save">Save as text file</button>
+        </div>
+        <small class="muted" id="script-status"></small>
+      </section>
+    </div>
+
+    <div class="card">
+      <div class="card-h">2 · Details</div>
+      <div class="grid2">
+        <label class="field">
+          <span>Subject</span>
+          <select id="subject" dir="auto"></select>
+        </label>
+        <label class="field" id="custom-subject-wrap" hidden>
+          <span>Subject name</span>
+          <input id="custom-subject" type="text" dir="auto" placeholder="Type the subject">
+        </label>
+        <label class="field" id="unit-wrap">
+          <span>Lesson or unit</span>
+          <input id="unit" type="text" dir="auto" placeholder="e.g. Lesson 3">
+        </label>
+        <label class="field">
+          <span>What is it?</span>
+          <select id="kind">
+            <option value="transcript">Lesson or meeting recording</option>
+            <option value="meeting">Meeting recording → minutes</option>
+            <option value="notes">Notes I wrote myself</option>
+            <option value="book">A book passage or topic</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Notes language</span>
+          <select id="lang">
+            <option value="auto">Automatic — same as the lesson</option>
+            <option value="ar">Arabic</option>
+            <option value="en">English</option>
+          </select>
+        </label>
       </div>
     </div>
 
-    <div class="field">
-      <span>أو رابط يوتيوب</span>
-      <div class="yt-row">
-        <textarea id="yt" rows="2" dir="ltr" placeholder="الصق رابط فيديو أو قائمة تشغيل"></textarea>
-        <button type="button" class="ghost" id="yt-go">فرّغ من يوتيوب</button>
-      </div>
-    </div>
-
-    <div class="intro" id="pending" hidden></div>
-
-    <section class="script-box" id="script-box" hidden>
-      <div class="row-between"><b id="script-title">نص مرتب</b><button type="button" class="ghost small" id="script-close">إغلاق</button></div>
-      <textarea id="script-text" rows="12" readonly></textarea>
-      <div class="row-gap">
-        <button type="button" class="primary" id="script-copy">نسخ</button>
-        <button type="button" class="ghost" id="script-save">حفظ ملف نص</button>
-      </div>
-      <small class="muted" id="script-status"></small>
-    </section>
-
-    <button type="button" class="primary big" id="make">اصنع الملاحظات</button>
+    <button type="button" class="primary big" id="make">Make notes</button>
 
     <div class="progress" id="progress" hidden>
       <div class="pg-wrap">
-        <div class="row-between"><b id="progress-text">جارٍ الكتابة…</b><b id="progress-pct"></b></div>
+        <div class="row-between"><b id="progress-text">Writing…</b><b id="progress-pct"></b></div>
         <div class="bar" id="progress-bar-wrap"><i id="progress-bar"></i></div>
-        <small class="muted" id="progress-eta">أبقِ التطبيق مفتوحًا والشاشة مضاءة حتى ينتهي.</small>
+        <small class="muted" id="progress-eta">Keep the app open and the screen on until it finishes.</small>
       </div>
-      <button type="button" class="ghost" id="cancel">إيقاف</button>
+      <button type="button" class="ghost" id="cancel">Stop</button>
     </div>
     <div class="intro" id="confirm-long" hidden></div>
     <div class="error" id="new-error" hidden></div>
   </section>
 
-  <!-- النتيجة -->
+  <!-- the notes -->
   <section class="screen" id="screen-result" hidden>
     <div class="result-head">
       <div>
-        <h1 class="screen-title" id="result-title"></h1>
-        <div class="muted" id="result-meta"></div>
+        <h1 class="screen-title" id="result-title" dir="auto"></h1>
+        <div class="muted" id="result-meta" dir="auto"></div>
       </div>
-      <button type="button" class="primary" id="save-pdf">حفظ PDF</button>
+      <button type="button" class="primary" id="save-pdf">Save PDF</button>
     </div>
 
+    <div class="intro found" id="found-tasks" hidden></div>
+
     <div class="tabs" role="tablist">
-      <button type="button" role="tab" class="tab" data-tab="notes" aria-selected="true">الملف الدراسي</button>
-      <button type="button" role="tab" class="tab" data-tab="map" aria-selected="false">الخريطة الذهنية</button>
-      <button type="button" role="tab" class="tab" data-tab="report" aria-selected="false">تقرير التحقق</button>
+      <button type="button" role="tab" class="tab" data-tab="notes" aria-selected="true">Study file</button>
+      <button type="button" role="tab" class="tab" data-tab="map" aria-selected="false">Mind map</button>
+      <button type="button" role="tab" class="tab" data-tab="report" aria-selected="false">Check report</button>
     </div>
 
     <div class="pages-frame" id="frame-notes"><div class="pages" id="pages-notes"></div></div>
     <div class="pages-frame" id="frame-map" hidden><div class="pages" id="pages-map"></div></div>
     <div class="report" id="frame-report" hidden></div>
 
-    <div class="pdf-tip muted" id="pdf-tip">
-      عند الضغط على «حفظ PDF» تفتح نافذة الطباعة: اختر «حفظ بتنسيق PDF» ثم اضغط زر الحفظ.
-    </div>
+    <div class="pdf-tip muted" id="pdf-tip">“Save PDF” opens the print window: choose “Save as PDF”, then tap save.</div>
 
-    <!-- المحادثة -->
-    <section class="chat">
-      <h2>اطلب تعديلًا أو اسأل</h2>
+    <section class="card chat">
+      <div class="card-h">Ask for a change or a question</div>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-input">
-        <textarea id="chat-text" rows="2" placeholder="مثل: اجعل جدول الأقوال أوضح، أو أضف مثال الشيخ عن…"></textarea>
-        <button type="button" class="primary" id="chat-send">أرسل</button>
+        <textarea id="chat-text" rows="2" dir="auto" placeholder="e.g. Make the table clearer, or add the teacher's example about…"></textarea>
+        <button type="button" class="primary" id="chat-send">Send</button>
       </div>
       <div class="progress small" id="chat-progress" hidden>
         <div class="spinner" aria-hidden="true"></div>
-        <div id="chat-progress-text">جارٍ التعديل…</div>
+        <div id="chat-progress-text">Editing…</div>
       </div>
     </section>
   </section>
 
-  <!-- المكتبة -->
+  <!-- library -->
   <section class="screen" id="screen-library" hidden>
-    <h1 class="screen-title">المكتبة</h1>
+    <h1 class="screen-title">Library</h1>
+    <input id="lib-search" class="search" type="search" dir="auto" placeholder="Search your notes">
     <div id="cloud-status" class="muted"></div>
     <div id="library-list"></div>
     <div class="row-gap lib-tools">
-      <button type="button" class="ghost" id="book-mawaiz">ملف المواعظ لكل المواد</button>
+      <button type="button" class="primary" id="book-year">Make my year book</button>
+      <button type="button" class="ghost" id="book-mawaiz">Reminders book for all subjects</button>
     </div>
-    <div class="progress small" id="book-progress" hidden><div class="spinner" aria-hidden="true"></div><div id="book-progress-text">جارٍ تجهيز الكتاب…</div></div>
+    <div class="progress small" id="book-progress" hidden><div class="spinner" aria-hidden="true"></div><div id="book-progress-text">Preparing the book…</div></div>
   </section>
 
-  <!-- الإعدادات -->
+  <!-- calendar -->
+  <section class="screen" id="screen-calendar" hidden>
+    <div class="row-between">
+      <h1 class="screen-title">Calendar</h1>
+      <button type="button" class="primary" id="ev-add">+ Add</button>
+    </div>
+
+    <div class="card review" id="week-review"></div>
+
+    <div class="card">
+      <div class="cal-nav">
+        <button type="button" class="icon-btn" id="cal-prev" aria-label="Previous month">‹</button>
+        <b id="cal-month"></b>
+        <button type="button" class="icon-btn" id="cal-next" aria-label="Next month">›</button>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h" id="day-title">Today</div>
+      <div id="day-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Coming up</div>
+      <div id="upcoming-list"></div>
+    </div>
+  </section>
+
+  <!-- studio: Instagram text editor and post ideas (built by studio.js) -->
+  <section class="screen" id="screen-studio" hidden></section>
+
+  <!-- settings -->
   <section class="screen" id="screen-settings" hidden>
-    <h1 class="screen-title">الإعدادات</h1>
+    <h1 class="screen-title">Settings</h1>
 
-    <label class="field">
-      <span>من يكتب الملاحظات؟</span>
-      <select id="engine">
-        <option value="server">خادم التطبيق — مجاني، بلا مفاتيح</option>
-        <option value="phone">الذكاء على جوالي — تجريبي، أضعف</option>
-        <option value="claude">Claude — بمفتاحي المدفوع</option>
-      </select>
-    </label>
-
-    <div id="phone-box">
+    <div class="card">
+      <div class="card-h">Appearance</div>
       <label class="field">
-        <span>حجم الذكاء</span>
-        <select id="phone-size">
-          <option value="fast">سريع — نحو ٢٫٥ جيجا</option>
-          <option value="light">خفيف — نحو ١٫٥ جيجا، أضعف (إن تعطّل السريع)</option>
-          <option value="strong">أقوى — نحو ٥ جيجا، أبطأ</option>
+        <span>Theme</span>
+        <select id="theme">
+          <option value="navy">Dark blue</option>
+          <option value="light">Light</option>
         </select>
       </label>
-      <label class="row-gap" style="align-items:center"><input type="checkbox" id="phone-compat"> وضع التوافق (إن توقف الذكاء أثناء الكتابة)</label>
-      <div class="row-gap">
-        <button type="button" class="primary" id="phone-download">نزّل الذكاء إلى جوالي</button>
-        <button type="button" class="ghost danger" id="phone-remove" hidden>احذف الذكاء من الجوال</button>
+      <label class="field">
+        <span>Arabic font in notes</span>
+        <select id="font">
+          <option value="sch">Scheherazade New — clearer and larger</option>
+          <option value="amiri">Amiri — classic</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Notes</div>
+      <label class="field">
+        <span>Default notes language</span>
+        <select id="lang-default">
+          <option value="auto">Automatic — same as the lesson</option>
+          <option value="ar">Arabic</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Who writes the notes?</span>
+        <select id="engine">
+          <option value="server">The app's server — free, no keys</option>
+          <option value="phone">AI on my phone — trial, weaker</option>
+          <option value="claude">Claude — with my paid key</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="find-tasks" checked> Find homework, exams and deadlines in lessons and offer to add them to the calendar</label>
+
+      <div id="phone-box">
+        <label class="field">
+          <span>Phone AI size</span>
+          <select id="phone-size">
+            <option value="fast">Fast — about 2.5 GB</option>
+            <option value="light">Light — about 1.5 GB, weaker</option>
+            <option value="strong">Stronger — about 5 GB, slower</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="phone-compat"> Compatibility mode (if the AI stops while writing)</label>
+        <div class="row-gap">
+          <button type="button" class="primary" id="phone-download">Download the AI to my phone</button>
+          <button type="button" class="ghost danger" id="phone-remove" hidden>Remove the AI from the phone</button>
+        </div>
+        <div class="bar" id="phone-bar-wrap" hidden><i id="phone-bar"></i></div>
+        <div id="phone-status" class="muted"></div>
+        <div class="row-gap"><button type="button" class="ghost" id="phone-test">Test the phone AI</button></div>
+        <div id="phone-test-out" class="muted" style="white-space:pre-wrap"></div>
       </div>
-      <div class="bar" id="phone-bar-wrap" hidden><i id="phone-bar"></i></div>
-      <div id="phone-status" class="muted"></div>
-      <div class="row-gap"><button type="button" class="ghost" id="phone-test">اختبر الذكاء على جوالي</button></div>
-      <div id="phone-test-out" class="muted" style="white-space:pre-wrap"></div>
-      <small class="muted">يُنزّل مرة واحدة، ثم يكتب على جوالك بلا إنترنت. الآيات تُطابق تلقائيًا على نص المصحف.</small>
-    </div>
 
-    <div id="claude-box" hidden>
-    <label class="field">
-      <span>مفتاح الذكاء الاصطناعي</span>
-      <input id="api-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="sk-ant-...">
-      <small class="muted">يبقى المفتاح على جوالك فقط، ولا يُرسل إلا إلى Anthropic عند صنع الملاحظات.</small>
-    </label>
-    <div class="row-gap">
-      <button type="button" class="ghost" id="toggle-key">إظهار</button>
-      <button type="button" class="primary" id="save-key">حفظ</button>
-      <button type="button" class="ghost" id="test-key">تجربة المفتاح</button>
-    </div>
-    <div id="key-status" class="muted"></div>
-
-    <label class="field">
-      <span>الجودة</span>
-      <select id="model">
-        <option value="claude-opus-5-5">الأقوى في العربية (Opus) — نحو ٢ ريال للدرس</option>
-        <option value="claude-sonnet-5-5">جيد وأرخص (Sonnet) — نحو ١ ريال للدرس</option>
-      </select>
-    </label>
-    </div>
-
-    <label class="field">
-      <span>مفتاح GitHub (لحفظ دروسك في مخزنك الخاص)</span>
-      <input id="gh-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="github_pat_...">
-      <small class="muted">مع هذا المفتاح يُحفظ كل درس تلقائيًا في jund-notes-data، فيعود إليك على أي جوال.</small>
-    </label>
-    <div class="row-gap"><button type="button" class="primary" id="save-gh">حفظ واتصال</button></div>
-    <div id="gh-status" class="muted"></div>
-
-
-
-    <label class="field">
-      <span>الخط</span>
-      <select id="font">
-        <option value="sch">Scheherazade New — أوضح وأكبر</option>
-        <option value="amiri">Amiri — بحجم أكبر</option>
-      </select>
-    </label>
-
-    <div class="field">
-      <span>النسخة الاحتياطية</span>
-      <small class="muted">دروسك محفوظة على هذا الجوال فقط. احفظ نسخة في Google Drive بين حين وآخر، وخاصة قبل تغيير الجوال.</small>
-      <div class="row-gap">
-        <button type="button" class="primary" id="backup">احفظ نسخة احتياطية</button>
-        <label class="file-btn"><input id="restore" type="file" accept=".json,application/json">استرجع من نسخة</label>
+      <div id="claude-box" hidden>
+        <label class="field">
+          <span>Claude key</span>
+          <input id="api-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="sk-ant-...">
+          <small class="muted">The key stays on this phone and is only sent to Anthropic when notes are made.</small>
+        </label>
+        <div class="row-gap">
+          <button type="button" class="ghost" id="toggle-key">Show</button>
+          <button type="button" class="primary" id="save-key">Save</button>
+          <button type="button" class="ghost" id="test-key">Test the key</button>
+        </div>
+        <div id="key-status" class="muted"></div>
+        <label class="field">
+          <span>Quality</span>
+          <select id="model">
+            <option value="claude-opus-5-5">Best in Arabic (Opus) — about 2 SAR a lesson</option>
+            <option value="claude-sonnet-5-5">Good and cheaper (Sonnet) — about 1 SAR a lesson</option>
+          </select>
+        </label>
       </div>
-      <div id="backup-status" class="muted"></div>
+      <div class="field">
+        <span>Spent so far</span>
+        <div id="spend" class="muted"></div>
+      </div>
     </div>
 
-    <div class="field">
-      <span>المصروف حتى الآن</span>
-      <div id="spend" class="muted"></div>
+    <div class="card" id="offline-card"></div>
+
+    <div class="card">
+      <div class="card-h">Calendar and reminders</div>
+      <label class="field">
+        <span>Week starts on</span>
+        <select id="week-start">
+          <option value="0">Sunday</option>
+          <option value="6">Saturday</option>
+          <option value="1">Monday</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Default reminder</span>
+        <select id="remind-default">
+          <option value="-1">No reminder</option>
+          <option value="10">10 minutes before</option>
+          <option value="30">30 minutes before</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+        </select>
+      </label>
+      <div class="row-gap"><button type="button" class="ghost" id="notif-allow">Allow reminders on this phone</button></div>
+      <small class="muted" id="notif-status">Reminders pop up while the app is open, and missed ones show when you open it.</small>
     </div>
 
-    <p class="muted" style="font-size:.8rem">نص المصحف: موسوعة القرآن الكريم (quranenc.com)، برخصة CC BY-SA 4.0. الذكاء على الجوال: Qwen عبر WebLLM.</p>
+    <div class="card">
+      <div class="card-h">Server</div>
+      <div class="row-gap"><button type="button" class="ghost" id="server-check">Check the server</button></div>
+      <div id="server-status" class="muted"></div>
+    </div>
 
-    <details class="field">
-      <summary>ألوان المواد</summary>
+    <div class="card">
+      <div class="card-h">Saving and backup</div>
+      <label class="field">
+        <span>GitHub key (saves your lessons in your private storage)</span>
+        <input id="gh-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="github_pat_...">
+        <small class="muted">With this key every lesson is saved in jund-notes-data, so it comes back on any phone.</small>
+      </label>
+      <div class="row-gap"><button type="button" class="primary" id="save-gh">Save and connect</button></div>
+      <div id="gh-status" class="muted"></div>
+      <div class="field">
+        <span>Backup file</span>
+        <small class="muted">Keep a copy in Google Drive now and then, especially before changing phones. It includes your calendar.</small>
+        <div class="row-gap">
+          <button type="button" class="primary" id="backup">Save a backup</button>
+          <label class="file-btn"><input id="restore" type="file" accept=".json,application/json">Restore from a backup</label>
+        </div>
+        <div id="backup-status" class="muted"></div>
+      </div>
+    </div>
+
+    <details class="card">
+      <summary class="card-h">Subject colours</summary>
       <div id="palette-list"></div>
     </details>
+
+    <p class="muted fine">Jund Notes <span id="app-version"></span> · Quran text: Quran Encyclopedia (quranenc.com), CC BY-SA 4.0 · Phone AI: Qwen via WebLLM · Video audio: mp4box.js</p>
   </section>
 
+  <div class="toast" id="toast" hidden></div>
 </main>
+
+<!-- add / edit a calendar item -->
+<dialog id="ev-dialog">
+  <form method="dialog" id="ev-form">
+    <h2 id="ev-dialog-title">New item</h2>
+    <label class="field"><span>Title</span><input id="ev-title" type="text" dir="auto" required placeholder="e.g. Fiqh homework"></label>
+    <div class="grid2">
+      <label class="field"><span>Date</span><input id="ev-date" type="date" required></label>
+      <label class="field"><span>Time</span><input id="ev-time" type="time"></label>
+      <label class="field"><span>Type</span>
+        <select id="ev-type">
+          <option value="task">Task</option>
+          <option value="homework">Homework</option>
+          <option value="exam">Exam</option>
+          <option value="class">Class</option>
+          <option value="meeting">Meeting</option>
+          <option value="study">Study time</option>
+        </select>
+      </label>
+      <label class="field"><span>Repeat</span>
+        <select id="ev-repeat">
+          <option value="none">Once</option>
+          <option value="weekly">Every week</option>
+        </select>
+      </label>
+      <label class="field"><span>Reminder</span>
+        <select id="ev-remind">
+          <option value="-1">None</option>
+          <option value="10">10 min before</option>
+          <option value="30">30 min before</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+        </select>
+      </label>
+    </div>
+    <label class="field"><span>Details</span><textarea id="ev-notes" rows="2" dir="auto"></textarea></label>
+    <div class="row-between">
+      <button type="button" class="ghost danger" id="ev-delete" hidden>Delete</button>
+      <span class="row-gap">
+        <button type="button" class="ghost" id="ev-cancel">Cancel</button>
+        <button type="submit" class="primary" id="ev-save">Save</button>
+      </span>
+    </div>
+  </form>
+</dialog>
+
+<nav class="tabbar" aria-label="Main">
+  <button type="button" data-nav="new" class="on">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New</span></button>
+  <button type="button" data-nav="library">
+    <svg viewBox="0 0 24 24"><path d="M4 19.5V5a1 1 0 0 1 1-1h5v16H5a1 1 0 0 1-1-.5zM10 4h4v16h-4zM15 5.5l3.5-1 3 14.5-3.5 1z"/></svg><span>Library</span></button>
+  <button type="button" data-nav="calendar">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></svg><span>Calendar</span></button>
+  <button type="button" data-nav="studio">
+    <svg viewBox="0 0 24 24"><path d="M4 7V5h16v2M12 5v14M9 19h6"/></svg><span>Studio</span></button>
+  <button type="button" data-nav="settings">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg><span>Settings</span></button>
+</nav>
 
 <div id="measure" aria-hidden="true"></div>
 
 <script src="prompt.js"></script>
 <script src="quran.js"></script>
 <script src="local-ai.js"></script>
+<script src="subjects.js"></script>
 <script src="vendor/mp4box.all.min.js"></script>
 <script src="media.js"></script>
-<script src="subjects.js"></script>
 <script src="app.js"></script>
+<script src="calendar.js"></script>
+<script src="studio.js"></script>
+<script src="offline.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v12';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js'];
+const CACHE = 'jn-app-v13';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -22,7 +22,7 @@ self.addEventListener('fetch', e => {
       if (file && file.size && !isText) {
         // PDF, audio or video: keep the file itself; the app opens it
         const type = file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream');
-        await c0.put('shared-file', new Response(file, { headers: { 'content-type': type, 'x-name': encodeURIComponent(file.name || 'ملف') } }));
+        await c0.put('shared-file', new Response(file, { headers: { 'content-type': type, 'x-name': encodeURIComponent(file.name || 'file') } }));
       } else if (file && typeof file.text === 'function') text = (await file.text()) || text;
       const title = form.get('title') || (file && file.name ? file.name.replace(/\.[^.]+$/, '') : '');
       const c = await caches.open('jn-share');
@@ -41,4 +41,13 @@ self.addEventListener('fetch', e => {
       return r;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
   );
+});
+
+// tapping a reminder opens the app on the calendar
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const w = list.find(c => 'focus' in c);
+    return w ? w.focus() : self.clients.openWindow('./?view=calendar');
+  }));
 });

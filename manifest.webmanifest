@@ -1,13 +1,13 @@
 {
-  "name": "ملاحظات جُنيد",
-  "short_name": "ملاحظاتي",
-  "lang": "ar",
-  "dir": "rtl",
+  "name": "Jund Notes",
+  "short_name": "Jund Notes",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f6efe0",
-  "theme_color": "#2b2418",
+  "background_color": "#0b1324",
+  "theme_color": "#0b1324",
   "icons": [
     {
       "src": "icon-192.png",
@@ -48,10 +48,25 @@
             ".mp4",
             ".mov",
             ".3gp",
-            ".webm"
+            ".webm",
+            "image/*",
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp"
           ]
         }
       ]
     }
-  }
+  },
+  "shortcuts": [
+    {
+      "name": "Calendar",
+      "url": "./?view=calendar"
+    },
+    {
+      "name": "Studio",
+      "url": "./?view=studio"
+    }
+  ]
 }

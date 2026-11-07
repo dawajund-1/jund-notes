@@ -1,11 +1,13 @@
-/* ملاحظات جُنيد — the app. Plain JS, no build step. */
+/* Jund Notes — the app. Plain JS, no build step. */
 (() => {
 'use strict';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';
-const ar = n => String(n).replace(/\d/g, d => AR_DIGITS[d]);
+const arD = n => String(n).replace(/\d/g, d => AR_DIGITS[d]);  // Arabic digits, for Arabic note pages
+const ar = n => String(n);                                        // the app itself shows plain digits
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const PRICES = { // USD per million tokens
@@ -66,21 +68,21 @@ const cloud = (() => {
     if (busy) return; busy = true;
     while (queue.length) {
       const job = queue.shift();
-      try { await job(); } catch { setStatus('⚠ لم يُحفظ في السحابة الآن؛ سيُعاد عند فتح التطبيق مع الإنترنت.'); store.set('ghDirty', true); }
+      try { await job(); } catch { setStatus('⚠ Not saved to your storage yet; it will retry when the app is open with internet.'); store.set('ghDirty', true); }
     }
     busy = false;
   }
   async function putLesson(l) {
     const path = `/contents/lessons/${l.id}.json`;
     let sha = shas()[l.id];
-    const body = () => JSON.stringify({ message: `حفظ: ${l.subject?.name || ''} — ${l.unit || l.id}`, content: b64(JSON.stringify(l)), ...(sha ? { sha } : {}) });
+    const body = () => JSON.stringify({ message: `Save: ${l.subject?.name || ''} — ${l.unit || l.id}`, content: b64(JSON.stringify(l)), ...(sha ? { sha } : {}) });
     let r = await api(path, { method: 'PUT', body: body() });
     if (r.status === 409 || r.status === 422) { // our copy of the version was old: fetch the current one and retry once
       const g = await api(path); if (g.ok) { sha = (await g.json()).sha; r = await api(path, { method: 'PUT', body: body() }); }
     }
     if (!r.ok) throw new Error(r.status);
     setSha(l.id, (await r.json()).content.sha);
-    setStatus('☁ محفوظ في مخزنك الخاص على GitHub.');
+    setStatus('☁ Saved in your private GitHub storage.');
   }
   return {
     on: () => !!token(),
@@ -91,7 +93,7 @@ const cloud = (() => {
         const path = `/contents/lessons/${id}.json`;
         let sha = shas()[id];
         if (!sha) { const g = await api(path); if (!g.ok) return; sha = (await g.json()).sha; }
-        await api(path, { method: 'DELETE', body: JSON.stringify({ message: 'حذف درس', sha }) });
+        await api(path, { method: 'DELETE', body: JSON.stringify({ message: 'Delete lesson', sha }) });
         setSha(id, null);
       }); run();
     },
@@ -120,17 +122,33 @@ const cloud = (() => {
         const k = shas();
         all.filter(l => !k[l.id]).forEach(l => cloud.push(l));
       }
-      setStatus('☁ متزامن مع مخزنك الخاص على GitHub.');
+      setStatus('☁ In sync with your private GitHub storage.');
       return added;
     },
     async test() {
       const r = await api('');
-      if (r.status === 401) throw new Error('المفتاح غير صحيح.');
-      if (r.status === 404) throw new Error('لم أجد المخزن jund-notes-data، أو المفتاح لا يملك صلاحية عليه.');
-      if (!r.ok) throw new Error('خطأ ' + r.status);
+      if (r.status === 401) throw new Error('The key is not correct.');
+      if (r.status === 404) throw new Error('I could not find the jund-notes-data storage, or the key has no access to it.');
+      if (!r.ok) throw new Error('Error ' + r.status);
       return true;
     },
     status: () => status,
+    // small app data files (calendar, saved texts) kept next to the lessons
+    async putData(name, obj) {
+      if (!token()) return;
+      const path = `/contents/data/${name}.json`, key = 'data:' + name;
+      let sha = shas()[key];
+      const body = () => JSON.stringify({ message: 'Save ' + name, content: b64(JSON.stringify(obj)), ...(sha ? { sha } : {}) });
+      let r = await api(path, { method: 'PUT', body: body() });
+      if (r.status === 409 || r.status === 422) { const g = await api(path); if (g.ok) { sha = (await g.json()).sha; r = await api(path, { method: 'PUT', body: body() }); } }
+      if (r.ok) setSha(key, (await r.json()).content.sha);
+    },
+    async getData(name) {
+      if (!token()) return null;
+      const r = await api(`/contents/data/${name}.json`, { raw: true });
+      if (!r.ok) return null;
+      try { return JSON.parse(await r.text()); } catch { return null; }
+    },
   };
 })();
 async function saveLesson(l) { await idb.put(l); cloud.push(l); }
@@ -149,7 +167,7 @@ function fillSubjects() {
   for (const s of window.SUBJECTS) (groups[s.place] ??= []).push(s);
   sel.innerHTML = Object.entries(groups).map(([place, list]) =>
     `<optgroup label="${esc(place)}">${list.map(s => `<option value="${s.id}">${esc(s.name)}${s.book ? ' — ' + esc(s.book) : ''}</option>`).join('')}</optgroup>`
-  ).join('') + `<option value="other">مادة أخرى…</option>`;
+  ).join('') + `<option value="other">Another subject…</option>`;
   sel.value = store.get('lastSubject', window.SUBJECTS[0].id);
   if (!sel.value) sel.value = window.SUBJECTS[0].id;
   const sync = () => { $('#custom-subject-wrap').hidden = sel.value !== 'other'; store.set('lastSubject', sel.value); };
@@ -164,7 +182,7 @@ function renderPaletteSettings() {
     return `<div class="pal-row">
       <span class="pal-chip" style="background:${pal['--sub-head']}"></span>
       <span style="flex:1;min-width:0">${esc(s.name)} <small class="muted">(${esc(s.place)})</small></span>
-      <select data-sub="${s.id}" aria-label="لون ${esc(s.name)}">${Object.entries(fams).map(([k, f]) => `<option value="${k}" ${k === familyOf(s) ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>
+      <select data-sub="${s.id}" aria-label="Colour of ${esc(s.name)}">${Object.entries(fams).map(([k, f]) => `<option value="${k}" ${k === familyOf(s) ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>
     </div>`;
   }).join('') + `<div id="pal-warn" class="muted"></div>`;
   $$('select[data-sub]', box).forEach(sel => sel.addEventListener('change', () => {
@@ -173,22 +191,27 @@ function renderPaletteSettings() {
   }));
   // warn about repeats inside one place
   const seen = {}; const dup = [];
-  for (const s of window.SUBJECTS) { const k = s.place + familyOf(s); if (seen[k]) dup.push(`${seen[k]} و${s.name}`); else seen[k] = s.name; }
-  $('#pal-warn').textContent = dup.length ? '⚠ لون متكرر في المكان نفسه: ' + dup.join('، ') : '';
+  for (const s of window.SUBJECTS) { const k = s.place + familyOf(s); if (seen[k]) dup.push(`${seen[k]} and ${s.name}`); else seen[k] = s.name; }
+  $('#pal-warn').textContent = dup.length ? '⚠ Same colour twice in one place: ' + dup.join(', ') : '';
 }
 
 /* ---------- navigation ---------- */
+const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings'];
 function show(name) {
-  for (const s of ['new', 'result', 'library', 'settings']) $('#screen-' + s).hidden = s !== name;
+  for (const s of SCREENS) { const el = $('#screen-' + s); if (el) el.hidden = s !== name; }
+  const tab = name === 'result' ? 'library' : name;
+  $$('.tabbar [data-nav]').forEach(b => b.classList.toggle('on', b.dataset.nav === tab));
   if (name === 'library') renderLibrary();
+  if (name === 'calendar') window.JundCal?.render();
+  if (name === 'studio') window.JundStudio?.open();
   if (name === 'settings') { renderPaletteSettings(); renderSpend(); window.__syncEngine?.(); }
   if (name === 'new') $('#key-missing').hidden = engineKind() !== 'claude' || !!store.get('key');
   if (name === 'result') requestAnimationFrame(fitPages);
   window.scrollTo(0, 0);
 }
-$('#go-home').onclick = () => show(current ? 'result' : 'new');
-$('#go-library').onclick = () => show('library');
-$('#go-settings').onclick = () => show('settings');
+$('#go-home').onclick = () => show('new');
+$('#go-today').onclick = () => { window.JundCal?.goToday(); show('calendar'); };
+$$('.tabbar [data-nav]').forEach(b => b.onclick = () => show(b.dataset.nav));
 document.addEventListener('click', e => { const g = e.target.closest('[data-go]'); if (g) show(g.dataset.go); });
 
 /* ---------- settings ---------- */
@@ -198,11 +221,11 @@ function initSettings() {
   $('#model').onchange = () => store.set('model', $('#model').value);
   $('#toggle-key').onclick = () => {
     const i = $('#api-key'); i.type = i.type === 'password' ? 'text' : 'password';
-    $('#toggle-key').textContent = i.type === 'password' ? 'إظهار' : 'إخفاء';
+    $('#toggle-key').textContent = i.type === 'password' ? 'Show' : 'Hide';
   };
   $('#save-key').onclick = () => {
     store.set('key', $('#api-key').value.trim());
-    $('#key-status').textContent = store.get('key') ? '✓ حُفظ المفتاح على هذا الجوال.' : 'حُذف المفتاح.';
+    $('#key-status').textContent = store.get('key') ? '✓ Key saved on this phone.' : 'Key removed.';
   };
   // which AI
   const syncEngine = async () => {
@@ -214,7 +237,7 @@ function initSettings() {
       if (!sup.ok) { $('#phone-status').textContent = '✗ ' + sup.why; return; }
       const have = await window.LocalAI.isDownloaded(phoneSize());
       $('#phone-compat').checked = window.LocalAI.isCompat();
-      $('#phone-status').textContent = have ? '✓ الذكاء مُنزّل على جوالك ويعمل بلا إنترنت.' : `لم يُنزّل بعد (${window.LocalAI.MODELS[phoneSize()].size}). يُفضّل التنزيل على الواي فاي.`;
+      $('#phone-status').textContent = have ? '✓ The AI is on your phone and works without internet.' : `Not downloaded yet (${window.LocalAI.MODELS[phoneSize()].size}). Best on Wi-Fi.`;
       $('#phone-download').hidden = have; $('#phone-remove').hidden = !have;
     }
   };
@@ -227,14 +250,14 @@ function initSettings() {
       $('#phone-bar-wrap').hidden = false;
       await window.LocalAI.load(phoneSize(), p => { st.textContent = progressText(p); setBar('#phone-bar-wrap', '#phone-bar', p.progress); });
       $('#phone-bar-wrap').hidden = true;
-      st.textContent = '✓ نُزّل الذكاء. صار يعمل على جوالك بلا إنترنت.';
+      st.textContent = '✓ Downloaded. The AI now works on your phone without internet.';
     } catch (e) { st.textContent = '✗ ' + errText(e); $('#phone-bar-wrap').hidden = true; }
     $('#phone-download').disabled = false; syncEngine();
   };
   $('#phone-remove').onclick = async () => {
     const b = $('#phone-remove');
-    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'اضغط مرة ثانية لحذفه من الجوال'; return; }
-    delete b.dataset.sure; b.textContent = 'احذف الذكاء من الجوال';
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'Tap again to remove it'; return; }
+    delete b.dataset.sure; b.textContent = 'Remove the AI from the phone';
     try { await window.LocalAI.remove(phoneSize()); } catch {}
     syncEngine();
   };
@@ -242,7 +265,7 @@ function initSettings() {
     const out = $('#phone-test-out'); const b = $('#phone-test'); b.disabled = true;
     try {
       const sup = await window.LocalAI.support();
-      out.textContent = sup.ok ? `✓ الجوال يدعم تشغيل الذكاء${sup.f16 ? '' : ' (وضع أبطأ قليلًا)'}.\nجارٍ التشغيل…` : '✗ ' + sup.why;
+      out.textContent = sup.ok ? `✓ This phone can run the AI${sup.f16 ? '' : ' (a little slower mode)'}.\nStarting…` : '✗ ' + sup.why;
       if (!sup.ok) return;
       $('#phone-bar-wrap').hidden = false;
       const t0 = Date.now(); let t1 = 0;
@@ -251,44 +274,53 @@ function initSettings() {
         system: 'أجب بكائن JSON فقط.',
         user: 'اكتب {"تعريف":"..."} فيه تعريف الحديث الصحيح في سطر واحد.',
         onProgress: p => { out.textContent = progressText(p); setBar('#phone-bar-wrap', '#phone-bar', p.progress); },
-        onText: t => { t1 ||= Date.now(); out.textContent = 'يكتب: ' + t; },
+        onText: t => { t1 ||= Date.now(); out.textContent = 'Writing: ' + t; },
       });
       const secs = ((Date.now() - (t1 || t0)) / 1000).toFixed(1);
       const words = r.text.split(/\s+/).length;
-      out.textContent = `✓ الذكاء يعمل على جوالك.\nالرد: ${r.text}\nالسرعة: نحو ${ar(Math.round(words / Math.max(0.5, secs) * 60))} كلمة في الدقيقة.`;
+      out.textContent = `✓ The AI works on your phone.\nAnswer: ${r.text}\nSpeed: about ${ar(Math.round(words / Math.max(0.5, secs) * 60))} words a minute.`;
     } catch (e) { out.textContent = '✗ ' + errText(e); }
     finally { b.disabled = false; $('#phone-bar-wrap').hidden = true; syncEngine(); }
   };
   window.__syncEngine = syncEngine;
+  // appearance and defaults
+  $('#theme').value = store.get('theme', 'navy');
+  $('#theme').onchange = () => { store.set('theme', $('#theme').value); applyTheme(); };
+  $('#lang-default').value = store.get('langDefault', 'auto');
+  $('#lang-default').onchange = () => { store.set('langDefault', $('#lang-default').value); $('#lang').value = $('#lang-default').value; };
+  $('#lang').value = store.get('langDefault', 'auto');
+  $('#find-tasks').checked = store.get('findTasks', true);
+  $('#find-tasks').onchange = () => store.set('findTasks', $('#find-tasks').checked);
+  $('#server-check').onclick = checkServer;
   $('#gh-key').value = store.get('ghKey', '');
   $('#save-gh').onclick = async () => {
     store.set('ghKey', $('#gh-key').value.trim());
     const st = $('#gh-status');
-    if (!store.get('ghKey')) { st.textContent = 'أُوقف الحفظ في السحابة.'; return; }
-    st.textContent = 'جارٍ التجربة…';
+    if (!store.get('ghKey')) { st.textContent = 'Saving to your storage is off.'; return; }
+    st.textContent = 'Testing…';
     try {
       await cloud.test();
-      st.textContent = '✓ متصل. جارٍ رفع دروسك وجلب ما في السحابة…';
+      st.textContent = '✓ Connected. Uploading your lessons and fetching what is stored…';
       const n = await cloud.pull();
       const all = await idb.all(); const k = store.get('ghShas', {});
       all.filter(l => !k[l.id]).forEach(l => cloud.push(l));
-      st.textContent = `✓ متصل بمخزنك الخاص.${n ? ' جُلب ' + ar(n) + ' درس.' : ''}`;
+      st.textContent = `✓ Connected to your private storage.${n ? ' Fetched ' + ar(n) + ' lessons.' : ''}`;
     } catch (e) { st.textContent = '✗ ' + e.message; }
   };
   $('#test-key').onclick = async () => {
     store.set('key', $('#api-key').value.trim());
-    $('#key-status').textContent = 'جارٍ التجربة…';
+    $('#key-status').textContent = 'Testing…';
     try {
       const r = await callClaude({ system: 'أجب بكلمة واحدة.', messages: [{ role: 'user', content: 'قل: يعمل' }], maxTokens: 20, model: 'claude-sonnet-5-5' });
-      $('#key-status').textContent = '✓ المفتاح يعمل. (' + r.text.trim() + ')';
+      $('#key-status').textContent = '✓ The key works. (' + r.text.trim() + ')';
     } catch (e) { $('#key-status').textContent = '✗ ' + e.message; }
   };
 }
 function renderSpend() {
   const s = store.get('spend', { usd: 0, runs: 0 });
   $('#spend').textContent = s.runs
-    ? `نحو ${ar((s.usd * SAR).toFixed(2))} ريال على ${ar(s.runs)} عملية.`
-    : 'لا شيء بعد.';
+    ? `About ${ar((s.usd * SAR).toFixed(2))} SAR over ${ar(s.runs)} runs.`
+    : 'Nothing yet.';
 }
 function addSpend(model, usage) {
   const p = PRICES[model] || PRICES['claude-opus-5-5'];
@@ -302,7 +334,7 @@ function addSpend(model, usage) {
 /* ---------- the AI call (streamed) ---------- */
 async function callClaude({ system, messages, maxTokens = 32000, model, onText, signal }) {
   const key = store.get('key');
-  if (!key) throw new Error('لا يوجد مفتاح. ضعه في الإعدادات أولًا.');
+  if (!key) throw new Error('No key yet. Add it in Settings first.');
   model ??= store.get('model', 'claude-opus-5-5');
   let res;
   try {
@@ -322,16 +354,16 @@ async function callClaude({ system, messages, maxTokens = 32000, model, onText, 
     });
   } catch (e) {
     if (e.name === 'AbortError') throw e;
-    throw new Error('تعذّر الاتصال. تأكد من الإنترنت ثم حاول مرة ثانية.');
+    throw new Error('Could not connect. Check the internet and try again.');
   }
   if (!res.ok) {
     let msg = '';
     try { msg = (await res.json())?.error?.message || ''; } catch {}
-    if (res.status === 401) throw new Error('المفتاح غير صحيح. انسخه مرة ثانية من console.anthropic.com وضعه في الإعدادات.');
-    if (res.status === 400 && /credit|balance|billing/i.test(msg)) throw new Error('الرصيد انتهى. أضف رصيدًا من console.anthropic.com ← Billing.');
-    if (res.status === 429) throw new Error('طلبات كثيرة في وقت قصير. انتظر دقيقة ثم حاول.');
-    if (res.status === 529 || res.status >= 500) throw new Error('الخدمة مزدحمة الآن. حاول بعد دقائق.');
-    throw new Error('حدث خطأ (' + res.status + '): ' + msg);
+    if (res.status === 401) throw new Error('The key is not correct. Copy it again from console.anthropic.com and paste it in Settings.');
+    if (res.status === 400 && /credit|balance|billing/i.test(msg)) throw new Error('Your credit ran out. Add credit at console.anthropic.com → Billing.');
+    if (res.status === 429) throw new Error('Too many requests at once. Wait a minute and try again.');
+    if (res.status === 529 || res.status >= 500) throw new Error('The service is busy. Try again in a few minutes.');
+    throw new Error('Error (' + res.status + '): ' + msg);
   }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -348,7 +380,7 @@ async function callClaude({ system, messages, maxTokens = 32000, model, onText, 
       if (ev.type === 'message_start') Object.assign(usage, ev.message?.usage || {});
       else if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') { text += ev.delta.text; onText?.(text); }
       else if (ev.type === 'message_delta') { Object.assign(usage, ev.usage || {}); stop = ev.delta?.stop_reason || stop; }
-      else if (ev.type === 'error') throw new Error('انقطع الرد: ' + (ev.error?.message || ''));
+      else if (ev.type === 'error') throw new Error('The answer was cut off: ' + (ev.error?.message || ''));
     }
   }
   const usd = addSpend(model, usage);
@@ -388,7 +420,7 @@ async function getServer() {
   if (serverUrl) return serverUrl;
   try { const j = await (await fetch('server.json', { cache: 'no-cache' })).json(); serverUrl = j.url.replace(/\/$/, ''); store.set('serverUrl', serverUrl); }
   catch { serverUrl = store.get('serverUrl', null); }
-  if (!serverUrl) throw Object.assign(new Error('خادم التطبيق لم يُجهَّز بعد. أكمل الخطوات التي أرسلتها لك ثم حاول.'), { code: 'noserver' });
+  if (!serverUrl) throw Object.assign(new Error('The app server is not set up yet. Finish the server steps I sent you, then try again.'), { code: 'noserver' });
   return serverUrl;
 }
 // one call to the app's server; the answer streams back as it is written
@@ -398,15 +430,15 @@ async function serverFetch(path, init) {
   try { res = await fetch(base + path, init); }
   catch (e) {
     if (e.name === 'AbortError') throw e;
-    throw Object.assign(new Error('لا يوجد اتصال بالإنترنت الآن.'), { code: 'offline' });
+    throw Object.assign(new Error('No internet connection right now.'), { code: 'offline' });
   }
   if (!res.ok) {
     let j = {}; try { j = await res.json(); } catch {}
-    if (j.code === 'quota') throw Object.assign(new Error('انتهى الحد المجاني اليومي لخادم التطبيق. يتجدد كل يوم نحو الساعة ١٠–١١ صباحًا بتوقيت السعودية.'), { code: 'quota' });
-    if (j.code === 'toolong') throw Object.assign(new Error('الجزء كبير جدًا لمرة واحدة. اختر صفحات أقل أو ملفًا أقصر.'), { code: 'toolong' });
-    if (j.code === 'key' || j.code === 'nokey') throw Object.assign(new Error('مفتاح الخادم غير صحيح أو لم يُضف بعد. أكمل خطوات تشغيل الخادم.'), { code: 'key' });
-    if (j.code === 'bad') throw Object.assign(new Error('رفض الذكاء هذا الطلب.'), { code: 'bad', status: 400, detail: j.error || '' });
-    throw Object.assign(new Error('الخادم لم يستطع الكتابة الآن (' + (res.status) + '). حاول بعد دقائق.'), { code: 'server', status: res.status });
+    if (j.code === 'quota') throw Object.assign(new Error('The free daily limit of the app server is used up. It resets every day at about 10–11 am Saudi time.'), { code: 'quota' });
+    if (j.code === 'toolong') throw Object.assign(new Error('Too big for one go. Choose fewer pages or a shorter file.'), { code: 'toolong' });
+    if (j.code === 'key' || j.code === 'nokey') throw Object.assign(new Error('The server key is wrong or not added yet. Finish the server setup steps.'), { code: 'key' });
+    if (j.code === 'bad') throw Object.assign(new Error('The AI refused this request.'), { code: 'bad', status: 400, detail: j.error || '' });
+    throw Object.assign(new Error('The server could not write right now (' + (res.status) + '). Try again in a few minutes.'), { code: 'server', status: res.status });
   }
   return res;
 }
@@ -463,21 +495,21 @@ async function hearPiece(piece, signal, onText) {
 }
 // a whole audio or video file, piece by piece
 async function hearFile(item, signal, onStatus) {
-  onStatus('يستخرج الصوت…');
-  const prep = await window.JundMedia.prepare(item.file, f => onStatus('يستخرج الصوت… ' + ar(Math.round(f * 100)) + '٪'), signal);
+  onStatus('Taking out the sound…');
+  const prep = await window.JundMedia.prepare(item.file, f => onStatus('Taking out the sound… ' + ar(Math.round(f * 100)) + '%'), signal);
   item.audio = prep.audio || null;
   const out = [];
   for (let i = 0; i < prep.pieces.length; i++) {
-    const pre = prep.pieces.length > 1 ? `يفرّغ الجزء ${ar(i + 1)} من ${ar(prep.pieces.length)}` : 'يفرّغ';
-    onStatus(pre + '… (يرفع الصوت)');
+    const pre = prep.pieces.length > 1 ? `Transcribing part ${ar(i + 1)} of ${ar(prep.pieces.length)}` : 'Transcribing';
+    onStatus(pre + '… (uploading the sound)');
     let r, tries = 0;
     for (;;) {
       try {
-        r = await hearPiece(prep.pieces[i], signal, t => onStatus(`${pre}… ${ar(t.split(/\s+/).filter(Boolean).length)} كلمة`));
+        r = await hearPiece(prep.pieces[i], signal, t => onStatus(`${pre}… ${ar(t.split(/\s+/).filter(Boolean).length)} words`));
         break;
       } catch (e) {
         if (signal?.aborted || e.code === 'offline' || e.code === 'key' || e.code === 'quota' || ++tries >= 2) throw e;
-        onStatus(pre + '… تعذّر، يحاول مرة ثانية');
+        onStatus(pre + '… failed, trying again');
       }
     }
     out.push(cleanHeard(r.text));
@@ -489,15 +521,15 @@ async function hearYouTube(item, signal, onStatus) {
   const STEP = 900, out = [];
   for (let w = 0; w < 16; w++) {
     const start = w * STEP, end = start + STEP;
-    const pre = `يفرّغ الدقائق ${ar(start / 60)}–${ar(end / 60)}`;
+    const pre = `Transcribing minutes ${ar(start / 60)}–${ar(end / 60)}`;
     onStatus(pre + '…');
     let r;
     try {
       const res = await serverFetch('/youtube', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: item.yt, start, end }) });
-      r = await readStream(res, t => onStatus(`${pre}… ${ar(t.split(/\s+/).filter(Boolean).length)} كلمة`));
+      r = await readStream(res, t => onStatus(`${pre}… ${ar(t.split(/\s+/).filter(Boolean).length)} words`));
     } catch (e) {
       if (w > 0 && e.code === 'bad') break;  // asked past the end of the video
-      if (e.code === 'bad') throw Object.assign(new Error('لم يستطع الذكاء فتح هذا الفيديو. قد يكون خاصًا أو غير مدرج أو محظورًا. حمّله بتطبيق إدارة الملفات ثم شاركه إلى التطبيق.'), { code: 'yt' });
+      if (e.code === 'bad') throw Object.assign(new Error('The AI could not open this video. It may be private, unlisted or blocked. Download it with Idarat al-Malafat, then share it to the app.'), { code: 'yt' });
       throw e;
     }
     const ended = /\[\[END\]\]/.test(r.text);
@@ -516,12 +548,12 @@ async function ytList(lines) {
       const r = await serverFetch('/playlist?list=' + encodeURIComponent(list), { method: 'GET' });
       const j = await r.json();
       j.items.forEach((it, i) => items.push({ yt: 'https://www.youtube.com/watch?v=' + it.id, unit: it.title || `${j.title} ${ar(i + 1)}` }));
-      if (j.items.length >= 15) items.push({ note: 'قوائم يوتيوب تعطي آخر ١٥ فيديو فقط؛ للبقية الصق روابطها.' });
+      if (j.items.length >= 15) items.push({ note: 'YouTube gives only the latest 15 videos of a playlist; paste the links of the others.' });
       continue;
     }
     let title = '';
     try { title = (await (await serverFetch('/ytmeta?url=' + encodeURIComponent(u.href), { method: 'GET' })).json()).title; } catch {}
-    items.push({ yt: u.href, unit: title || 'فيديو يوتيوب' });
+    items.push({ yt: u.href, unit: title || 'YouTube video' });
   }
   return items;
 }
@@ -540,27 +572,27 @@ function setBar(wrapSel, barSel, frac) {
   w.classList.remove('busy'); b.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
 }
 function errText(e) {
-  if (!e) return 'حدث خطأ غير معروف.';
-  if (e.name === 'AbortError' && !/GPU|mapAsync|Buffer/i.test(e.message || '')) return 'أُوقف.';
+  if (!e) return 'Something went wrong.';
+  if (e.name === 'AbortError' && !/GPU|mapAsync|Buffer/i.test(e.message || '')) return 'Stopped.';
   let raw = (e.message || (typeof e === 'string' ? e : '') || e.name || '').toString();
   if (!raw) { try { raw = JSON.stringify(e); } catch { raw = String(e); } if (raw === '{}' || raw === '[object Object]') raw = ''; }
-  if (e.message === 'no json' || e instanceof SyntaxError) return 'وصل الرد ناقصًا أو غير مرتب. حاول مرة ثانية.';
+  if (e.message === 'no json' || e instanceof SyntaxError) return 'The answer came back incomplete or messy. Try again.';
   if (e.code) return e.message;
-  if (/out of memory|OOM|allocate|device (was )?lost|DXGI|GPUDevice|GPU|mapAsync|Buffer was/i.test(raw)) return 'توقف الذكاء على الجوال: إما أن الذاكرة لم تكفِ، أو انطفأت الشاشة أو خرجت من التطبيق أثناء الكتابة.\nأغلق التطبيقات الأخرى، وأبقِ الشاشة مضاءة والتطبيق أمامك، واختر صفحات أقل، ثم حاول.\n(' + raw.slice(0, 120) + ')';
-  if (/quota|storage|space/i.test(raw)) return 'لا توجد مساحة كافية على الجوال لتنزيل الذكاء. فرّغ مساحة ثم حاول.\n(' + raw.slice(0, 160) + ')';
-  if (/fetch|network|Failed to fetch|NetworkError|load failed/i.test(raw)) return 'انقطع الإنترنت أثناء تنزيل الذكاء. اتصل بالواي فاي ثم حاول؛ يكمل من حيث توقف.\n(' + raw.slice(0, 160) + ')';
-  return raw ? 'حدث خطأ: ' + raw.slice(0, 300) : 'حدث خطأ غير معروف. أرسل لي صورة من هذه الرسالة.';
+  if (/out of memory|OOM|allocate|device (was )?lost|DXGI|GPUDevice|GPU|mapAsync|Buffer was/i.test(raw)) return 'The phone AI stopped: either memory ran out, or the screen turned off or you left the app while it was writing.\nClose other apps, keep the screen on and the app in front, choose fewer pages, and try again.\n(' + raw.slice(0, 120) + ')';
+  if (/quota|storage|space/i.test(raw)) return 'Not enough space on the phone for the download. Free some space and try again.\n(' + raw.slice(0, 160) + ')';
+  if (/fetch|network|Failed to fetch|NetworkError|load failed/i.test(raw)) return 'The internet dropped during the download. Connect to Wi-Fi and try again; it continues where it stopped.\n(' + raw.slice(0, 160) + ')';
+  return raw ? 'Error: ' + raw.slice(0, 300) : 'Something went wrong. Send me a screenshot of this message.';
 }
 
 /* ---------- which AI writes the notes ---------- */
 const engineKind = () => store.get('engine2', 'server');       // 'server' (free app server), 'phone' (on this phone, trial) or 'claude' (own key)
 const phoneSize = () => store.get('phoneSize', 'fast');
 function progressText(p) {
-  if (p.text === 'restart') return 'يعيد تشغيل الذكاء في وضع التوافق (يُنزّل نسخة متوافقة مرة واحدة)…';
+  if (p.text === 'restart') return 'Restarting the AI in compatibility mode (downloads a compatible copy once)…';
   const pct = Math.round((p.progress || 0) * 100);
   return /fetch|download|param|cache/i.test(p.text || '') && pct < 100
-    ? `يُنزّل الذكاء إلى جوالك (مرة واحدة فقط)… ${ar(pct)}٪`
-    : `يجهّز الذكاء… ${ar(pct)}٪`;
+    ? `Downloading the AI to your phone (only once)… ${ar(pct)}%`
+    : `Getting the AI ready… ${ar(pct)}%`;
 }
 
 // cut a long text into parts the phone AI can read at once, on sentence ends
@@ -620,12 +652,12 @@ async function writeOnPhone({ text, unit, sub, src }, onStatus) {
   const started = Date.now(); let firstPartStart = 0;
   for (let i = 0; i < parts.length; i++) {
     const t0 = Date.now(); if (i === 0) firstPartStart = t0;
-    const pre = parts.length > 1 ? `الجزء ${ar(i + 1)} من ${ar(parts.length)}: ` : '';
+    const pre = parts.length > 1 ? `Part ${ar(i + 1)} of ${ar(parts.length)}: ` : '';
     const expect = Math.max(250, parts[i].split(/\s+/).length * 0.55);
     const eta = () => {
       if (i === 0) return '';
       const per = (t0 - firstPartStart) / i, left = Math.round(per * (parts.length - i) / 60000);
-      return left >= 1 ? `بقي نحو ${ar(left)} دقيقة` : 'قارب الانتهاء';
+      return left >= 1 ? `About ${ar(left)} min left` : 'Almost done';
     };
     const before = results.flatMap(r => (r.sections || []).map(s => s.heading)).filter(Boolean);
     const user = `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}
@@ -644,18 +676,18 @@ ${parts[i]}
         onProgress: p => onStatus(pre + progressText(p), p.progress ?? null, 'download'),
         onText: t => {
           const w = t.split(/\s+/).length, s = Math.floor((Date.now() - t0) / 1000);
-          onStatus(`${pre}يكتب على جوالك… ${ar(w)} كلمة — ${ar(Math.floor(s / 60))}:${ar(String(s % 60).padStart(2, '0'))}`,
+          onStatus(`${pre}Writing on your phone… ${ar(w)} words — ${ar(Math.floor(s / 60))}:${ar(String(s % 60).padStart(2, '0'))}`,
             (i + Math.min(0.95, w / expect)) / parts.length, 'write', eta());
         },
       });
     } catch (e) {
       if (controller.signal.aborted || !results.length) throw e;
-      partial = `⚠ توقف عند الجزء ${ar(i + 1)} من ${ar(parts.length)} (${errText(e).split('\n')[0]}). حُفظ ما اكتمل؛ اصنع الصفحات الباقية وحدها.`;
+      partial = `⚠ Stopped at part ${ar(i + 1)} of ${ar(parts.length)} (${errText(e).split('\n')[0]}). What was finished is saved; make the remaining pages on their own.`;
       break;
     }
     if (r.stop === 'max_tokens') cut = true;
     try { results.push(parseJSON(r.text)); }
-    catch { results.push({ report: { maybe_wrong: [`تعذّرت قراءة الجزء ${ar(i + 1)}؛ أعد صنعه إن كان ناقصًا.`] } }); }
+    catch { results.push({ report: { maybe_wrong: [`Part ${ar(i + 1)} could not be read; make it again if something is missing.`] } }); }
   }
   return { notes: mergeParts(results), cut, partial };
 }
@@ -667,7 +699,7 @@ let controller = null;
 function subjectInfo() {
   const v = $('#subject').value;
   if (v === 'other') {
-    const name = $('#custom-subject').value.trim() || 'مادة أخرى';
+    const name = $('#custom-subject').value.trim() || 'Other subject';
     return { id: 'other:' + name, name, place: '', family: 'slate' };
   }
   const s = subjectById(v);
@@ -676,7 +708,7 @@ function subjectInfo() {
 
 function countWords() {
   const n = $('#transcript').value.trim().split(/\s+/).filter(Boolean).length;
-  $('#word-count').textContent = n ? ar(n) + ' كلمة' : '';
+  $('#word-count').textContent = n ? ar(n) + ' words' : '';
 }
 $('#transcript').addEventListener('input', countWords);
 
@@ -690,18 +722,19 @@ function renderPending() {
   $('#unit-wrap').hidden = pending.length > 1;
   const one = pending.length === 1 ? pending[0] : null;
   const tools = (p, i) => p.media && p.text && !p.busy ? `<div class="row-gap media-tools">
-      <button type="button" class="ghost small" data-act="script" data-i="${i}">نص مرتب</button>
-      <button type="button" class="ghost small" data-act="savetxt" data-i="${i}">حفظ التفريغ</button>
-      ${p.audio ? `<button type="button" class="ghost small" data-act="audio" data-i="${i}">تصدير الصوت</button>` : ''}
+      <button type="button" class="ghost small" data-act="script" data-i="${i}">Clean script</button>
+      <button type="button" class="ghost small" data-act="minutes" data-i="${i}">Meeting minutes</button>
+      <button type="button" class="ghost small" data-act="savetxt" data-i="${i}">Save transcript</button>
+      ${p.audio ? `<button type="button" class="ghost small" data-act="audio" data-i="${i}">Export audio</button>` : ''}
     </div>` : '';
-  box.innerHTML = pending.length ? `<b>${pending.length > 1 ? 'سيُصنع ' + ar(pending.length) + ' دروس، كل ملف في ملف وحده:' : 'الملف المختار:'}</b>
-    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' صفحة، ' : ''}${p.media && !p.text ? (p.yt ? 'يوتيوب' : 'صوت أو فيديو') : ar(p.text.split(/\s+/).filter(Boolean).length) + ' كلمة'})</small>${p.status ? ' — <span class="st">' + p.status + '</span>' : ''}${tools(p, i)}</li>`).join('')}</ol>
+  box.innerHTML = pending.length ? `<b>${pending.length > 1 ? ar(pending.length) + ' lessons will be made, one per file:' : 'Chosen file:'}</b>
+    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' pages, ' : ''}${p.media && !p.text ? (p.yt ? 'YouTube' : 'audio or video') : ar(p.text.split(/\s+/).filter(Boolean).length) + ' words'})</small>${p.status ? ' — <span class="st">' + p.status + '</span>' : ''}${tools(p, i)}</li>`).join('')}</ol>
     ${hearNote ? `<small class="muted">${hearNote}</small>` : ''}
     ${one?.pages && !one.bad ? `<div class="row-gap" style="align-items:center">
-      <span>الصفحات: من</span><input id="pg-from" type="number" min="1" max="${one.pages.length}" value="${one.from}" style="width:5.5em">
-      <span>إلى</span><input id="pg-to" type="number" min="1" max="${one.pages.length}" value="${one.to}" style="width:5.5em">
-    </div><small class="muted" id="pg-warn" ${one.to - one.from + 1 > 20 ? '' : 'hidden'}>⚠ صفحات كثيرة تأخذ وقتًا طويلًا على الجوال؛ الأفضل ١٠–٢٠ صفحة في المرة.</small>` : ''}
-    <button type="button" class="ghost" id="clear-pending">إلغاء الملفات</button>` : '';
+      <span>Pages: from</span><input id="pg-from" type="number" min="1" max="${one.pages.length}" value="${one.from}" style="width:5.5em">
+      <span>to</span><input id="pg-to" type="number" min="1" max="${one.pages.length}" value="${one.to}" style="width:5.5em">
+    </div><small class="muted" id="pg-warn" ${one.to - one.from + 1 > 20 ? '' : 'hidden'}>⚠ Many pages take a long time on the phone; 10–20 pages at a time is best.</small>` : ''}
+    <button type="button" class="ghost" id="clear-pending">Clear files</button>` : '';
   const c = $('#clear-pending'); if (c) c.onclick = () => { hearCtl?.abort(); pending = []; hearNote = ''; renderPending(); };
   $$('[data-act]', box).forEach(b => b.onclick = () => mediaAction(b.dataset.act, pending[+b.dataset.i]));
   const f = $('#pg-from'), t = $('#pg-to');
@@ -711,9 +744,9 @@ function renderPending() {
       one.from = Math.min(Math.max(1, parseInt(f.value) || 1), n);
       one.to = Math.min(Math.max(one.from, parseInt(t.value) || n), n);
       one.text = pdfSlice(one);
-      one.unit = one.baseUnit + (one.from === 1 && one.to === n ? '' : ` (ص ${ar(one.from)}–${ar(one.to)})`);
+      one.unit = one.baseUnit + (one.from === 1 && one.to === n ? '' : ` (pp. ${ar(one.from)}–${ar(one.to)})`);
       const li = $('#pending li'); // update the line only, so typing is not interrupted
-      if (li) li.innerHTML = `${esc(one.unit)} <small class="muted">(${ar(one.to - one.from + 1)} من ${ar(n)} صفحة، ${ar(one.text.split(/\s+/).filter(Boolean).length)} كلمة)</small>`;
+      if (li) li.innerHTML = `${esc(one.unit)} <small class="muted">(${ar(one.to - one.from + 1)} of ${ar(n)} pages, ${ar(one.text.split(/\s+/).filter(Boolean).length)} words)</small>`;
       const w = $('#pg-warn'); if (w) w.hidden = one.to - one.from + 1 <= 20;
     };
     f.oninput = upd; t.oninput = upd; f.onchange = upd; t.onchange = upd;
@@ -799,13 +832,17 @@ async function hearAll() {
   try {
     let p;
     while ((p = pending.find(x => x.media && !x.text && !x.bad && !x.busy))) {
-      if (!navigator.onLine) { p.bad = true; p.status = '✗ التفريغ يحتاج الإنترنت الآن. اتصل ثم اختر الملف مرة ثانية.'; renderPending(); continue; }
+      const offline = !navigator.onLine || (store.get('hearOn', 'auto') === 'phone' && !p.yt);
+      if (offline && p.yt) { p.bad = true; p.status = '✗ YouTube needs the internet. Connect, then add it again.'; renderPending(); continue; }
+      if (offline && !(await window.JundOffline?.ready())) { p.bad = true; p.status = '✗ No internet, and offline transcription is not downloaded yet (Settings → Offline transcription).'; renderPending(); continue; }
       p.busy = true;
       const st = s => { p.status = '⏳ ' + s; const li = $$('#pending li')[pending.indexOf(p)]; const el = li && $('.st', li); if (el) el.textContent = p.status; else renderPending(); };
       try {
-        const text = p.yt ? await hearYouTube(p, hearCtl.signal, st) : await hearFile(p, hearCtl.signal, st);
-        if (!text) { p.bad = true; p.status = '✗ لم يُسمع كلام في هذا الملف.'; }
-        else { p.text = text; p.status = '✓ فُرّغ'; }
+        const text = p.yt ? await hearYouTube(p, hearCtl.signal, st)
+          : offline ? await window.JundOffline.transcribe(p, hearCtl.signal, st)
+          : await hearFile(p, hearCtl.signal, st);
+        if (!text) { p.bad = true; p.status = '✗ No speech was heard in this file.'; }
+        else { p.text = text; p.status = '✓ Transcribed'; }
       } catch (e) {
         if (hearCtl.signal.aborted) break;
         p.bad = true; p.status = '✗ ' + errText(e);
@@ -823,12 +860,13 @@ function download(blob, name) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
-const safeName = s => String(s || 'ملف').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80);
+const safeName = s => String(s || 'file').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80);
 async function mediaAction(act, p) {
   if (!p) return;
   if (act === 'savetxt') return download(new Blob([p.text], { type: 'text/plain;charset=utf-8' }), safeName(p.unit) + '.txt');
   if (act === 'audio' && p.audio) return download(p.audio, safeName(p.unit) + (p.audio.type === 'audio/aac' ? '.aac' : (p.file?.name.match(/\.[^.]+$/)?.[0] || '.m4a')));
   if (act === 'script') return makeScript(p);
+  if (act === 'minutes') return makeScript(p, true);
 }
 
 /* transcript → a clean script (same language, nothing added) */
@@ -850,60 +888,78 @@ const SCRIPT_RULES = {
 - Do not summarize, add anything, or translate.
 Return only the clean script.`,
 };
-async function makeScript(p) {
+const MINUTES_RULES = {
+  ar: `أنت تكتب محضر اجتماع من تفريغ صوتي آلي، بلغة التفريغ نفسها. نص عادي بلا JSON.
+اكتب بهذا الترتيب، كل عنوان في سطر يبدأ بـ "## ":
+## الخلاصة (ثلاثة أسطر)
+## ما نوقش (نقاط تبدأ بـ "- ")
+## القرارات
+## المهام (كل سطر: المهمة — المسؤول — الموعد)
+## الموعد القادم (إن ذُكر)
+لا تضف شيئًا لم يُقل. إن لم يُعرف المسؤول أو الموعد فاكتب "غير محدد".`,
+  en: `You write meeting minutes from an automatic transcript, in the same language. Plain text, no JSON.
+Use this order, each heading on a line starting with "## ":
+## Summary (three lines)
+## What was discussed (points starting with "- ")
+## Decisions
+## Action items (each line: task — who — when)
+## Next meeting (if mentioned)
+Add nothing that was not said. If who or when is unknown, write "not set".`,
+};
+async function makeScript(p, minutes = false) {
   const box = $('#script-box'), out = $('#script-text');
-  box.hidden = false; $('#script-title').textContent = 'نص مرتب: ' + p.unit;
-  out.value = ''; $('#script-status').textContent = 'جارٍ الترتيب…';
+  box.hidden = false; $('#script-title').textContent = (minutes ? 'Meeting minutes: ' : 'Clean script: ') + p.unit;
+  out.value = ''; $('#script-status').textContent = 'Working…';
   box.scrollIntoView({ block: 'start' });
   const lang = langOf(p.text);
   out.dir = lang === 'en' ? 'ltr' : 'rtl';
   try {
-    const parts = splitText(p.text, 2500), done = [];
+    const parts = minutes ? [p.text] : splitText(p.text, 2500), done = [];
     for (let i = 0; i < parts.length; i++) {
-      const r = await callServer({ system: SCRIPT_RULES[lang], user: parts[i], json: false, maxTokens: 30000,
-        onText: t => { out.value = [...done, t].join('\n\n'); $('#script-status').textContent = parts.length > 1 ? `الجزء ${ar(i + 1)} من ${ar(parts.length)}…` : 'يكتب…'; } });
+      const r = await callServer({ system: (minutes ? MINUTES_RULES : SCRIPT_RULES)[lang], user: parts[i], json: false, maxTokens: 30000,
+        onText: t => { out.value = [...done, t].join('\n\n'); $('#script-status').textContent = parts.length > 1 ? `Part ${ar(i + 1)} of ${ar(parts.length)}…` : 'Writing…'; } });
       done.push(r.text.trim());
     }
     out.value = done.join('\n\n');
     p.script = out.value;
-    $('#script-status').textContent = '✓ جاهز.';
+    $('#script-status').textContent = '✓ Ready.';
   } catch (e) { $('#script-status').textContent = errText(e); }
 }
 $('#script-copy').onclick = async () => {
-  try { await navigator.clipboard.writeText($('#script-text').value); $('#script-status').textContent = '✓ نُسخ.'; }
-  catch { $('#script-text').select(); $('#script-status').textContent = 'حدّدتُ النص؛ انسخه من القائمة.'; }
+  try { await navigator.clipboard.writeText($('#script-text').value); $('#script-status').textContent = '✓ Copied.'; }
+  catch { $('#script-text').select(); $('#script-status').textContent = 'Text selected; copy it from the menu.'; }
 };
-$('#script-save').onclick = () => download(new Blob([$('#script-text').value], { type: 'text/plain;charset=utf-8' }), safeName($('#script-title').textContent.replace(/^نص مرتب:\s*/, '')) + ' - نص مرتب.txt');
+$('#script-save').onclick = () => download(new Blob([$('#script-text').value], { type: 'text/plain;charset=utf-8' }), safeName($('#script-title').textContent.replace(/:.*/, '') + ' - ' + $('#script-title').textContent.replace(/^[^:]*:\s*/, '')) + '.txt');
 $('#script-close').onclick = () => { $('#script-box').hidden = true; };
 
 $('#yt-go').onclick = async () => {
   const err = $('#new-error'); err.hidden = true;
   const lines = $('#yt').value.split(/\s+/).filter(s => /youtu/.test(s));
-  if (!lines.length) { err.textContent = 'الصق رابط يوتيوب أولًا.'; err.hidden = false; return; }
-  $('#yt-go').disabled = true; $('#yt-go').textContent = 'يقرأ الروابط…';
+  if (!lines.length) { err.textContent = 'Paste a YouTube link first.'; err.hidden = false; return; }
+  $('#yt-go').disabled = true; $('#yt-go').textContent = 'Reading…';
   try {
     const items = await ytList(lines);
     const notes = items.filter(x => x.note).map(x => x.note);
     const vids = items.filter(x => x.yt);
-    if (!vids.length) throw new Error('لم أجد فيديو في هذه الروابط.');
-    pending = pending.filter(p => p.media || p.text).concat(vids.map(v => ({ media: true, yt: v.yt, unit: v.unit, text: '', status: '⏳ ينتظر' })));
+    if (!vids.length) throw new Error('I found no video in these links.');
+    pending = pending.filter(p => p.media || p.text).concat(vids.map(v => ({ media: true, yt: v.yt, unit: v.unit, text: '', status: '⏳ Waiting' })));
     hearNote = notes[0] || '';
     $('#yt').value = '';
     $('#kind').value = 'transcript';
     renderPending();
     hearAll();
   } catch (e) { err.textContent = errText(e); err.hidden = false; }
-  finally { $('#yt-go').disabled = false; $('#yt-go').textContent = 'فرّغ من يوتيوب'; }
+  finally { $('#yt-go').disabled = false; $('#yt-go').textContent = 'Add'; }
 };
 
 async function addFiles(files) {
   hearCtl?.abort();
   pending = []; hearNote = '';
-  const box = $('#pending'); box.hidden = false; box.textContent = 'جارٍ قراءة الملفات…';
+  const box = $('#pending'); box.hidden = false; box.textContent = 'Reading the files…';
   let sawPdf = false, sawMedia = false;
-  for (const f of files.sort((a, b) => a.name.localeCompare(b.name, 'ar', { numeric: true }))) {
+  for (const f of files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))) {
     const unit = f.name.replace(/\.[^.]+$/, '');
-    if (window.JundMedia?.isMedia(f)) { sawMedia = true; pending.push({ media: true, file: f, unit, text: '', status: '⏳ ينتظر' }); continue; }
+    if (window.JundMedia?.isMedia(f)) { sawMedia = true; pending.push({ media: true, file: f, unit, text: '', status: '⏳ Waiting' }); continue; }
     const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
     if (!isPdf) { pending.push({ text: (await f.text()).trim(), unit }); continue; }
     sawPdf = true;
@@ -914,11 +970,11 @@ async function addFiles(files) {
       item.text = pdfSlice(item);
       if (chars < pages.length * 40) {
         item.bad = true; item.text = '';
-        item.status = '✗ هذا ملف مصوّر (صور بلا نص مكتوب)، فلا أستطيع قراءته بعد. أرسل ملف PDF نصيًا أو انسخ النص والصقه.';
+        item.status = '✗ This is a scanned file (pictures with no text), so I cannot read it yet. Use a text PDF, or copy the text and paste it.';
       }
       pending.push(item);
     } catch {
-      pending.push({ text: '', unit, bad: true, status: '✗ تعذّر فتح هذا الملف. قد يكون محميًا بكلمة مرور أو تالفًا.' });
+      pending.push({ text: '', unit, bad: true, status: '✗ This file could not be opened. It may be password-protected or damaged.' });
     }
   }
   if (pending.length === 1 && $('#unit').value) pending[0].unit = pending[0].baseUnit = $('#unit').value;
@@ -941,16 +997,18 @@ $('#cancel').onclick = () => controller?.abort();
 const SOURCE_TEXT = {
   transcript: { name: 'التفريغ', ask: 'هذا تفريغ آلي لتسجيل الدرس. اكتب منه الملف الدراسي والخريطة الذهنية وتقرير التحقق لهذا الدرس وحده:' },
   notes: { name: 'الملاحظات', ask: 'هذه ملاحظات كتبها الطالب بنفسه (ليست تفريغًا صوتيًا، فلا تفترض فيها أخطاء سماع). أعد كتابتها بطريقته: الملف الدراسي والخريطة الذهنية وتقرير التحقق. التزم بما فيها ولا تضف:' },
+  meeting: { name: 'تفريغ الاجتماع', ask: 'هذا تفريغ آلي لاجتماع. اكتب منه محضر الاجتماع بالشكل نفسه (sections وblocks): قسم «الخلاصة»، ثم «ما نوقش» نقطة نقطة، ثم «القرارات»، ثم «المهام» في جدول (المهمة | المسؤول | الموعد)، ثم «الموعد القادم» إن ذُكر. اذكر المتكلمين بأسمائهم إن عُرفت. وضع كل مهمة أيضًا في tasks. لا تضف شيئًا لم يُقل:' },
   book: { name: 'النص', ask: 'هذا مقطع من كتاب أو موضوع مكتوب. حوّله إلى ملاحظات بطريقة الطالب: الملف الدراسي والخريطة الذهنية وتقرير التحقق. التزم بنص المقطع وحده، واحفظ عبارات المؤلف المهمة بين «» ونسبتها إليه، واذكر أرقام الصفحات إن وُجدت:' },
 };
 
 const SOURCE_TEXT_EN = {
   transcript: { name: 'TRANSCRIPT', ask: 'This is an automatic transcript of a recorded lesson. Write the study file, the mind map and the check report for this lesson only:' },
   notes: { name: 'NOTES', ask: 'These are notes the student wrote himself (not a speech transcript, so do not assume mishearings). Rewrite them in his way: the study file, the mind map and the check report. Stay with what is in them and add nothing:' },
+  meeting: { name: 'MEETING TRANSCRIPT', ask: 'This is an automatic transcript of a meeting. Write the meeting minutes in the same shape (sections and blocks): a "Summary" section, then "What was discussed" point by point, then "Decisions", then "Action items" as a table (Task | Who | When), then "Next meeting" if mentioned. Name the speakers if known. Put every action item in tasks as well. Add nothing that was not said:' },
   book: { name: 'TEXT', ask: 'This is a passage from a book or a written topic. Turn it into notes in the student\'s way: the study file, the mind map and the check report. Stay with the passage only, keep the author\'s key sentences in quotes and attribute them, and mention page numbers if present:' },
 };
 
-async function makeOne({ text, unit, sub, kind, lang }, onStatus) {
+async function makeOne({ text, unit, sub, kind, lang, id }, onStatus) {
   lang ||= langOf(text);
   const en = lang === 'en';
   const src = (en ? SOURCE_TEXT_EN : SOURCE_TEXT)[kind] || (en ? SOURCE_TEXT_EN : SOURCE_TEXT).transcript;
@@ -958,12 +1016,13 @@ async function makeOne({ text, unit, sub, kind, lang }, onStatus) {
   if (engineKind() === 'phone') {
     const r = await writeOnPhone({ text, unit, sub, src }, onStatus);
     notes = r.notes;
-    note = 'جاهز. كُتب على جوالك مجانًا.' + (r.cut ? '\n⚠ جزء طال أكثر من اللازم فقد يكون آخره ناقصًا.' : '') + (r.partial ? '\n' + r.partial : '');
+    note = 'Ready. Written on your phone for free.' + (r.cut ? '\n⚠ One part ran long, so its end may be missing.' : '') + (r.partial ? '\n' + r.partial : '');
   } else {
     const t0 = Date.now();
     const user = en ? `Subject: ${sub.name}${sub.book ? ' (book: ' + sub.book + ')' : ''}
 Lesson / unit: ${unit}
 Input type: ${src.name}
+Today's date: ${todayISO()} (${new Date().toLocaleDateString('en-GB', { weekday: 'long' })})
 
 ${src.ask}
 
@@ -972,6 +1031,7 @@ ${text}
 ${src.name}>>>` : `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}${sub.place ? ' — ' + sub.place : ''}
 الدرس / الوحدة: ${unit}
 نوع المدخل: ${src.name}
+تاريخ اليوم: ${todayISO()} (${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][new Date().getDay()]})
 
 ${src.ask}
 
@@ -985,16 +1045,16 @@ ${src.name}>>>`;
       signal: controller.signal,
       onText: t => {
         const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
-        onStatus(`يكتب الآن… ${ar(w)} كلمة${mins ? ' — ' + ar(mins) + ' د' : ''}`, Math.min(0.95, w / expect), 'write');
+        onStatus(`Writing… ${ar(w)} words${mins ? ' — ' + ar(mins) + ' min' : ''}`, Math.min(0.95, w / expect), 'write');
       },
     });
-    onStatus('يرتّب الصفحات…', 0.97, 'write');
+    onStatus('Laying out the pages…', 0.97, 'write');
     notes = await getJSON(r.text, controller.signal);
-    note = (engineKind() === 'claude' ? `جاهز. كلّف نحو ${ar((r.usd * SAR).toFixed(2))} ريال.` : 'جاهز. كُتب مجانًا على خادم التطبيق.') + (r.stop === 'max_tokens' ? '\n⚠ النص طويل جدًا فتوقف قبل النهاية؛ قد يكون آخره ناقصًا. قسّمه إلى جزأين.' : '');
+    note = (engineKind() === 'claude' ? `Ready. Cost about ${ar((r.usd * SAR).toFixed(2))} SAR.` : 'Ready. Written for free on the app server.') + (r.stop === 'max_tokens' ? '\n⚠ The text is very long, so it stopped before the end; the end may be missing. Split it in two.' : '');
   }
-  if (!en) { onStatus('يطابق الآيات على المصحف…', 1, 'write'); try { await window.Mushaf.check(notes); } catch {} }
+  if (!en) { onStatus('Checking verses against the Mushaf…', 1, 'write'); try { await window.Mushaf.check(notes); } catch {} }
   const lesson = {
-    id: 'L' + Date.now() + Math.random().toString(36).slice(2, 6),
+    id: id || 'L' + Date.now() + Math.random().toString(36).slice(2, 6),
     subject: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' },
     unit, kind, lang, engine: engineKind(), date: new Date().toISOString(), transcript: text, notes,
     chat: [{ who: 'ai', text: note }],
@@ -1005,17 +1065,33 @@ ${src.name}>>>`;
 
 /* ---------- offline queue: lessons pasted without internet are written when it returns ---------- */
 const queue = { get: () => store.get('queue', []), set: q => store.set('queue', q) };
-function enqueue(jobs, sub, kind) {
+// without internet: a quick draft lesson now (plain paragraphs, no AI), rewritten in full later under the same id
+async function saveDraft(j, sub, kind) {
+  const paras = j.text.split(/\n\s*\n|(?<=[.؟!])\s+(?=\S)/).map(x => x.trim()).filter(Boolean);
+  const groups = []; for (let i = 0; i < paras.length; i += 6) groups.push(paras.slice(i, i + 6).join(' '));
+  const en = j.lang === 'en';
+  const lesson = {
+    id: 'L' + Date.now() + Math.random().toString(36).slice(2, 6), draft: true,
+    subject: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' },
+    unit: j.unit, kind, lang: j.lang, engine: 'draft', date: new Date().toISOString(), transcript: j.text,
+    notes: { title: j.unit, subtitle: en ? 'Quick draft — full notes come when you are online' : 'مسودة سريعة — تُكتب الملاحظات كاملة عند عودة الإنترنت',
+      sections: groups.map((g, i) => ({ heading: (en ? 'Part ' : 'الجزء ') + (en ? i + 1 : arD(i + 1)), blocks: [{ t: 'text', text: g }] })), mindmap: [], report: {} },
+    chat: [{ who: 'ai', text: 'Quick draft saved without internet. The full notes replace it automatically when you are back online.' }],
+  };
+  await saveLesson(lesson);
+  return lesson.id;
+}
+function enqueue(jobs, sub, kind, ids = []) {
   const q = queue.get();
-  for (const j of jobs) q.push({ text: j.text, unit: j.unit, lang: j.lang, kind, sub: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' } });
+  jobs.forEach((j, k) => q.push({ text: j.text, unit: j.unit, lang: j.lang, kind, id: ids[k], sub: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' } }));
   queue.set(q);
-  if (queue.get().length < q.length) throw new Error('لا توجد مساحة لحفظ النص على الجوال. اختر صفحات أقل.');
+  if (queue.get().length < q.length) throw new Error('No space to keep the text on the phone. Choose fewer pages.');
   renderQueue();
 }
 function renderQueue(status) {
   const q = queue.get(), b = $('#queue-banner');
   b.hidden = !q.length;
-  if (q.length) b.innerHTML = status || `<b>☁ ${ar(q.length)} ${q.length === 1 ? 'درس ينتظر' : 'دروس تنتظر'} الإنترنت.</b> ستُكتب تلقائيًا حين يعود الاتصال والتطبيق مفتوح.`;
+  if (q.length) b.innerHTML = status || `<b>☁ ${ar(q.length)} ${q.length === 1 ? 'lesson is' : 'lessons are'} waiting for the internet.</b> A quick draft is in the Library; the full notes are written automatically when you are back online with the app open.`;
 }
 let queueBusy = false;
 async function processQueue() {
@@ -1027,36 +1103,36 @@ async function processQueue() {
   try {
     while ((q = queue.get()).length) {
       const j = q[0];
-      renderQueue(`<b>☁ يكتب الدروس المحفوظة (${ar(done + 1)} من ${ar(done + q.length)}):</b> ${esc(j.unit)}…`);
-      try { await makeOne({ text: j.text, unit: j.unit, sub: j.sub, kind: j.kind, lang: j.lang }, () => {}); }
+      renderQueue(`<b>☁ Writing saved lessons (${ar(done + 1)} of ${ar(done + q.length)}):</b> ${esc(j.unit)}…`);
+      try { await makeOne({ text: j.text, unit: j.unit, sub: j.sub, kind: j.kind, lang: j.lang, id: j.id }, () => {}); }
       catch (e) { if (e.code === 'offline' || controller.signal.aborted) break; j.tries = (j.tries || 0) + 1; if (j.tries < 3) { queue.set([...q.slice(1), j]); continue; } }
       queue.set(queue.get().slice(1)); done++;
     }
   } finally {
     lock?.release?.(); controller = null; queueBusy = false;
     renderQueue();
-    if (done) { const b = $('#queue-banner'); b.hidden = false; b.innerHTML = `✓ كُتب ${ar(done)} ${done === 1 ? 'درس' : 'دروس'} من المحفوظة. افتح <button type="button" class="link" data-go="library">المكتبة</button>.`; }
+    if (done) { const b = $('#queue-banner'); b.hidden = false; b.innerHTML = `✓ ${ar(done)} saved ${done === 1 ? 'lesson was' : 'lessons were'} written in full. Open the <button type="button" class="link" data-go="library">Library</button>.`; }
   }
 }
 addEventListener('online', () => setTimeout(processQueue, 1500));
 
 $('#make').onclick = async () => {
   const err = $('#new-error'); err.hidden = true;
-  if (engineKind() === 'claude' && !store.get('key')) { show('settings'); $('#key-status').textContent = 'ضع مفتاحك هنا أولًا ثم اضغط حفظ.'; return; }
+  if (engineKind() === 'claude' && !store.get('key')) { show('settings'); $('#key-status').textContent = 'Paste your key here first, then tap Save.'; return; }
   if (engineKind() === 'phone') {
     const sup = await window.LocalAI.support();
     if (!sup.ok) { err.textContent = sup.why; err.hidden = false; return; }
   }
-  if (hearing()) { err.textContent = 'انتظر حتى ينتهي التفريغ (انظر ⏳ فوق)، ثم اضغط مرة ثانية.'; err.hidden = false; return; }
+  if (hearing()) { err.textContent = 'Wait until the transcription finishes (see ⏳ above), then tap again.'; err.hidden = false; return; }
   const sub = subjectInfo();
   const kind = $('#kind').value;
   const jobs = pending.length ? pending : [{ text: $('#transcript').value.trim(), unit: $('#unit').value.trim() }];
   for (const j of jobs) j.lang = pickLang(j.text || '');
-  if (engineKind() === 'phone' && jobs.some(j => j.lang === 'en')) { err.textContent = 'الملاحظات بالإنجليزية تُكتب على خادم التطبيق فقط. غيّر «من يكتب الملاحظات» في الإعدادات.'; err.hidden = false; return; }
+  if (engineKind() === 'phone' && jobs.some(j => j.lang === 'en')) { err.textContent = 'English notes are written on the app server only. Change “Who writes the notes?” in Settings.'; err.hidden = false; return; }
   if (jobs.length === 1 && pending.length === 1 && $('#unit').value.trim()) jobs[0].unit = $('#unit').value.trim();
-  for (const j of jobs) j.unit ||= 'درس بتاريخ ' + new Date().toLocaleDateString('ar-SA');
-  if (jobs.some(j => j.bad)) { err.textContent = 'في الملفات ملف لا يُقرأ (انظر ✗ فوق). احذفه بزر «إلغاء الملفات» أو اختر غيره.'; err.hidden = false; return; }
-  if (jobs.some(j => j.text.length < 200)) { err.textContent = 'النص قصير جدًا. الصق النص كاملًا أو اختر صفحات أكثر.'; err.hidden = false; return; }
+  for (const j of jobs) j.unit ||= 'Lesson of ' + new Date().toLocaleDateString('en-GB');
+  if (jobs.some(j => j.bad)) { err.textContent = 'One of the files cannot be read (see ✗ above). Remove it with “Clear files” or choose another.'; err.hidden = false; return; }
+  if (jobs.some(j => j.text.length < 200)) { err.textContent = 'The text is too short. Paste all of it or choose more pages.'; err.hidden = false; return; }
   // long jobs on the phone: show the expected time and ask for a second tap
   if (engineKind() === 'phone') {
     const words = jobs.reduce((n, j) => n + j.text.split(/\s+/).filter(Boolean).length, 0);
@@ -1064,7 +1140,7 @@ $('#make').onclick = async () => {
     const mins = Math.round(partsN * (phoneSize() === 'strong' ? 5 : 2.5));
     const box = $('#confirm-long');
     if (mins >= 15 && box.dataset.ok !== String(words)) {
-      box.innerHTML = `<b>⚠ هذا نص طويل:</b> ${ar(words)} كلمة في ${ar(partsN)} ${partsN >= 3 && partsN <= 10 ? 'أجزاء' : 'جزءًا'}. سيأخذ على جوالك نحو <b>${ar(mins)} دقيقة</b>، والتطبيق مفتوح والشاشة مضاءة طوال الوقت (والأفضل أن يكون الجوال على الشاحن).<br>للتجربة الأولى اختر ٣–٥ صفحات فقط. للمتابعة على كل حال اضغط «اصنع الملاحظات» مرة ثانية.`;
+      box.innerHTML = `<b>⚠ This is a long text:</b> ${ar(words)} words in ${ar(partsN)} parts. On your phone it takes about <b>${ar(mins)} minutes</b>, with the app open and the screen on the whole time (best with the phone charging).<br>For a first try choose only 3–5 pages. To go ahead anyway, tap “Make notes” again.`;
       box.hidden = false; box.dataset.ok = String(words);
       box.scrollIntoView({ block: 'center' });
       return;
@@ -1072,55 +1148,55 @@ $('#make').onclick = async () => {
     box.hidden = true; delete box.dataset.ok;
   }
   if (engineKind() !== 'phone' && navigator.onLine === false) {
-    try { enqueue(jobs, sub, kind); } catch (e) { err.textContent = e.message; err.hidden = false; return; }
+    try { const ids = []; for (const j of jobs) ids.push(await saveDraft(j, sub, kind)); enqueue(jobs, sub, kind, ids); } catch (e) { err.textContent = e.message; err.hidden = false; return; }
     pending = []; renderPending(); $('#transcript').value = ''; $('#unit').value = ''; countWords();
-    err.textContent = '📴 لا يوجد إنترنت الآن. حُفظ النص، وسيُكتب تلقائيًا حين يعود الاتصال.'.replace('📴 ', ''); err.hidden = false;
+    err.textContent = 'No internet right now. A quick draft is saved in the Library, and the full notes are written automatically when you are back online.'; err.hidden = false;
     return;
   }
   $('#make').disabled = true; $('#progress').hidden = false;
   setBar('#progress-bar-wrap', '#progress-bar', 0); $('#progress-pct').textContent = '';
-  $('#progress-eta').textContent = 'أبقِ التطبيق مفتوحًا والشاشة مضاءة حتى ينتهي.';
+  $('#progress-eta').textContent = 'Keep the app open and the screen on until it finishes.';
   controller = new AbortController();
   const lock = await keepAwake();
   let last = null, failed = 0;
   try {
     for (let i = 0; i < jobs.length; i++) {
-      const pre = jobs.length > 1 ? `(${ar(i + 1)} من ${ar(jobs.length)}) ${jobs[i].unit}: ` : '';
+      const pre = jobs.length > 1 ? `(${ar(i + 1)} of ${ar(jobs.length)}) ${jobs[i].unit}: ` : '';
       const status = (s, frac, phase, eta) => {
         $('#progress-text').textContent = pre + s;
         if (phase === 'download') {
           setBar('#progress-bar-wrap', '#progress-bar', frac);
-          $('#progress-pct').textContent = frac != null ? ar(Math.round(frac * 100)) + '٪' : '';
-          $('#progress-eta').textContent = 'التنزيل مرة واحدة فقط. أبقِ الواي فاي متصلًا.';
+          $('#progress-pct').textContent = frac != null ? ar(Math.round(frac * 100)) + '%' : '';
+          $('#progress-eta').textContent = 'This download happens only once. Keep Wi-Fi on.';
           return;
         }
         const all = frac == null ? null : (i + frac) / jobs.length;
         setBar('#progress-bar-wrap', '#progress-bar', all);
-        $('#progress-pct').textContent = all != null ? ar(Math.round(all * 100)) + '٪' : '';
-        $('#progress-eta').textContent = (eta ? eta + ' — ' : '') + 'أبقِ التطبيق مفتوحًا والشاشة مضاءة.';
+        $('#progress-pct').textContent = all != null ? ar(Math.round(all * 100)) + '%' : '';
+        $('#progress-eta').textContent = (eta ? eta + ' — ' : '') + 'Keep the app open and the screen on.';
       };
-      status('جارٍ القراءة والكتابة…');
+      status('Reading and writing…');
       try {
         last = await makeOne({ ...jobs[i], sub, kind }, status);
-        jobs[i].status = '✓ جاهز';
+        jobs[i].status = '✓ Ready';
       } catch (e) {
         if (controller?.signal.aborted) throw e;
         if (e.code === 'offline') {
-          enqueue(jobs.slice(i), sub, kind);
-          for (const jj of jobs.slice(i)) jj.status = '☁ ينتظر الإنترنت';
-          throw Object.assign(new Error('انقطع الإنترنت. حُفظ ما بقي، وسيُكتب تلقائيًا حين يعود الاتصال.'), { queued: true });
+          { const rest = jobs.slice(i), ids = []; for (const j of rest) ids.push(await saveDraft(j, sub, kind)); enqueue(rest, sub, kind, ids); }
+          for (const jj of jobs.slice(i)) jj.status = '☁ Waiting for internet';
+          throw Object.assign(new Error('The internet dropped. The rest is saved and will be written automatically when you are back online.'), { queued: true });
         }
         failed++; jobs[i].status = '✗ ' + errText(e);
         if (jobs.length === 1) throw e;
       }
       if (pending.length) renderPending();
     }
-    if (failed) { err.textContent = `انتهى، وتعذّر ${ar(failed)} منها. الملفات الجاهزة في المكتبة؛ أعد المحاولة للباقي.`; err.hidden = false; pending = pending.filter(p => !p.status?.startsWith('✓')); pending.forEach(p => delete p.status); renderPending(); }
+    if (failed) { err.textContent = `Finished, but ${ar(failed)} could not be made. The ready ones are in the Library; try the rest again.`; err.hidden = false; pending = pending.filter(p => !p.status?.startsWith('✓')); pending.forEach(p => delete p.status); renderPending(); }
     else { pending = []; renderPending(); $('#transcript').value = ''; $('#unit').value = ''; countWords(); }
     if (jobs.length > 1 && !failed) show('library');
     else if (last && !failed) await openLesson(last);
   } catch (e) {
-    err.textContent = controller?.signal.aborted ? 'أُوقف. الدروس التي اكتملت محفوظة في المكتبة.' : e.queued ? e.message : errText(e);
+    err.textContent = controller?.signal.aborted ? 'Stopped. Finished lessons are saved in the Library.' : e.queued ? e.message : errText(e);
     if (e.queued) { pending = pending.filter(p => !p.status?.startsWith('☁')); renderPending(); }
     err.hidden = false;
   } finally {
@@ -1144,7 +1220,7 @@ const LABELS_EN = { def: 'Definition', explain: 'Explanation', example: 'Example
 let curLang = 'ar';
 const EN = () => curLang === 'en';
 const tr = (a, e) => EN() ? e : a;
-const num = n => EN() ? String(n) : ar(n);
+const num = n => EN() ? String(n) : arD(n);
 
 function blockEl(b, cont = false) {
   const el = document.createElement('div');
@@ -1310,14 +1386,14 @@ function paginateNotes(lesson, meta, finish = true) {
 
 function finishPages(pages) {
   const total = pages.length;
-  pages.forEach((p, i) => { const n = $('.n', p); if (n) n.textContent = p.lang === 'en' ? `Page ${i + 1} / ${total}` : `صفحة ${ar(i + 1)} / ${ar(total)}`; });
+  pages.forEach((p, i) => { const n = $('.n', p); if (n) n.textContent = p.lang === 'en' ? `Page ${i + 1} / ${total}` : `صفحة ${arD(i + 1)} / ${arD(total)}`; });
   // cross references → page numbers (only inside the same lesson)
   const secPage = [];
   pages.forEach((p, i) => $$('.b-h', p).forEach(h => secPage.push([norm(h.dataset.sec), i + 1, p.dataset.ch || ''])));
   pages.forEach(p => $$('.xref', p).forEach(x => {
     const want = norm(x.dataset.ref);
     const hit = secPage.find(([s, , ch]) => ch === (p.dataset.ch || '') && s && (s.includes(want) || want.includes(s)));
-    if (hit) x.textContent = p.lang === 'en' ? `[See p. ${hit[1]}]` : `[انظر ص ${ar(hit[1])}]`;
+    if (hit) x.textContent = p.lang === 'en' ? `[See p. ${hit[1]}]` : `[انظر ص ${arD(hit[1])}]`;
   }));
 }
 const norm = s => String(s || '').replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/\s+/g, ' ').trim();
@@ -1436,6 +1512,7 @@ async function openLesson(lesson) {
   renderChat();
   selectTab(currentTab);
   fitPages();
+  window.JundCal?.onLesson(lesson);
 }
 
 function renderReport(r) {
@@ -1481,7 +1558,7 @@ $('#save-pdf').onclick = () => {
   $$('.pages-frame').forEach(f => f.classList.remove('print-me'));
   $('#frame-' + currentTab).classList.add('print-me');
   const old = document.title;
-  document.title = current ? `${current.subject.name} - ${current.unit}${currentTab === 'map' ? ' - خريطة ذهنية' : ''}` : bookTitle;
+  document.title = current ? `${current.subject.name} - ${current.unit}${currentTab === 'map' ? ' - mind map' : ''}` : bookTitle;
   setTimeout(() => { window.print(); setTimeout(() => { document.title = old; }, 1000); }, 50);
 };
 
@@ -1505,9 +1582,9 @@ ${JSON.stringify(pick.map(i => ({ i, heading: secs[i].heading, blocks: secs[i].b
     size: phoneSize(), system: window.JUND_EDIT_SMALL + '\n\nأنواع الكتل كما في هذا الدليل:\n' + window.JUND_METHOD_SMALL.split('أنواع الكتل في blocks:')[1].split('أعد هذا الشكل فقط:')[0],
     user, maxTokens: 3000,
     onProgress: p => { $('#chat-progress-text').textContent = progressText(p); },
-    onText: t => { $('#chat-progress-text').textContent = `يعدّل على جوالك… ${ar(t.split(/\s+/).length)} كلمة`; },
+    onText: t => { $('#chat-progress-text').textContent = `Editing on your phone… ${ar(t.split(/\s+/).length)} words`; },
   });
-  let out; try { out = parseJSON(r.text); } catch { throw new Error('وصل الرد غير مرتب. أعد الطلب بكلمات أوضح.'); }
+  let out; try { out = parseJSON(r.text); } catch { throw new Error('The answer came back messy. Ask again in clearer words.'); }
   if (!out.no_change && Array.isArray(out.changed)) {
     for (const c of out.changed) {
       if (c.i >= 0 && c.i < secs.length) {
@@ -1518,7 +1595,7 @@ ${JSON.stringify(pick.map(i => ({ i, heading: secs[i].heading, blocks: secs[i].b
     current.notes.sections = secs.filter(Boolean);
     try { await window.Mushaf.check(current.notes); } catch {}
   }
-  current.chat.push({ who: 'ai', text: out.reply || (out.no_change ? 'تم.' : 'عدّلته.') });
+  current.chat.push({ who: 'ai', text: out.reply || (out.no_change ? 'Done.' : 'Changed.') });
   await saveLesson(current);
   await openLesson(current);
   $('.chat').scrollIntoView({ block: 'end' });
@@ -1533,7 +1610,7 @@ $('#chat-send').onclick = async () => {
   current.chat.push({ who: 'me', text: ask }); renderChat();
   $('#chat-text').value = '';
   $('#chat-send').disabled = true; $('#chat-progress').hidden = false;
-  $('#chat-progress-text').textContent = 'جارٍ العمل…';
+  $('#chat-progress-text').textContent = 'Working…';
   const lock = await keepAwake();
   if (engineKind() === 'phone') {
     try { await editOnPhone(ask); }
@@ -1559,16 +1636,16 @@ ${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طل�
         ? window.JUND_METHOD_EN + '\n\n' + window.JUND_EDIT_RULES_EN
         : window.JUND_METHOD + '\n\n' + window.JUND_EDIT_RULES,
       messages: [{ role: 'user', content: user }],
-      onText: t => { $('#chat-progress-text').textContent = `جارٍ العمل… ${ar(t.split(/\s+/).length)} كلمة`; },
+      onText: t => { $('#chat-progress-text').textContent = `Working… ${ar(t.split(/\s+/).length)} words`; },
     });
     const out = await getJSON(r.text);
-    const cost = engineKind() === 'claude' ? ` (${ar((r.usd * SAR).toFixed(2))} ريال)` : '';
+    const cost = engineKind() === 'claude' ? ` (${ar((r.usd * SAR).toFixed(2))} SAR)` : '';
     if (out.no_change || !out.sections) {
-      current.chat.push({ who: 'ai', text: (out.reply || 'تم.') + cost });
+      current.chat.push({ who: 'ai', text: (out.reply || 'Done.') + cost });
     } else {
       const { reply, ...notes } = out;
       current.notes = notes;
-      current.chat.push({ who: 'ai', text: (reply || 'عدّلته.') + cost });
+      current.chat.push({ who: 'ai', text: (reply || 'Changed.') + cost });
     }
     await saveLesson(current);
     await openLesson(current);
@@ -1590,26 +1667,28 @@ async function renderLibrary() {
   const list = $('#library-list');
   if (cloud.on() && Date.now() - lastPull > 60000) {
     lastPull = Date.now();
-    cloud.pull().then(n => { if (n) renderLibrary(); }).catch(() => { const el = $('#cloud-status'); if (el) el.textContent = '⚠ تعذّر الاتصال بمخزنك على GitHub الآن.'; });
+    cloud.pull().then(n => { if (n) renderLibrary(); }).catch(() => { const el = $('#cloud-status'); if (el) el.textContent = '⚠ Could not reach your GitHub storage right now.'; });
   }
-  const all = await allLessons();
+  const q = norm($('#lib-search')?.value || '').toLowerCase();
+  const all = (await allLessons()).filter(l => !q || norm([l.subject.name, l.unit, l.notes?.title, l.notes?.subtitle].join(' ')).toLowerCase().includes(q));
+  $('#book-year').hidden = !all.length;
   $('#book-mawaiz').hidden = !all.some(l => l.notes?.mawaiz?.length);
-  if (!all.length) { list.innerHTML = '<p class="muted">لا توجد دروس محفوظة بعد. أول درس تصنعه سيظهر هنا.</p>'; return; }
+  if (!all.length) { list.innerHTML = '<div class="empty"><b>No lessons yet.</b><br>The first notes you make will appear here.</div>'; return; }
   all.sort((a, b) => b.date.localeCompare(a.date));
   const groups = {};
   for (const l of all) (groups[l.subject.id] ??= []).push(l);
   list.innerHTML = Object.entries(groups).map(([sid, ls]) => `
     <div class="lib-group"><h2>${esc(ls[0].subject.name)}${ls[0].subject.place ? ' <small class="muted">' + esc(ls[0].subject.place) + '</small>' : ''}</h2>
-    ${ls.length > 1 ? `<button type="button" class="ghost book-btn" data-book="${esc(sid)}">اصنع كتاب المادة (${ar(ls.length)} دروس)</button>` : ''}
+    ${ls.length > 1 ? `<button type="button" class="ghost small book-btn" data-book="${esc(sid)}">Make the subject book (${ar(ls.length)} lessons)</button>` : ''}
     ${ls.map(l => `<div class="lib-item">
-      <button type="button" class="open" data-open="${l.id}">${esc(l.notes?.title || l.unit)}<small>${esc(l.unit)} · ${new Date(l.date).toLocaleDateString('ar-SA')}</small></button>
-      <button type="button" class="ghost danger" data-del="${l.id}">حذف</button>
+      <button type="button" class="open" data-open="${l.id}" dir="auto">${l.draft ? '<span class="tag">Draft</span> ' : ''}${esc(l.notes?.title || l.unit)}<small>${esc(l.unit)} · ${new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</small></button>
+      <button type="button" class="ghost danger small" data-del="${l.id}">Delete</button>
     </div>`).join('')}</div>`).join('');
   $$('[data-open]', list).forEach(b => b.onclick = async () => openLesson(await idb.get(b.dataset.open)));
   $$('[data-book]', list).forEach(b => b.onclick = () => makeBook(b.dataset.book));
   $$('[data-del]', list).forEach(b => b.onclick = async () => {
     if (b.dataset.sure) { await removeLesson(b.dataset.del); if (current?.id === b.dataset.del) current = null; renderLibrary(); }
-    else { b.dataset.sure = '1'; b.textContent = 'اضغط مرة ثانية للتأكيد'; }
+    else { b.dataset.sure = '1'; b.textContent = 'Tap again to delete'; }
   });
 }
 
@@ -1639,7 +1718,7 @@ function tocPages(meta, rows) {
 async function showBook(title, metaLine, pages, rows, tocStart) {
   // page numbers in the contents, then the whole book's numbering
   let k = 0;
-  pages.forEach(p => $$('.toc-row .pg', p).forEach(el => { const r = rows[k++]; if (r) el.textContent = ar(r.page); }));
+  pages.forEach(p => $$('.toc-row .pg', p).forEach(el => { const r = rows[k++]; if (r) el.textContent = p.lang === 'en' ? String(r.page) : arD(r.page); }));
   finishPages(pages);
   current = null; bookTitle = title;
   setBookMode(true);
@@ -1650,10 +1729,39 @@ async function showBook(title, metaLine, pages, rows, tocStart) {
   show('result');
   fitPages();
 }
-async function makeBook(subjectId) {
-  const ls = (await allLessons()).filter(l => l.subject.id === subjectId).sort((a, b) => a.date.localeCompare(b.date));
+async function makeYearBook() {
+  const y = new Date().getFullYear();
+  const ls = (await allLessons()).filter(l => !l.draft && new Date(l.date).getFullYear() === y)
+    .sort((a, b) => a.subject.name.localeCompare(b.subject.name) || a.date.localeCompare(b.date));
   if (!ls.length) return;
-  $('#book-progress').hidden = false; $('#book-progress-text').textContent = 'جارٍ تجهيز الكتاب…';
+  $('#book-progress').hidden = false; $('#book-progress-text').textContent = 'Preparing your year book…';
+  await fontsReady();
+  const meta = { title: String(y), subtitle: '', subject: 'Jund Notes ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
+  const cover = coverPage(meta, `<div class="c-sub">${y}</div><div class="c-rule"></div>
+    <div class="c-book">ملاحظات العام · Notes of the year</div><div class="c-place">${arD(ls.length)} درسًا · ${new Set(ls.map(l => l.subject.id)).size} subjects</div>
+    <div class="c-place">جُنيد محمد بن عبدالسلام</div>`);
+  const chapters = [];
+  for (let i = 0; i < ls.length; i++) {
+    $('#book-progress-text').textContent = `Laying out lesson ${i + 1} of ${ls.length}…`;
+    await new Promise(r => setTimeout(r, 0));
+    const l = ls[i], m = metaFor(l);
+    const pg = [...paginateNotes(l, m, false), ...paginateMap(l, m, false)];
+    pg.forEach(p => { p.dataset.ch = l.id; });
+    chapters.push({ l, pages: pg });
+  }
+  const rowsIn = ls.map(l => ({ title: l.notes.title || l.unit, sub: l.subject.name + ' — ' + l.unit }));
+  const toc = tocPages(meta, rowsIn);
+  const rows = []; let pageNo = 1 + toc.length;
+  for (const c of chapters) { rows.push({ title: c.l.notes.title || c.l.unit, page: pageNo + 1 }); pageNo += c.pages.length; }
+  const pages = [cover, ...toc, ...chapters.flatMap(c => c.pages)];
+  $('#book-progress').hidden = true;
+  await showBook(`Year book ${y}`, `${ls.length} lessons · ${pages.length} pages`, pages, rows, 1);
+}
+$('#book-year').onclick = makeYearBook;
+async function makeBook(subjectId) {
+  const ls = (await allLessons()).filter(l => l.subject.id === subjectId && !l.draft).sort((a, b) => a.date.localeCompare(b.date));
+  if (!ls.length) return;
+  $('#book-progress').hidden = false; $('#book-progress-text').textContent = 'Preparing the book…';
   await fontsReady();
   const meta = { ...metaFor(ls[0]), title: ls[0].subject.name, subtitle: '', unit: '' };
   const year = new Date().toLocaleDateString('ar-SA', { year: 'numeric' });
@@ -1664,7 +1772,7 @@ async function makeBook(subjectId) {
   const rows = [];
   const chapters = [];
   ls.forEach((l, i) => {
-    $('#book-progress-text').textContent = `يرتّب الدرس ${ar(i + 1)} من ${ar(ls.length)}…`;
+    $('#book-progress-text').textContent = `Laying out lesson ${ar(i + 1)} of ${ar(ls.length)}…`;
     const m = metaFor(l);
     const np = paginateNotes(l, m, false);
     const mp = paginateMap(l, m, false);
@@ -1676,7 +1784,7 @@ async function makeBook(subjectId) {
   for (const c of chapters) { rows.push({ title: c.l.notes.title || c.l.unit, sub: c.l.unit, page: pageNo + 1 }); pageNo += c.pages.length; }
   const pages = [cover, ...toc, ...chapters.flatMap(c => c.pages)];
   $('#book-progress').hidden = true;
-  await showBook(`كتاب ${ls[0].subject.name}`, `${ar(ls.length)} دروس · ${ar(pages.length)} صفحة`, pages, rows, 1);
+  await showBook(`Book: ${ls[0].subject.name}`, `${ar(ls.length)} lessons · ${ar(pages.length)} pages`, pages, rows, 1);
 }
 $('#book-mawaiz').onclick = async () => {
   const all = (await allLessons()).filter(l => l.notes?.mawaiz?.length).sort((a, b) => a.date.localeCompare(b.date));
@@ -1693,27 +1801,28 @@ $('#book-mawaiz').onclick = async () => {
   };
   const pages = paginateNotes({ notes }, meta, false);
   const cover = coverPage(meta, `<div class="c-sub">المواعظ</div><div class="c-rule"></div><div class="c-book">من دروس العام في كل المواد</div><div class="c-place">جُنيد محمد بن عبدالسلام</div>`);
-  await showBook('المواعظ', `${ar(Object.keys(bySub).length)} مواد`, [cover, ...pages], [], 1);
+  await showBook('Reminders book', `${ar(Object.keys(bySub).length)} subjects`, [cover, ...pages], [], 1);
 };
 
 /* ---------- backup to Google Drive (or anywhere) ---------- */
 $('#backup').onclick = async () => {
   const st = $('#backup-status');
   const lessons = await allLessons();
-  const data = { app: 'jund-notes', version: 1, saved: new Date().toISOString(), families: store.get('families', {}), lessons };
-  const name = `نسخة ملاحظات جنيد ${new Date().toISOString().slice(0, 10)}.json`;
+  const data = { app: 'jund-notes', version: 2, saved: new Date().toISOString(), families: store.get('families', {}), lessons,
+    events: store.get('events', []), studio: store.get('studioSaved', []) };
+  const name = `Jund Notes backup ${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   try {
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: name });
-      st.textContent = `✓ اختر Google Drive من القائمة لحفظها هناك. (${ar(lessons.length)} درس)`;
+      st.textContent = `✓ Choose Google Drive in the list to keep it there. (${ar(lessons.length)} lessons)`;
       return;
     }
-  } catch (e) { if (e.name === 'AbortError') { st.textContent = 'أُلغي.'; return; } }
+  } catch (e) { if (e.name === 'AbortError') { st.textContent = 'Cancelled.'; return; } }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(file); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  st.textContent = `✓ نُزّلت النسخة (${ar(lessons.length)} درس). ارفعها إلى Google Drive من ملفات الجوال.`;
+  st.textContent = `✓ Backup downloaded (${ar(lessons.length)} lessons). Upload it to Google Drive from your phone's files.`;
 };
 $('#restore').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
@@ -1723,10 +1832,35 @@ $('#restore').onchange = async e => {
     if (data.app !== 'jund-notes' || !Array.isArray(data.lessons)) throw new Error();
     for (const l of data.lessons) await saveLesson(l);
     if (data.families) store.set('families', { ...data.families, ...store.get('families', {}) });
-    st.textContent = `✓ استُرجع ${ar(data.lessons.length)} درس.`;
-  } catch { st.textContent = '✗ هذا ليس ملف نسخة احتياطية من التطبيق.'; }
+    if (Array.isArray(data.events)) window.JundCal?.merge(data.events);
+    if (Array.isArray(data.studio)) { const have = store.get('studioSaved', []); store.set('studioSaved', [...have, ...data.studio.filter(x => !have.some(h => h.id === x.id))]); }
+    st.textContent = `✓ Restored ${ar(data.lessons.length)} lessons.`;
+  } catch { st.textContent = '✗ This is not a backup file from the app.'; }
   e.target.value = '';
 };
+
+/* ---------- theme ---------- */
+function applyTheme() {
+  const t = store.get('theme', 'navy');
+  document.documentElement.dataset.theme = t;
+  $('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#f4f7fc' : '#0b1324');
+}
+applyTheme();
+
+/* ---------- the server: is it up? ---------- */
+async function checkServer() {
+  const st = $('#server-status'), dot = $('#server-dot');
+  if (st) st.textContent = 'Checking…';
+  try {
+    const base = await getServer();
+    const j = await (await fetch(base + '/', { cache: 'no-store' })).json();
+    dot.dataset.ok = j.key ? '1' : '0';
+    if (st) st.textContent = j.key ? '✓ The server is running and has its AI key.' : '⚠ The server runs but has no AI key yet. Add GEMINI_API_KEY in the GitHub secrets.';
+  } catch (e) {
+    dot.dataset.ok = '0';
+    if (st) st.textContent = '✗ ' + (e.code === 'noserver' ? e.message : 'The server could not be reached. Check the internet.');
+  }
+}
 
 /* ---------- font ---------- */
 function applyFont() { document.documentElement.dataset.font = store.get('font', 'sch'); }
@@ -1746,10 +1880,11 @@ async function receiveShared() {
       if (r) { text = await r.text(); await c.delete('shared-text'); }
       const fr = await c.match('shared-file');
       if (fr) {
-        const name = decodeURIComponent(fr.headers.get('x-name') || 'ملف.pdf');
+        const name = decodeURIComponent(fr.headers.get('x-name') || 'file.pdf');
         const type = fr.headers.get('content-type') || '';
         const blob = await fr.blob(); await c.delete('shared-file');
-        await addFiles([new File([blob], name, { type: type === 'application/octet-stream' ? '' : (type || blob.type || 'application/pdf') })]);
+        if (/^image\//.test(type)) { show('studio'); window.JundStudio?.load(new File([blob], name, { type })); }
+        else await addFiles([new File([blob], name, { type: type === 'application/octet-stream' ? '' : (type || blob.type || 'application/pdf') })]);
       }
       const t = await c.match('shared-title');
       if (t) { if (!$('#unit').value) $('#unit').value = await t.text(); await c.delete('shared-title'); }
@@ -1759,6 +1894,8 @@ async function receiveShared() {
     $('#transcript').value = text; countWords();
     if (title && !$('#unit').value) $('#unit').value = title;
   }
+  const view = u.searchParams.get('view');
+  if (view === 'calendar' || view === 'studio') setTimeout(() => show(view), 0);
   if (u.search) history.replaceState(null, '', location.pathname);
 }
 
@@ -1767,7 +1904,7 @@ fillSubjects();
 initSettings();
 receiveShared();
 show('new');
-const APP_VERSION = '2.2';
+const APP_VERSION = '3.0';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
@@ -1775,8 +1912,13 @@ if ('serviceWorker' in navigator) {
   let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded && !controller) { reloaded = true; location.reload(); } });
 }
-{ const v = document.createElement('p'); v.className = 'muted'; v.style.fontSize = '.8rem'; v.textContent = 'الإصدار ' + APP_VERSION; $('#screen-settings').appendChild(v); }
+$('#app-version').textContent = 'version ' + APP_VERSION;
+setTimeout(checkServer, 1200);
+$('#lib-search').addEventListener('input', () => renderLibrary());
 
+// shared with calendar.js, studio.js and offline.js
+window.JN = { store, cloud, esc, ar, show, callServer, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
+  saveLesson, download, safeName, keepAwake, engineKind, splitText, cleanHeard, current: () => current };
 // for testing only
-window.__jn = { openLesson, paginateNotes, idb, makeBook, pending: () => pending };
+window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };
 })();
