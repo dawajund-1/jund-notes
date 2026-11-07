@@ -579,3 +579,9 @@ body.vx-open { overflow: hidden; }
 .vx-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12.5px; }
 .vx-voice select { font-size: 12.5px; padding: 3px 6px; }
 #rt-voice { font-weight: 600; }
+.vx-set { border-top: 1px solid var(--line); padding-top: 8px; font-size: 13.5px; }
+.vx-set summary { cursor: pointer; color: var(--ink-2); }
+.vx-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.vx-row select { flex: 1; min-width: 0; font-size: 13px; padding: 5px 8px; }
+.vx-row input[type=range] { flex: 1; }
+.vx-tip { font-size: 12.5px; margin: 10px 0 0; line-height: 1.6; }

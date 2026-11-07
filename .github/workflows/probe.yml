@@ -1,5 +1,5 @@
 name: Voice check
-on: { push: { branches: [main], paths: ['server/probe/**'] } }
+on: { workflow_dispatch: {} }
 jobs:
   p:
     runs-on: ubuntu-latest

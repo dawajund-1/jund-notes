@@ -4,16 +4,13 @@
 //   POST /youtube     a YouTube link + time range → transcript of that range (streams)
 //   GET  /playlist    a YouTube playlist → its videos (from YouTube's public feed)
 //   GET  /ytmeta      a YouTube link → its title
-//   POST /live/token  a one-time pass for a live voice talk (the AI key itself never leaves the server)
 //   POST /ask-voice   a short spoken question (+ the file being discussed) → what was heard and the answer
 
 const ALLOWED = ['https://dawajund-1.github.io'];
 let G = 'https://generativelanguage.googleapis.com';  // GEMINI_BASE replaces it only in local tests
 const WRITE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash'];
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
-const LIVE_MODELS = ['gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-latest', 'gemini-2.5-flash-native-audio-preview-12-2025'];
-const VOICE_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
-const LIVE_WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained';
+const VOICE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 const MAX_BODY = 900_000;            // characters of text: about 150 pages
 const MAX_AUDIO = 95 * 1024 * 1024;  // bytes per audio piece
 
@@ -51,7 +48,7 @@ const errCode = s => s === 429 ? 'quota' : s === 403 ? 'key' : 'ai';
 
 // Ask the AI, trying each model in turn (a model that is missing or out of free quota today is skipped).
 // `variants` lets a request be retried once in a simpler form if the AI refuses an optional setting.
-async function generate(env, h, { models, system, variants, maxTokens, wantJson }) {
+async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait }) {
   let last = { status: 500, text: '' };
   for (const model of models) {
     for (let vi = 0; vi < variants.length; vi++) {
@@ -68,9 +65,13 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson 
           ...thinking,
         },
       });
-      const r = await fetch(`${G}/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
-        method: 'POST', headers: { 'content-type': 'application/json', ...keyHeaders(env) }, body: payload,
-      });
+      let r;
+      try {
+        r = await fetch(`${G}/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
+          method: 'POST', headers: { 'content-type': 'application/json', ...keyHeaders(env) }, body: payload,
+          ...(wait ? { signal: AbortSignal.timeout(wait) } : {}),
+        });
+      } catch { last = { status: 504, text: 'the AI took too long' }; break; }   // too slow right now: try the next model
       if (r.ok) return new Response(r.body, { headers: { ...h, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-model': model } });
       last = { status: r.status, text: (await r.text()).slice(0, 500) };
       const modelProblem = r.status !== 400 || /model|not found|not supported/i.test(last.text);
@@ -79,7 +80,7 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson 
         return json({ error: last.text, code: 'bad', status: 400 }, 400, h);
       }
     }
-    if (![404, 429, 400, 403, 500, 503].includes(last.status)) break;
+    if (![404, 429, 400, 403, 500, 503, 504].includes(last.status)) break;
   }
   return json({ error: last.text || 'AI error', code: errCode(last.status), status: last.status }, last.status === 429 ? 429 : 502, h);
 }
@@ -269,19 +270,6 @@ export default {
     if (req.method !== 'POST') return json({ error: 'not found' }, 404, h);
     if (!env.GEMINI_API_KEY) return json({ error: 'server has no key', code: 'nokey' }, 500, h);
 
-    /* ----- live voice: a pass for one talk, valid to start for 2 minutes, at most 30 minutes long ----- */
-    if (path === '/live/token') {
-      const now = Date.now();
-      const r = await fetch(`${G}/v1alpha/auth_tokens`, {
-        method: 'POST', headers: { 'content-type': 'application/json', ...keyHeaders(env) },
-        body: JSON.stringify({ uses: 1, expireTime: new Date(now + 30 * 60e3).toISOString(), newSessionExpireTime: new Date(now + 2 * 60e3).toISOString() }),
-      });
-      if (!r.ok) { const t = (await r.text()).slice(0, 300); return json({ error: t, code: errCode(r.status), status: r.status }, r.status === 429 ? 429 : 502, h); }
-      const j = await r.json();
-      const models = (env.LIVE_MODELS ? String(env.LIVE_MODELS).split(',') : LIVE_MODELS).map(s => s.trim()).filter(Boolean);
-      return json({ token: j.name, ws: LIVE_WS, models }, 200, h);
-    }
-
     /* ----- a short spoken question → what was heard + the answer (basic voice) ----- */
     if (path === '/ask-voice') {
       const raw = await req.text();
@@ -289,8 +277,8 @@ export default {
       let body; try { body = JSON.parse(raw); } catch { return json({ error: 'bad request' }, 400, h); }
       const { audio = '', mime = 'audio/webm', system = '', user = '' } = body;
       if (!audio || !/^(audio|video)\/[\w.+-]+$/.test(String(mime).split(';')[0])) return json({ error: 'empty', code: 'empty' }, 400, h);
-      return generate(env, h, { models: VOICE_MODELS, system, maxTokens: 2000, wantJson: true,
-        variants: [{ parts: [{ text: user }, { inlineData: { mimeType: String(mime).split(';')[0], data: audio } }, { text: 'Answer the spoken question in this audio.' }], temperature: 0.4 }] });
+      return generate(env, h, { models: VOICE_MODELS, system, maxTokens: 900, wantJson: false, wait: 15000,
+        variants: [{ parts: [{ text: user }, { inlineData: { mimeType: String(mime).split(';')[0], data: audio } }, { text: 'Answer what the person says in this audio.' }], temperature: 0.4 }] });
     }
 
     /* ----- text → notes ----- */
