@@ -22,6 +22,7 @@ jobs:
           if [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "Keys not added yet; skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"; fi
       - name: Claim a free workers.dev address (first time only)
         if: steps.chk.outputs.ok == 'true'
+        continue-on-error: true
         env:
           T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
