@@ -207,3 +207,5 @@ function listen() {
 window.JundAssistant = { open() { if (!built) build(); render(); }, home: () => renderHome() };
 J.cloud.getData('assistant').then(r => { if (r?.log && (r.saved || 0) > 0 && !log.length) { log = r.log; render(); } }).catch(() => {});
 })();
+// the app opens on Home before this file loads, so draw it now
+if (!document.querySelector('#screen-assistant').hidden) window.JundAssistant.open();
