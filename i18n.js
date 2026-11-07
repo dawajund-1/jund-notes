@@ -103,6 +103,9 @@ const T = {
 'Allow notifications to get reminders on the phone, even when the app is closed.': 'اسمح بالإشعارات لتصلك التنبيهات حتى والتطبيق مغلق.',
 '✓ Reminders reach this phone even when Zad is closed.': '✓ تصل التنبيهات إلى هذا الجوال حتى وزاد مغلق.',
 'Reminders pop up while the app is open, and missed ones show when you open it.': 'تظهر التنبيهات والتطبيق مفتوح، وتظهر الفائتة عند فتحه.', 'Nothing else today': 'لا شيء آخر اليوم', 'your location': 'موقعك', 'Prayer and tasks': 'الصلاة والمهام', 'Waiting': 'ينتظر',
+'Make flashcards': 'اصنع بطاقات', 'Review cards': 'راجع البطاقات', 'Follow-up email': 'بريد متابعة', 'Talk with Zad': 'تحدّث مع زاد',
+'Your weekly review is ready': 'مراجعتك الأسبوعية جاهزة', 'See what you did and what is coming this week.': 'اطّلع على ما أنجزته وما ينتظرك هذا الأسبوع.',
+'Your weekly review is ready — See what you did and what is coming this week.': 'مراجعتك الأسبوعية جاهزة — اطّلع على ما أنجزته وما ينتظرك هذا الأسبوع.',
 };
 const DAYS = { Sunday: 'الأحد', Monday: 'الاثنين', Tuesday: 'الثلاثاء', Wednesday: 'الأربعاء', Thursday: 'الخميس', Friday: 'الجمعة', Saturday: 'السبت',
   Sun: 'الأحد', Mon: 'الاثنين', Tue: 'الثلاثاء', Wed: 'الأربعاء', Thu: 'الخميس', Fri: 'الجمعة', Sat: 'السبت', Su: 'ح', Mo: 'ن', Tu: 'ث', We: 'ر', Th: 'خ', Fr: 'ج', Sa: 'س' };
@@ -117,6 +120,8 @@ const wordRe = new RegExp('\\b(' + Object.keys(words).sort((a, b) => b.length - 
 function tr(s) {
   const t = s.trim(); if (!t || !/[A-Za-z]/.test(t)) return null;
   if (T[t]) return s.replace(t, T[t]);
+  const em = t.match(/^([^\sA-Za-z0-9]{1,3}\s+)(.+)$/u);   // "🎬 Reel script"
+  if (em && T[em[2]]) return s.replace(t, em[1] + T[em[2]]);
   // short dynamic labels: dates, times, counts, prayer names
   const m = t.match(/^is on (.+)\. Block study time before it\.$/);
   if (m) return s.replace(t, `يوم ${m[1].replace(wordRe, w => words[w])}. خصّص وقتًا للمذاكرة قبله.`);

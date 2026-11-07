@@ -1565,6 +1565,7 @@ async function openLesson(lesson) {
   window.JundCal?.onLesson(lesson);
   window.JundFeatures?.onLesson(lesson);
   window.JundStudy?.onLesson(lesson);
+  window.JundVoice?.onLesson(lesson);
 }
 
 function renderReport(r) {
@@ -1991,7 +1992,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '4.6';
+const APP_VERSION = '4.7';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
@@ -2006,7 +2007,7 @@ $('#lib-search').addEventListener('input', () => renderLibrary());
 // start transcribing a YouTube link from anywhere (the Assistant, a share)
 function startYouTube(url) { show('new'); $('#yt').value = url; $('#yt-go').click(); }
 // shared with calendar.js, studio.js and offline.js
-window.JN = { store, cloud, esc, ar, show, callServer, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
+window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
   saveLesson, download, safeName, addFiles, startYouTube, me, keepAwake, engineKind, splitText, cleanHeard, current: () => current };
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };

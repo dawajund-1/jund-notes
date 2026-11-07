@@ -38,7 +38,7 @@ function build() {
     <div class="as-log" id="as-log"></div>
     <div class="as-try" id="as-try"></div>
     <div class="as-input">
-      <button type="button" class="icon-btn as-mic" id="as-mic" aria-label="Speak"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      <button type="button" class="icon-btn as-mic" id="as-mic" aria-label="Talk with Zad"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
       <textarea id="as-text" rows="1" dir="auto" placeholder="Message Zad…"></textarea>
       <button type="button" class="primary" id="as-send">Send</button>
     </div>
@@ -47,7 +47,7 @@ function build() {
   $('#as-text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); send(); } });
   $('#as-text').addEventListener('input', () => { const t = $('#as-text'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; });
   $('#as-clear').onclick = () => { log = []; persist(); render(); };
-  $('#as-mic').onclick = listen;
+  $('#as-mic').onclick = () => window.JundVoice ? window.JundVoice.general() : listen();
   $('#hm-file').onchange = async e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) { J.show('new'); await J.addFiles(f); } };
   $('#hm-yt').onclick = () => { J.show('new'); setTimeout(() => document.querySelector('#yt').focus(), 50); };
   $('#hm-rec').onclick = () => window.JundFeatures?.record();
@@ -215,7 +215,8 @@ function listen() {
   r.start();
 }
 
-window.JundAssistant = { open() { if (!built) build(); render(); }, home: () => renderHome() };
+window.JundAssistant = { open() { if (!built) build(); render(); }, home: () => renderHome(), context,
+  addTalk(turns) { if (!turns?.length) return; turns.forEach(t => log.push({ who: t.who === 'me' ? 'me' : 'ai', text: t.text })); persist(); render(); } };
 J.cloud.getData('assistant').then(r => { if (r?.log && (r.saved || 0) > 0 && !log.length) { log = r.log; render(); } }).catch(() => {});
 })();
 // the app opens on Home before this file loads, so draw it now
