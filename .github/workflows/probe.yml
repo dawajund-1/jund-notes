@@ -1,0 +1,11 @@
+name: Voice check
+on: { push: { branches: [main], paths: ['server/probe/**'] } }
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: sudo apt-get install -y -qq espeak-ng ffmpeg >/dev/null 2>&1; espeak-ng -v ar "ما هو الاستصحاب" -w a.wav; ffmpeg -loglevel error -i a.wav -c:a libopus -b:a 32k a.webm; ls -la a.webm
+      - run: node server/probe/p.mjs
