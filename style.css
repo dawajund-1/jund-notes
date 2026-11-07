@@ -456,3 +456,17 @@ button.primary { box-shadow: 0 1px 0 rgb(255 255 255 / .08) inset; }
 .who-g .m { font-size: .85rem; color: var(--ink-2); margin-top: 3px; }
 .xp-lessons { max-height: 220px; overflow-y: auto; background: var(--surface-2); border-radius: 12px; padding: 4px 10px; }
 #study-dialog .big { width: 100%; }
+
+/* studio: tools, texts list, drafts */
+.st-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.st-tools #st-cmp { user-select: none; -webkit-user-select: none; touch-action: none; }
+.st-layers { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.st-layer { display: flex; gap: 6px; align-items: center; }
+.st-lt { flex: 1; text-align: start; font-weight: 500; background: var(--surface-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-layer.on .st-lt { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.st-drafts { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.st-draft { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.st-draft button[data-do] { padding: 0; border-radius: 10px; overflow: hidden; min-height: 0; }
+.st-draft img { width: 100%; display: block; }
+.st-draft small { color: var(--ink-2); font-size: .72rem; }
+.st-draft .x { position: absolute; top: 4px; right: 4px; min-height: 26px; padding: 0 8px; background: rgb(0 0 0 / .55); color: #fff; border: 0; }

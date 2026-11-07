@@ -66,6 +66,14 @@ function build() {
       <label class="file-btn"><input type="file" id="st-media" accept="image/*,video/*">Photo or video</label>
     </div>
     <div class="st-canvas-wrap"><canvas id="st-canvas"></canvas></div>
+    <div class="st-tools">
+      <button type="button" class="ghost small" id="st-undo" disabled>↶ Undo</button>
+      <button type="button" class="ghost small" id="st-cmp">Hold to compare</button>
+      <button type="button" class="ghost small danger" id="st-rmbg" hidden>Remove photo</button>
+      <button type="button" class="ghost small" id="st-draft">Save draft</button>
+      <button type="button" class="ghost small" id="st-new">New</button>
+    </div>
+    <div class="card-h" style="margin:12px 0 6px;font-size:.9rem">Background colour</div>
     <div class="st-bgs" id="st-bgs">${Object.entries(BGS).map(([k, c]) => `<button type="button" class="sw" data-bg="${k}" aria-label="${k} background" style="background:linear-gradient(135deg,${c[0]},${c[1]})"></button>`).join('')}</div>
     <div id="st-trim" hidden>
       <div class="card-h" style="margin:10px 0 4px">Trim the video</div>
@@ -76,8 +84,10 @@ function build() {
   </div>
 
   <div class="card">
-    <div class="row-between" style="margin-bottom:8px"><div class="card-h" style="margin:0">Text</div>
-      <span class="row-gap" style="margin:0"><button type="button" class="ghost small danger" id="st-del" hidden>Remove</button><button type="button" class="primary small" id="st-add">+ Add text</button></span></div>
+    <div class="row-between" style="margin-bottom:8px"><div class="card-h" style="margin:0">Texts on the picture</div>
+      <button type="button" class="primary small" id="st-add">+ Add text</button></div>
+    <div class="st-layers" id="st-layers"></div>
+    <button type="button" class="ghost small danger" id="st-del" hidden style="display:none">Remove</button>
     <textarea id="st-text" rows="3" dir="auto" placeholder="Write in Arabic or English — then drag it on the picture"></textarea>
     <div class="card-h" style="margin:12px 0 6px">Look</div>
     <div class="chips" id="st-looks">${Object.entries(LOOKS).map(([k, v]) => `<button type="button" class="chip-b" data-look="${k}">${v.name}</button>`).join('')}</div>
@@ -90,6 +100,11 @@ function build() {
       <div class="seg" id="st-align"><button type="button" data-a="start">Start</button><button type="button" data-a="center">Centre</button><button type="button" data-a="end">End</button></div>
       <button type="button" class="ghost small" id="st-save-text">☆ Save this text</button>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h">Drafts</div>
+    <div id="st-drafts"></div>
   </div>
 
   <div class="card">
@@ -128,16 +143,26 @@ function build() {
   cv.addEventListener('pointerdown', down); cv.addEventListener('pointermove', move);
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   $$('#st-size button').forEach(b => b.onclick = () => { size = b.dataset.k; store.set('studioSize', size); sync(); draw(); });
-  $$('#st-bgs [data-bg]').forEach(b => b.onclick = () => { stopVideo(); bg = { kind: 'color', key: b.dataset.bg }; sync(); draw(); });
+  $$('#st-bgs [data-bg]').forEach(b => b.onclick = () => { snap(); stopVideo(); bg = { kind: 'color', key: b.dataset.bg }; sync(); draw(); });
   $('#st-media').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) loadMedia(f); };
   $('#st-add').onclick = () => { addLayer({ text: 'Your text' }); $('#st-text').select(); $('#st-text').focus(); };
-  $('#st-text').oninput = () => { if (!sel) addLayer({ text: $('#st-text').value }); else { sel.text = $('#st-text').value; draw(); } };
-  $$('#st-looks [data-look]').forEach(b => b.onclick = () => { if (!sel) addLayer({}); sel.look = b.dataset.look; sel.font = LOOKS[sel.look].font; sync(); draw(); });
-  $$('#st-fonts [data-font]').forEach(b => b.onclick = () => { if (!sel) addLayer({}); sel.font = b.dataset.font; sync(); draw(); });
-  $$('#st-colors [data-color]').forEach(b => b.onclick = () => { if (!sel) addLayer({}); sel.color = b.dataset.color; sync(); draw(); });
-  $('#st-size-r').oninput = () => { if (sel) { sel.size = Number($('#st-size-r').value); draw(); } };
-  $$('#st-align button').forEach(b => b.onclick = () => { if (sel) { sel.align = b.dataset.a; sync(); draw(); } });
-  $('#st-del').onclick = () => { layers = layers.filter(l => l !== sel); sel = layers.at(-1) || null; sync(); draw(); };
+  $('#st-text').onfocus = snap;
+  $('#st-text').oninput = () => { if (!sel) addLayer({ text: $('#st-text').value }); else { sel.text = $('#st-text').value; draw(); renderLayers(); } };
+  const target = () => sel || layers.at(-1) || addLayer({ text: 'Your text' });
+  $$('#st-looks [data-look]').forEach(b => b.onclick = () => { snap(); const l = target(); sel = l; l.look = b.dataset.look; l.font = LOOKS[l.look].font; sync(); draw(); });
+  $$('#st-fonts [data-font]').forEach(b => b.onclick = () => { snap(); const l = target(); sel = l; l.font = b.dataset.font; sync(); draw(); });
+  $$('#st-colors [data-color]').forEach(b => b.onclick = () => { snap(); const l = target(); sel = l; l.color = b.dataset.color; sync(); draw(); });
+  $('#st-size-r').onpointerdown = snap;
+  $('#st-size-r').oninput = () => { const l = target(); sel = l; l.size = Number($('#st-size-r').value); draw(); };
+  $$('#st-align button').forEach(b => b.onclick = () => { snap(); const l = target(); sel = l; l.align = b.dataset.a; sync(); draw(); });
+  $('#st-del').onclick = () => { snap(); layers = layers.filter(l => l !== sel); sel = layers.at(-1) || null; sync(); draw(); };
+  $('#st-undo').onclick = undo;
+  const cmp = on => { comparing = on; draw(); };
+  $('#st-cmp').onpointerdown = () => cmp(true); $('#st-cmp').onpointerup = $('#st-cmp').onpointerleave = $('#st-cmp').onpointercancel = () => cmp(false);
+  $('#st-rmbg').onclick = () => { snap(); stopVideo(); bg = { kind: 'color', key: 'navy' }; sync(); draw(); };
+  $('#st-draft').onclick = saveDraft;
+  $('#st-new').onclick = () => { snap(); stopVideo(); bg = { kind: 'color', key: 'navy' }; layers = []; sel = null; draftId = null; $('#st-text').value = ''; sync(); draw(); };
+  renderDrafts();
   $('#st-save-text').onclick = () => { if (sel?.text.trim()) { saveText(sel); J.toast?.('Saved') ?? window.JundCal?.toast('Saved'); } };
   $('#st-export').onclick = () => exportIt(false);
   $('#st-share').onclick = () => exportIt(true);
@@ -165,6 +190,9 @@ function sync() {
   $$('#st-size button').forEach(b => b.classList.toggle('on', b.dataset.k === size));
   $$('#st-bgs [data-bg]').forEach(b => b.classList.toggle('on', bg.kind === 'color' && bg.key === b.dataset.bg));
   $('#st-del').hidden = !sel;
+  $('#st-rmbg').hidden = bg.kind === 'color';
+  $('#st-undo').disabled = !history.length;
+  renderLayers();
   $$('#st-looks [data-look]').forEach(b => b.classList.toggle('on', sel?.look === b.dataset.look));
   $$('#st-fonts [data-font]').forEach(b => b.classList.toggle('on', sel?.font === b.dataset.font));
   $$('#st-colors [data-color]').forEach(b => b.classList.toggle('on', sel?.color === b.dataset.color));
@@ -174,7 +202,57 @@ function sync() {
   $('#st-trim').hidden = bg.kind !== 'video';
 }
 
+/* ---------- the list of texts, undo, compare, drafts ---------- */
+let history = [], comparing = false, draftId = null;
+const state = () => ({ layers: JSON.parse(JSON.stringify(layers)), sel: sel?.id || null, bgKind: bg.kind, bgKey: bg.key });
+function snap() { history.push({ ...state(), bg }); if (history.length > 40) history.shift(); const u = $('#st-undo'); if (u) u.disabled = false; }
+function undo() {
+  const s = history.pop(); if (!s) return;
+  layers = s.layers; sel = layers.find(l => l.id === s.sel) || null; bg = s.bg;
+  sync(); draw();
+}
+function renderLayers() {
+  const box = $('#st-layers'); if (!box) return;
+  box.innerHTML = layers.length ? layers.map((l, i) => `<div class="st-layer ${l === sel ? 'on' : ''}"><button type="button" class="st-lt" data-li="${i}" dir="auto">${esc((l.text || '').split('\n')[0].slice(0, 40) || '(empty)')}</button><button type="button" class="x ghost small" data-lx="${i}" aria-label="Delete this text">×</button></div>`).join('')
+    : '<span class="muted" style="font-size:.88rem">No text yet. Tap “+ Add text”.</span>';
+  $$('[data-li]', box).forEach(b => b.onclick = () => { sel = layers[+b.dataset.li]; $('#st-text').value = sel.text; sync(); draw(); });
+  $$('[data-lx]', box).forEach(b => b.onclick = () => { snap(); const l = layers[+b.dataset.lx]; layers = layers.filter(x => x !== l); if (sel === l) sel = layers.at(-1) || null; $('#st-text').value = sel?.text || ''; sync(); draw(); });
+}
+// drafts live in the phone's own storage (photos are kept smaller)
+const DB = () => new Promise((res, rej) => { const r = indexedDB.open('daftar-studio', 1); r.onupgradeneeded = () => r.result.createObjectStore('drafts', { keyPath: 'id' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const tx = async (mode, fn) => { const db = await DB(); return new Promise((res, rej) => { const t = db.transaction('drafts', mode); const r = fn(t.objectStore('drafts')); t.oncomplete = () => res(r?.result); t.onerror = () => rej(t.error); }); };
+async function saveDraft() {
+  let img = null;
+  if (bg.kind === 'image') {
+    const k = Math.min(1, 1440 / Math.max(bg.img.naturalWidth, bg.img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(bg.img.naturalWidth * k); c.height = Math.round(bg.img.naturalHeight * k);
+    c.getContext('2d').drawImage(bg.img, 0, 0, c.width, c.height); img = c.toDataURL('image/jpeg', 0.85);
+  }
+  const [W, H] = SIZES[size], t = document.createElement('canvas'); t.width = 216; t.height = Math.round(216 * H / W);
+  paint(t.getContext('2d'), t.width, t.height, false);
+  draftId ||= 'D' + Date.now().toString(36);
+  await tx('readwrite', s => s.put({ id: draftId, date: new Date().toISOString(), size, bgKey: bg.kind === 'color' ? bg.key : 'navy', img, video: bg.kind === 'video', layers: JSON.parse(JSON.stringify(layers)), thumb: t.toDataURL('image/jpeg', 0.7) }));
+  status(bg.kind === 'video' ? '✓ Draft saved. Videos are not kept in drafts; pick the video again when you open it.' : '✓ Draft saved.');
+  renderDrafts();
+}
+async function renderDrafts() {
+  const box = $('#st-drafts'); if (!box) return;
+  let list = []; try { list = (await tx('readonly', s => s.getAll())) || []; } catch {}
+  list.sort((a, b) => b.date.localeCompare(a.date));
+  box.innerHTML = list.length ? `<div class="st-drafts">${list.map(d => `<div class="st-draft"><button type="button" data-do="${d.id}"><img src="${d.thumb}" alt=""></button><small>${new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</small><button type="button" class="x ghost small" data-dx="${d.id}" aria-label="Delete draft">×</button></div>`).join('')}</div>`
+    : '<span class="muted" style="font-size:.88rem">Tap “Save draft” to keep your work and finish it later.</span>';
+  $$('[data-do]', box).forEach(b => b.onclick = async () => {
+    const d = list.find(x => x.id === b.dataset.do); snap(); stopVideo();
+    size = d.size; layers = d.layers; sel = layers.at(-1) || null; draftId = d.id;
+    if (d.img) { const im = new Image(); im.onload = () => { bg = { kind: 'image', img: im }; sync(); draw(); }; im.src = d.img; } else bg = { kind: 'color', key: d.bgKey };
+    sync(); draw(); $('#st-canvas').scrollIntoView({ block: 'center' });
+    if (d.video) status('This draft had a video: pick it again with “Photo or video”.');
+  });
+  $$('[data-dx]', box).forEach(b => b.onclick = async () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Delete?'; return; } await tx('readwrite', s => s.delete(b.dataset.dx)); if (draftId === b.dataset.dx) draftId = null; renderDrafts(); });
+}
+
 function addLayer(o) {
+  if (layers.length || o.text) snap();
   const l = { id: newId(), text: o.text ?? 'اكتب هنا', look: o.look || 'classic', font: o.font || LOOKS[o.look || 'classic'].font,
     color: o.color || '#ffffff', size: o.size || 0.075, align: o.align || 'center', x: 0.5, y: 0.25 + (layers.length % 4) * 0.15 };
   layers.push(l); sel = l; sync(); draw();
@@ -185,7 +263,7 @@ function addLayer(o) {
 /* ---------- media ---------- */
 function stopVideo() { if (bg.video) { bg.video.pause(); URL.revokeObjectURL(bg.video.src); } }
 function loadMedia(f) {
-  stopVideo();
+  snap(); stopVideo();
   const url = URL.createObjectURL(f);
   if (f.type.startsWith('video/')) {
     const v = document.createElement('video');
@@ -286,6 +364,7 @@ function paint(ctx, W, H, showSel) {
   if (bg.kind === 'image') cover(ctx, bg.img, bg.img.naturalWidth, bg.img.naturalHeight, W, H);
   else if (bg.kind === 'video' && bg.video.readyState >= 2) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); cover(ctx, bg.video, bg.video.videoWidth, bg.video.videoHeight, W, H); }
   else { const c = BGS[bg.key] || BGS.navy, g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, c[0]); g.addColorStop(1, c[1]); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  if (comparing && showSel) return;
   for (const l of layers) boxes.set(l.id, drawLayer(ctx, l, W, H, showSel && l === sel));
 }
 function draw() { const cv = $('#st-canvas'); if (cv) paint(cv.getContext('2d'), cv.width, cv.height, true); }
@@ -296,7 +375,7 @@ function pt(e) { const cv = $('#st-canvas'), r = cv.getBoundingClientRect(); ret
 function down(e) {
   const p = pt(e);
   const hit = [...layers].reverse().find(l => { const b = boxes.get(l.id); return b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h; });
-  sel = hit || null; sync(); draw();
+  if (hit) { sel = hit; snap(); $('#st-text').value = hit.text; sync(); draw(); }
   if (hit) { drag = { l: hit, dx: p.x - hit.x * $('#st-canvas').width, dy: p.y - hit.y * $('#st-canvas').height }; e.target.setPointerCapture(e.pointerId); e.preventDefault(); }
 }
 function move(e) {
