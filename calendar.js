@@ -29,7 +29,7 @@ let syncTimer = null;
 function save() {
   store.set('events', events); store.set('eventsSaved', Date.now());
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => { J.cloud.putData('calendar', { saved: store.get('eventsSaved'), events }).catch(() => {}); pushSync(); }, 2500);
+  syncTimer = setTimeout(() => { J.cloud.putData('calendar', { saved: store.get('eventsSaved'), events }).catch(() => {}); pushSync(); widgetSync(); }, 2500);
 }
 function merge(list) {
   for (const e of list || []) {
@@ -324,6 +324,38 @@ async function pushSync(force) {
     return r.ok ? { base, id } : null;
   } catch (e) { store.set('pushOk', false); return null; } finally { pushBusy = false; }
 }
+/* the home-screen widget reads a short list kept on the app's server */
+function widgetId() {
+  let id = store.get('widgetId');
+  if (!id) { id = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''); store.set('widgetId', id); }
+  return id;
+}
+async function widgetSync() {
+  if (!store.get('widgetOn') || !navigator.onLine) return;
+  try {
+    const base = (await (await fetch('server.json', { cache: 'no-cache' })).json()).url.replace(/\/$/, '');
+    const up = [];
+    for (let i = -1; i <= 14 && up.length < 12; i++) {
+      const d = addDays(today(), i);
+      for (const e of on(d)) {
+        if (isDone(e, d)) continue;
+        const { at } = dueTime(e, d);
+        const end = e.time ? at + 3600e3 : new Date(d + 'T23:59').getTime();
+        if (end < Date.now()) continue;
+        up.push({ title: e.title, at: e.time ? at : new Date(d + 'T00:01').getTime(), end, timed: !!e.time });
+      }
+    }
+    const p = store.get('prayerPlace', { name: 'Makkah', lat: 21.4225, lon: 39.8262 });
+    await fetch(base + '/widget/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: widgetId(), place: { name: p.name, lat: p.lat, lon: p.lon }, upcoming: up.slice(0, 12) }) });
+  } catch {}
+}
+async function widgetConnect() {
+  store.set('widgetOn', true);
+  await widgetSync();
+  const base = (await (await fetch('server.json', { cache: 'no-cache' })).json()).url.replace(/\/$/, '');
+  location.href = `intent://widget?id=${widgetId()}&server=${encodeURIComponent(base)}#Intent;scheme=daftar;package=sa.jund.notes;end`;
+}
+if ($('#widget-connect')) $('#widget-connect').onclick = widgetConnect;
 function notifStatus() {
   const s = $('#notif-status'); if (!('Notification' in window)) { s.textContent = 'This browser cannot show notifications; reminders show inside the app.'; return; }
   const p = Notification.permission;
@@ -395,5 +427,6 @@ setInterval(() => { checkReminders(); weeklyNudge(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); banner(); } });
 pullCloud();
 setTimeout(() => pushSync().then(notifStatus), 4000);
-document.addEventListener('visibilitychange', () => { if (document.hidden) pushSync(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { pushSync(); widgetSync(); } });
+setTimeout(widgetSync, 6000);
 })();

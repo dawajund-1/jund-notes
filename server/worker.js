@@ -173,6 +173,39 @@ async function pushRoutes(req, env, h, path, url) {
   }
   return json({ error: 'not found' }, 404, h);
 }
+/* ---------- home-screen widget: next prayer and upcoming items ---------- */
+async function widgetRoutes(req, env, h, path, url) {
+  if (!env.PUSH) return json({ error: 'not set up' }, 501, h);
+  if (path === '/widget/sync' && req.method === 'POST') {
+    const b = await req.json().catch(() => ({}));
+    if (!/^[a-f0-9]{16,64}$/.test(b.id || '')) return json({ error: 'bad' }, 400, h);
+    const p = b.place || {};
+    const rec = { place: { name: String(p.name || '').slice(0, 60), lat: +p.lat || 21.4225, lon: +p.lon || 39.8262 },
+      upcoming: (b.upcoming || []).slice(0, 12).map(x => ({ title: String(x.title || '').slice(0, 80), at: +x.at, end: +x.end || +x.at, timed: !!x.timed })) };
+    await env.PUSH.put('w:' + b.id, JSON.stringify(rec));
+    return json({ ok: true }, 200, h);
+  }
+  if (path === '/widget') {
+    const id = url.searchParams.get('id') || '';
+    const rec = /^[a-f0-9]{16,64}$/.test(id) ? await env.PUSH.get('w:' + id, 'json') : null;
+    if (!rec) return json({ error: 'not found' }, 404, h);
+    const m = (url.searchParams.get('date') || '').match(/^(\d\d)-(\d\d)-(\d{4})$/);
+    const d = m ? new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])) : new Date();
+    const fmt = x => `${String(x.getUTCDate()).padStart(2, '0')}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${x.getUTCFullYear()}`;
+    const { lat, lon } = rec.place, saudi = lat > 16 && lat < 32.5 && lon > 34.5 && lon < 55.7;
+    const times = async x => {
+      try {
+        const r = await fetch(`https://api.aladhan.com/v1/timings/${fmt(x)}?latitude=${lat}&longitude=${lon}${saudi ? '&method=4' : ''}`, { cf: { cacheTtl: 21600, cacheEverything: true } });
+        const t = (await r.json()).data?.timings || {};
+        return Object.fromEntries(['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map(n => [n, String(t[n] || '').slice(0, 5)]));
+      } catch { return null; }
+    };
+    const [today, tomorrow] = await Promise.all([times(d), times(new Date(+d + 864e5))]);
+    return json({ place: rec.place.name, today, tomorrow, upcoming: rec.upcoming }, 200, h);
+  }
+  return json({ error: 'not found' }, 404, h);
+}
+
 // every minute: wake the phones that have a reminder due now
 async function cron(env) {
   if (!env.PUSH) return;
@@ -205,6 +238,7 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { headers: h });
     if (req.method === 'GET' && path === '/') return json({ ok: true, app: 'jund-notes', version: 3, key: !!env.GEMINI_API_KEY, push: !!env.PUSH }, 200, h);
     if (path.startsWith('/push/')) return pushRoutes(req, env, h, path, url);
+    if (path === '/widget' || path.startsWith('/widget/')) return widgetRoutes(req, env, h, path, url);
     if (origin && !h['Access-Control-Allow-Origin'].startsWith(origin)) return json({ error: 'forbidden' }, 403, h);
 
     /* ----- YouTube playlist and title (no AI needed) ----- */

@@ -34,7 +34,9 @@ async function loadMonth(d) {
   if (loading[key]) return loading[key];
   loading[key] = (async () => {
     try {
-      const r = await fetch(`https://api.aladhan.com/v1/calendar/${d.getFullYear()}/${d.getMonth() + 1}?latitude=${p.lat}&longitude=${p.lon}&method=4`);
+      // Umm al-Qura inside Saudi Arabia; elsewhere the nearest local authority is chosen by the service
+      const inSaudi = p.lat > 16 && p.lat < 32.5 && p.lon > 34.5 && p.lon < 55.7;
+      const r = await fetch(`https://api.aladhan.com/v1/calendar/${d.getFullYear()}/${d.getMonth() + 1}?latitude=${p.lat}&longitude=${p.lon}${inSaudi ? '&method=4' : ''}`);
       const j = await r.json();
       const days = {};
       for (const x of j.data || []) {
@@ -42,7 +44,9 @@ async function loadMonth(d) {
         days[`${yy}-${mm}-${dd}`] = Object.fromEntries(PRAYERS.map(n => [n, (x.timings[n] || '').slice(0, 5)]));
       }
       // keep only this month and next month in storage
-      for (const k of Object.keys(localStorage)) if (k.startsWith('jn_pt:') && !k.endsWith(key.slice(3)) && Object.keys(localStorage).length > 40) localStorage.removeItem(k);
+      if (p.key === 'here' && j.data?.[0]?.meta?.timezone && !p.zone) { p.zone = j.data[0].meta.timezone; p.name = p.zone.split('/').pop().replace(/_/g, ' '); store.set('prayerPlace', p); }
+      const nowKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
+      for (const k of Object.keys(localStorage)) if (k.startsWith('jn_pt:') && k !== 'jn_' + key) { const ym = k.slice(6).split(':')[0]; if (ym !== nowKey && ym !== `${d.getFullYear()}-${d.getMonth() + 1}`) localStorage.removeItem(k); }
       store.set(key, days);
       return days;
     } catch { return null; } finally { delete loading[key]; }
@@ -67,6 +71,32 @@ function prayerLine(dateStr) {
   const t = timesFor(dateStr); if (!t) return '';
   return `<div class="pray">${PRAYERS.filter(n => n !== 'Sunrise').map(n => `<span><b>${n}</b> ${hm12(t[n])}</span>`).join('')}</div>`;
 }
+
+/* ---------- the prayer card on Home ---------- */
+function prayerCard(np) {
+  const box = $('#hm-prayer'); if (!box) return;
+  const t = timesFor(iso(new Date()));
+  if (!t) { box.innerHTML = `<div class="muted" style="font-size:.9rem">Prayer times will show here. ${store.get('prayerPlace') ? '' : '<button type="button" class="link" id="pc-loc">Use my location</button>'}</div>`; const l = $('#pc-loc'); if (l) l.onclick = () => askLocation(true); return; }
+  const left = np?.left, lt = left == null ? '' : left >= 60 ? `in ${Math.floor(left / 60)}h ${left % 60}m` : `in ${left} min`;
+  box.innerHTML = `<div class="pc-top"><div><small class="muted">Next prayer · ${esc(place().name)}</small><div class="pc-next">${np ? np.name : ''} <span>${np ? hm12(np.time) : ''}</span></div></div><div class="pc-left">${lt}</div></div>
+    <div class="pc-row">${PRAYERS.filter(n => n !== 'Sunrise').map(n => `<div class="${np?.name === n ? 'on' : ''}"><small>${n}</small><b>${hm12(t[n]).replace(/ (am|pm)/, '')}</b></div>`).join('')}</div>`;
+}
+// first open: ask where the person is, so the times fit anyone, anywhere; travellers get updated times
+function askLocation(force) {
+  const p = store.get('prayerPlace');
+  if (!navigator.geolocation) return;
+  if (!force && p && p.key !== 'here') return;
+  if (!force && !p && store.get('locAsked')) return;
+  store.set('locAsked', true);
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude: lat, longitude: lon } = pos.coords, old = store.get('prayerPlace');
+    const moved = !old || old.key !== 'here' || Math.hypot(old.lat - lat, old.lon - lon) > 0.2;
+    if (!moved) return;
+    store.set('prayerPlace', { key: 'here', name: 'your location', lat, lon });
+    loadMonth(new Date()).then(() => { home(); window.JundCal?.render(); const s = $('#prayer-place'); if (s) s.value = 'here'; });
+  }, () => {}, { timeout: 15000, maximumAge: 6 * 3600e3 });
+}
+setTimeout(() => askLocation(false), 2500);
 
 /* ---------- habits ---------- */
 const habits = () => store.get('habits', []);
@@ -112,8 +142,8 @@ function home() {
   const parts = [];
   parts.push(today.length ? `<b>${today.length}</b> ${today.length === 1 ? 'thing' : 'things'} today` : 'Nothing else today');
   if (late.length) parts.push(`<span style="color:var(--danger)"><b>${late.length}</b> overdue</span>`);
-  if (np) parts.push(`${np.name} at <b>${hm12(np.time)}</b>${np.left != null && np.left < 90 ? ` <small>(in ${np.left} min)</small>` : ''}`);
   b.innerHTML = parts.join('<span class="sep"></span>');
+  prayerCard(np);
   renderHabits();
   morningNotice(today, late);
 }

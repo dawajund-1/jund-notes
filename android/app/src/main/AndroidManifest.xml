@@ -49,6 +49,25 @@
             </intent-filter>
         </activity>
 
+        <!-- home-screen widgets and the one-time link that connects them -->
+        <activity android:name=".WidgetLinkActivity" android:exported="true" android:noHistory="true" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="daftar" android:host="widget" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".DaftarWidget" android:exported="false" android:label="Daftar: prayer and tasks">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_main_info" />
+        </receiver>
+        <receiver android:name=".PrayerWidget" android:exported="false" android:label="Daftar: next prayer">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_prayer_info" />
+        </receiver>
+
         <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
         <activity android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity" android:configChanges="orientation|screenSize" />
 

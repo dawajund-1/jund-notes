@@ -21,6 +21,8 @@ function build() {
       <button type="button" class="ghost small" id="as-clear">New chat</button></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="brief" id="hm-brief"></div>
+    <div class="card prayer-card" id="hm-prayer"></div>
+    <div class="card remind-card" id="hm-remind" hidden></div>
     <div class="chips hm-study" id="hm-study" hidden></div>
     <div class="hm-sec"><div class="row-between"><div class="card-h" style="margin:0">Up next</div><button type="button" class="link" data-go="calendar">Calendar</button></div>
       <div class="upnext" id="hm-next"></div></div>
@@ -65,7 +67,7 @@ async function renderHome() {
   if (!$('#hm-next')) return;
   const now = new Date(), h = now.getHours();
   $('#hm-date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  window.JundFeatures?.home(); window.JundStudy?.home();
+  window.JundFeatures?.home(); window.JundStudy?.home(); window.JundReminder?.render();
   const nm = J.me().name ? ', ' + J.me().name : '';
   $('#hm-hello').textContent = (h < 12 ? 'Good morning' : h < 18 ? 'Salam' : 'Good evening') + nm;
   $('#as-clear').hidden = !log.length;

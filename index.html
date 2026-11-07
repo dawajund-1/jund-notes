@@ -232,6 +232,7 @@
           <option value="light">Light</option>
         </select>
       </label>
+      <label class="check"><input type="checkbox" id="show-reminder" checked> Show the daily reminder (Quran verse and words of the scholars) on Home</label>
       <label class="field">
         <span>Arabic font in notes</span>
         <select id="font">
@@ -344,6 +345,13 @@
       <p class="muted" style="margin:0 0 10px;font-size:.9rem">Everyone without a key shares one free daily limit. Add your own free key and you get your own limit. It takes 2 minutes: open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--accent)">aistudio.google.com/apikey</a>, sign in with Google, press “Create API key”, copy it and paste it here.</p>
       <label class="field"><span>Gemini key</span><input id="user-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="AIza..."></label>
       <div class="row-gap"><button type="button" class="primary" id="user-key-save">Save</button><span class="muted" id="user-key-status"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">Home-screen widgets (Android app)</div>
+      <p class="muted" style="margin:0 0 10px;font-size:.9rem">Show the next prayer and your upcoming tasks on your home screen.</p>
+      <ol class="muted" style="margin:0 0 10px;padding-left:20px;font-size:.9rem"><li>Tap <b>Connect widget</b> (once).</li><li>Long-press an empty spot on your home screen → <b>Widgets</b> → <b>Daftar</b>.</li><li>Drag “prayer and tasks” or “next prayer” onto the screen.</li></ol>
+      <button type="button" class="primary" id="widget-connect">Connect widget</button>
     </div>
 
     <div class="card">
@@ -496,5 +504,6 @@
 <script src="assistant.js"></script>
 <script src="features.js"></script>
 <script src="study.js"></script>
+<script src="reminders.js"></script>
 </body>
 </html>

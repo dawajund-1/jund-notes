@@ -563,6 +563,7 @@ window.JundStudio = {
   open() { if (!built) { build(); showIdeas(store.get('studioIdeas', [])); } loadFonts(); sync(); draw(); renderSaved(); },
   ideas,
   load(f) { if (!built) build(); loadFonts(); loadMedia(f); },
+  addText(t) { if (!built) build(); loadFonts(); addLayer({ text: t, font: 'naskh', look: 'classic', size: 0.06 }); },
 };
 // pull saved texts kept in the cloud
 J.cloud.getData('studio').then(r => {
