@@ -261,6 +261,7 @@ function finishFocus(full) {
 $$('#focus-min button').forEach(b => b.onclick = () => {
   const min = +b.dataset.m;
   store.set('focusRun', { subject: $('#focus-subject').value, min, start: Date.now(), end: Date.now() + min * 60000 });
+  window.JundCal?.pushSync();
   drawFocus(); clearInterval(focusTick); focusTick = setInterval(drawFocus, 500);
 });
 $('#focus-stop').onclick = () => finishFocus(false);

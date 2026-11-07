@@ -1,5 +1,5 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v19';
+const CACHE = 'jn-app-v20';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js', 'assistant.js', 'features.js', 'study.js'];
 
 self.addEventListener('install', e => {
@@ -50,4 +50,20 @@ self.addEventListener('notificationclick', e => {
     const w = list.find(c => 'focus' in c);
     return w ? w.focus() : self.clients.openWindow('./?view=calendar');
   }));
+});
+
+// a reminder while the app is closed: the server wakes us, we ask it what is due and show it
+self.addEventListener('push', e => {
+  e.waitUntil((async () => {
+    let due = [];
+    try {
+      const c = await caches.open('jn-push');
+      const id = await (await c.match('id'))?.text(), base = await (await c.match('server'))?.text();
+      if (id && base) due = (await (await fetch(`${base}/push/due?id=${id}`, { cache: 'no-store' })).json()).due || [];
+    } catch {}
+    const shown = await self.registration.getNotifications();
+    const fresh = due.filter(d => !shown.some(n => n.tag === d.tag));
+    if (!fresh.length && !due.length) return self.registration.showNotification('Daftar', { body: 'You have a reminder.', icon: 'icon-192.png', tag: 'daftar' });
+    for (const d of fresh) await self.registration.showNotification(d.title, { body: d.body, tag: d.tag, icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [200, 100, 200] });
+  })());
 });

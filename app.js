@@ -1981,7 +1981,7 @@ initSettings();
 initMe();
 show('assistant');
 receiveShared();
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.3';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});

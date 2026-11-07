@@ -29,7 +29,7 @@ let syncTimer = null;
 function save() {
   store.set('events', events); store.set('eventsSaved', Date.now());
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => J.cloud.putData('calendar', { saved: store.get('eventsSaved'), events }).catch(() => {}), 2500);
+  syncTimer = setTimeout(() => { J.cloud.putData('calendar', { saved: store.get('eventsSaved'), events }).catch(() => {}); pushSync(); }, 2500);
 }
 function merge(list) {
   for (const e of list || []) {
@@ -286,14 +286,60 @@ $('#week-start').value = String(weekStart());
 $('#week-start').onchange = () => { store.set('weekStart', Number($('#week-start').value)); render(); };
 $('#remind-default').value = String(store.get('remindDefault', 30));
 $('#remind-default').onchange = () => store.set('remindDefault', Number($('#remind-default').value));
+/* reminders when the app is closed: the server wakes the phone at the right minute */
+function reminderList() {
+  const out = [];
+  for (let i = -1; i <= 7; i++) {
+    const d = addDays(today(), i);
+    for (const e of on(d)) {
+      if (!(e.remind >= 0) || isDone(e, d)) continue;
+      const { at, due } = dueTime(e, d);
+      if (due < Date.now() - 60e3) continue;
+      out.push({ at: due, title: e.title, body: `${TYPES[e.type] || 'Task'} · ${when(d)}${e.time ? ' ' + hm(e.time) : ''}`, tag: e.id + '|' + d });
+    }
+  }
+  const run = store.get('focusRun');
+  if (run && run.end > Date.now()) out.push({ at: run.end, title: 'Focus time done', body: `${run.min} min of ${run.subject}. Take a short break.`, tag: 'focus-' + run.start });
+  return out.slice(0, 200);
+}
+let pushBusy = false;
+async function pushSync(force) {
+  if (pushBusy || !('PushManager' in window) || !('serviceWorker' in navigator) || Notification.permission !== 'granted' || !navigator.onLine) return null;
+  pushBusy = true;
+  try {
+    const base = (await (await fetch('server.json', { cache: 'no-cache' })).json()).url.replace(/\/$/, '');
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const kr = await fetch(base + '/push/key'); if (!kr.ok) return null;
+      const { key } = await kr.json();
+      const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((key.length + 3) % 4)), c => c.charCodeAt(0));
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+    }
+    const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sub.endpoint));
+    const id = [...new Uint8Array(hash)].slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('');
+    const c = await caches.open('jn-push'); await c.put('id', new Response(id)); await c.put('server', new Response(base));
+    const r = await fetch(base + '/push/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, sub: sub.toJSON(), reminders: reminderList() }) });
+    store.set('pushOk', r.ok); store.set('pushId', id);
+    return r.ok ? { base, id } : null;
+  } catch (e) { store.set('pushOk', false); return null; } finally { pushBusy = false; }
+}
 function notifStatus() {
   const s = $('#notif-status'); if (!('Notification' in window)) { s.textContent = 'This browser cannot show notifications; reminders show inside the app.'; return; }
   const p = Notification.permission;
   $('#notif-allow').hidden = p === 'granted';
-  s.textContent = p === 'granted' ? '✓ Reminders can pop up on this phone while the app is open or in the background. Missed ones show when you open it.'
-    : p === 'denied' ? 'Notifications are blocked. Allow them for this app in your phone settings.' : 'Reminders pop up inside the app. Allow notifications to get them on the phone too.';
+  $('#notif-test').hidden = p !== 'granted';
+  s.textContent = p === 'granted' ? (store.get('pushOk') ? '✓ Reminders reach this phone even when Daftar is closed.' : '✓ Reminders pop up while the app is open. Connecting closed-app reminders…')
+    : p === 'denied' ? 'Notifications are blocked. Allow them for this app in your phone settings.' : 'Allow notifications to get reminders on the phone, even when the app is closed.';
 }
-$('#notif-allow').onclick = async () => { try { await Notification.requestPermission(); } catch {} notifStatus(); };
+$('#notif-allow').onclick = async () => { try { await Notification.requestPermission(); } catch {} notifStatus(); await pushSync(); notifStatus(); };
+$('#notif-test').onclick = async () => {
+  $('#notif-status').textContent = 'Sending a test… you can close the app now.';
+  const ok = await pushSync();
+  if (!ok) { $('#notif-status').textContent = '✗ Could not connect closed-app reminders on this browser. In-app reminders still work. (On Android, open Daftar with Chrome.)'; return; }
+  const r = await fetch(ok.base + '/push/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ok.id }) }).then(x => x.json()).catch(() => ({}));
+  $('#notif-status').textContent = r.ok ? '✓ Test sent. A notification should appear in a few seconds.' : '✗ The test did not go through (' + (r.status || 'no answer') + ').';
+};
 notifStatus();
 
 /* ---------- tasks found in a lesson ---------- */
@@ -338,7 +384,7 @@ function upcoming(days = 7, max = 8) {
   for (let i = 0; i <= days; i++) { const d = addDays(today(), i); for (const e of on(d)) if (!isDone(e, d)) out.push({ e, d }); }
   return out.slice(0, max).map(x => ({ ...x, when: x.late ? 'Overdue' : when(x.d), time: hm(x.e.time), type: TYPES[x.e.type] || 'Task', color: colorOf(x.e.type) }));
 }
-window.JundCal = { render, onLesson, merge, goToday, toast, upcoming, save: () => { save(); render(); }, addDays, today, open: (e, d) => openDialog(e ? events.find(x => x.id === e) : null, d || today()), events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
+window.JundCal = { pushSync, render, onLesson, merge, goToday, toast, upcoming, save: () => { save(); render(); }, addDays, today, open: (e, d) => openDialog(e ? events.find(x => x.id === e) : null, d || today()), events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
 banner();
 setTimeout(() => {
   const missed = checkReminders();
@@ -348,4 +394,6 @@ setTimeout(() => {
 setInterval(() => { checkReminders(); weeklyNudge(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); banner(); } });
 pullCloud();
+setTimeout(() => pushSync().then(notifStatus), 4000);
+document.addEventListener('visibilitychange', () => { if (document.hidden) pushSync(); });
 })();

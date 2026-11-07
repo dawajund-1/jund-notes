@@ -2,3 +2,11 @@ name = "jund-notes-ai"
 main = "worker.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
+
+# reminders when the app is closed (Web Push): a small store and a check every minute
+[[kv_namespaces]]
+binding = "PUSH"
+id = "KV_ID_PLACEHOLDER"
+
+[triggers]
+crons = ["* * * * *"]

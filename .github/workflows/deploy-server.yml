@@ -39,6 +39,23 @@ jobs:
             echo "$name: $(echo "$r" | jq -c .errors)"
           done
           exit 1
+      - name: Make the reminders store (first time only)
+        if: steps.chk.outputs.ok == 'true'
+        env:
+          T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          api="https://api.cloudflare.com/client/v4/accounts/$A/storage/kv/namespaces"
+          id=$(curl -sS -H "Authorization: Bearer $T" "$api?per_page=100" | jq -r '.result[]? | select(.title=="daftar-push") | .id' | head -1)
+          if [ -z "$id" ]; then
+            id=$(curl -sS -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" --data '{"title":"daftar-push"}' "$api" | jq -r '.result.id // empty')
+          fi
+          if [ -n "$id" ]; then sed -i "s/KV_ID_PLACEHOLDER/$id/" server/wrangler.toml; echo "Reminders store: ready"
+          else echo "Could not make the reminders store; deploying without it"; python3 - <<'PY'
+          import re; p='server/wrangler.toml'; s=open(p).read()
+          s=re.sub(r'\[\[kv_namespaces\]\][^\[]*', '', s); open(p,'w').write(s)
+          PY
+          fi
       - name: Deploy to Cloudflare
         if: steps.chk.outputs.ok == 'true'
         id: wr
