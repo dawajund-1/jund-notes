@@ -7,7 +7,7 @@ android {
         applicationId 'sa.jund.notes'
         minSdk 23
         targetSdk 34
-        versionCode (System.getenv('BUILD_NUMBER') ?: '1').toInteger()
+        versionCode = Integer.parseInt(System.getenv('BUILD_NUMBER') ?: '1')
         versionName '2.2'
     }
     signingConfigs {
