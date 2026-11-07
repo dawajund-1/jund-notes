@@ -72,7 +72,7 @@ window.JUND_METHOD = `
   },
   "closing_duas": ["دعاء"],
   "mawaiz": ["خلاصة موعظة وردت في الدرس"],
-  "tasks": [{"title": "واجب أو اختبار أو موعد ذُكر في الدرس", "date": "YYYY-MM-DD أو \"\"", "time": "HH:MM أو \"\"", "type": "homework|exam|class|meeting|task", "note": "تفصيل قصير"}],
+  "tasks": [{"title": "واجب أو اختبار أو موعد ذُكر في الدرس", "date": "YYYY-MM-DD أو \"\"", "time": "HH:MM أو \"\"", "type": "homework|exam|class|meeting|task", "who": "من سيقوم بها إن ذُكر", "note": "تفصيل قصير"}],
   "mindmap": [
     {
       "center": "الموضوع الرئيس لهذا الجانب",
@@ -244,7 +244,7 @@ Return one valid JSON object only, with nothing before or after it and no \`\`\`
   },
   "closing_duas": [],
   "mawaiz": ["short summary of a motivational part"],
-  "tasks": [{"title": "homework, exam, deadline or appointment mentioned", "date": "YYYY-MM-DD or \"\"", "time": "HH:MM or \"\"", "type": "homework|exam|class|meeting|task", "note": "short detail"}],
+  "tasks": [{"title": "homework, exam, deadline or appointment mentioned", "date": "YYYY-MM-DD or \"\"", "time": "HH:MM or \"\"", "type": "homework|exam|class|meeting|task", "who": "the person who will do it, if said", "note": "short detail"}],
   "mindmap": [ { "center": "main topic of this aspect", "branches": [ {"label": "Definition", "children": [{"label": "short phrase", "mark": "", "children": []}]} ] } ],
   "report": {"inferred": [], "left_out": [], "maybe_wrong": [], "added": []}
 }

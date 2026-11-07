@@ -323,7 +323,7 @@ $('#rec-stop').onclick = async () => {
 };
 
 /* ---------- start ---------- */
-window.JundFeatures = { home, onLesson, review, decorateCalendar, cleanCalendarExtras, openFocus, record: startRecording, hijri, timesFor, nextPrayer, prayerLine };
+window.JundFeatures = { write, lessonText, home, onLesson, review, decorateCalendar, cleanCalendarExtras, openFocus, record: startRecording, hijri, timesFor, nextPrayer, prayerLine };
 // prayer place setting
 function placeSetting() {
   const sel = $('#prayer-place'); if (!sel) return;

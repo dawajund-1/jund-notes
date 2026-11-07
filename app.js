@@ -1562,6 +1562,7 @@ async function openLesson(lesson) {
   fitPages();
   window.JundCal?.onLesson(lesson);
   window.JundFeatures?.onLesson(lesson);
+  window.JundStudy?.onLesson(lesson);
 }
 
 function renderReport(r) {
@@ -1980,7 +1981,7 @@ initSettings();
 initMe();
 show('assistant');
 receiveShared();
-const APP_VERSION = '4.1';
+const APP_VERSION = '4.2';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});

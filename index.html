@@ -178,7 +178,7 @@
   <section class="screen" id="screen-calendar" hidden>
     <div class="row-between">
       <h1 class="screen-title">Calendar</h1>
-      <button type="button" class="primary" id="ev-add">+ Add</button>
+      <span class="row-gap" style="margin:0"><button type="button" class="ghost" id="exam-plan">Plan an exam</button><button type="button" class="primary" id="ev-add">+ Add</button></span>
     </div>
 
     <div class="card review" id="week-review"></div>
@@ -417,6 +417,11 @@
         </select>
       </label>
     </div>
+    <div class="grid2">
+      <label class="field"><span>Who does it (optional)</span><input id="ev-who" type="text" dir="auto" placeholder="e.g. Ahmed"></label>
+      <label class="field"><span>Project (optional)</span><input id="ev-project" type="text" dir="auto" list="ev-projects" placeholder="e.g. Sales"></label>
+    </div>
+    <datalist id="ev-projects"></datalist>
     <label class="field"><span>Details</span><textarea id="ev-notes" rows="2" dir="auto"></textarea></label>
     <div class="row-between">
       <button type="button" class="ghost danger" id="ev-delete" hidden>Delete</button>
@@ -490,5 +495,6 @@
 <script src="offline.js"></script>
 <script src="assistant.js"></script>
 <script src="features.js"></script>
+<script src="study.js"></script>
 </body>
 </html>

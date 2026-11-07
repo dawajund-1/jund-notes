@@ -63,7 +63,7 @@ function evRow(e, d, showDate = false) {
     <input type="checkbox" ${done ? 'checked' : ''} aria-label="Done">
     <div class="body">
       <div class="t" dir="auto">${esc(e.title)}</div>
-      <div class="m"><span class="type-pill" style="background:color-mix(in srgb, ${colorOf(e.type)} 22%, transparent);color:${colorOf(e.type)}">${TYPES[e.type] || 'Task'}</span>${showDate ? when(d) + (e.time ? ' · ' : '') : ''}${hm(e.time)}${e.repeat === 'weekly' ? ' · every week' : ''}${e.remind >= 0 ? ' · 🔔' : ''}</div>
+      <div class="m"><span class="type-pill" style="background:color-mix(in srgb, ${colorOf(e.type)} 22%, transparent);color:${colorOf(e.type)}">${TYPES[e.type] || 'Task'}</span>${showDate ? when(d) + (e.time ? ' · ' : '') : ''}${hm(e.time)}${e.repeat === 'weekly' ? ' · every week' : ''}${e.remind >= 0 ? ' · 🔔' : ''}${e.who ? ' · 👤 ' + esc(e.who) : ''}${e.project ? ' · ' + esc(e.project) : ''}${e.doing && !done ? ' · <b style="color:var(--gold)">doing</b>' : ''}</div>
       ${e.notes ? `<div class="d" dir="auto">${esc(e.notes)}</div>` : ''}
     </div></div>`;
 }
@@ -136,18 +136,39 @@ function renderWeek() {
   }).join('');
   $$('.week-item', $('#cal-grid')).forEach(x => x.onclick = () => openDialog(events.find(e => e.id === x.dataset.ev), x.dataset.d));
 }
+// To do / Doing / Done for one-off tasks; tap a card to move it along
+let boardProject = '';
+function renderBoard() {
+  const ws = startOfWeek(today());
+  const items = events.filter(e => e.repeat !== 'weekly' && !['class'].includes(e.type) && (!boardProject || e.project === boardProject));
+  const cols = { todo: items.filter(e => !e.done && !e.doing), doing: items.filter(e => !e.done && e.doing), done: items.filter(e => e.done && e.date >= addDays(ws, -7)) };
+  const projects = [...new Set(events.map(e => e.project).filter(Boolean))];
+  $('#cal-month').textContent = 'Board';
+  $('#cal-grid').className = 'board-wrap';
+  const card = e => `<button type="button" class="bcard" data-b="${e.id}" style="border-left-color:${colorOf(e.type)}" dir="auto"><b>${esc(e.title)}</b><small>${when(e.date)}${e.time ? ' ' + hm(e.time) : ''}${e.who ? ' · 👤 ' + esc(e.who) : ''}</small></button>`;
+  $('#cal-grid').innerHTML = (projects.length ? `<select id="board-proj" style="margin-bottom:10px"><option value="">All projects</option>${projects.map(p => `<option ${p === boardProject ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>` : '') +
+    `<div class="board">${[['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']].map(([k, n]) => `<div class="bcol"><h4>${n} <span>${cols[k].length}</span></h4>${cols[k].sort((a, b) => a.date.localeCompare(b.date)).map(card).join('') || '<div class="muted" style="font-size:.8rem">Empty</div>'}</div>`).join('')}</div>
+    <small class="muted">Tap a card to move it: To do → Doing → Done.</small>`;
+  const ps = $('#board-proj'); if (ps) ps.onchange = () => { boardProject = ps.value; render(); };
+  $$('[data-b]', $('#cal-grid')).forEach(b => b.onclick = () => {
+    const e = events.find(x => x.id === b.dataset.b);
+    if (!e.done && !e.doing) e.doing = true; else if (e.doing && !e.done) { e.doing = false; e.done = true; } else { e.done = false; e.doing = false; }
+    e.updated = Date.now(); save(); render();
+  });
+}
 function render() {
   if (!$('#screen-calendar')) return;
   renderReview();
   // the month / week switch sits beside the arrows
   if (!$('#cal-mode')) {
     const s = document.createElement('div'); s.className = 'seg'; s.id = 'cal-mode';
-    s.innerHTML = '<button type="button" data-m="month">Month</button><button type="button" data-m="week">Timetable</button>';
+    s.innerHTML = '<button type="button" data-m="month">Month</button><button type="button" data-m="week">Timetable</button><button type="button" data-m="board">Board</button>';
     $('.cal-nav').after(s); s.style.marginBottom = '10px';
     $$('button', s).forEach(b => b.onclick = () => { mode = b.dataset.m; store.set('calMode', mode); render(); });
   }
   $$('#cal-mode button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
-  if (mode === 'week') renderWeek(); else renderMonth();
+  if (mode === 'week') renderWeek(); else if (mode === 'board') renderBoard(); else renderMonth();
+  window.JundStudy?.calendar();
   $('#day-title').textContent = when(selDay) === 'Today' ? 'Today · ' + nice(selDay) : when(selDay);
   const items = on(selDay);
   $('#day-list').innerHTML = items.length ? items.map(e => evRow(e, selDay)).join('')
@@ -176,6 +197,8 @@ function openDialog(e, day, preset = {}) {
   $('#ev-title').value = v.title; $('#ev-date').value = v.date; $('#ev-time').value = v.time || '';
   $('#ev-type').value = v.type || 'task'; $('#ev-repeat').value = v.repeat || 'none';
   $('#ev-remind').value = String(v.remind ?? -1); $('#ev-notes').value = v.notes || '';
+  $('#ev-who').value = v.who || ''; $('#ev-project').value = v.project || '';
+  $('#ev-projects').innerHTML = [...new Set(events.map(x => x.project).filter(Boolean))].map(p => `<option value="${esc(p)}">`).join('');
   $('#ev-delete').hidden = !e; delete $('#ev-delete').dataset.sure; $('#ev-delete').textContent = e?.repeat === 'weekly' ? 'Delete every week' : 'Delete';
   $('#ev-dialog').showModal();
   setTimeout(() => { if (!e) $('#ev-title').focus(); }, 50);
@@ -187,7 +210,8 @@ $('#ev-form').onsubmit = ev => {
   const title = $('#ev-title').value.trim(), date = $('#ev-date').value;
   if (!title || !date) return;
   const v = { title, date, time: $('#ev-time').value, type: $('#ev-type').value, repeat: $('#ev-repeat').value,
-    remind: Number($('#ev-remind').value), notes: $('#ev-notes').value.trim(), updated: Date.now() };
+    remind: Number($('#ev-remind').value), notes: $('#ev-notes').value.trim(), updated: Date.now(),
+    who: $('#ev-who').value.trim(), project: $('#ev-project').value.trim() };
   if (editing) Object.assign(editing, v); else events.push({ id: newId(), created: Date.now(), ...v });
   save(); $('#ev-dialog').close();
   selDay = date; viewMonth = date.slice(0, 7); render();
@@ -293,7 +317,8 @@ function onLesson(l) {
       const t = list[+c.dataset.i], date = $(`input[data-date="${c.dataset.i}"]`, box).value || def;
       events.push({ id: newId(), created: Date.now(), updated: Date.now(), title: t.title, date, time: /^\d\d:\d\d$/.test(t.time || '') ? t.time : '',
         type: TYPES[t.type] ? t.type : 'task', repeat: 'none', remind: Number(store.get('remindDefault', 30)),
-        notes: [t.note, `From: ${l.subject?.name || ''} — ${l.unit || ''}`].filter(Boolean).join('\n'), src: l.id });
+        notes: [t.note, `From: ${l.subject?.name || ''} — ${l.unit || ''}`].filter(Boolean).join('\n'), src: l.id,
+        who: t.who || '', project: J.me().use === 'work' ? (l.subject?.name || '') : '' });
       n++;
     });
     save(); await done(); toast(`✓ Added ${n} to your calendar`);
@@ -313,7 +338,7 @@ function upcoming(days = 7, max = 8) {
   for (let i = 0; i <= days; i++) { const d = addDays(today(), i); for (const e of on(d)) if (!isDone(e, d)) out.push({ e, d }); }
   return out.slice(0, max).map(x => ({ ...x, when: x.late ? 'Overdue' : when(x.d), time: hm(x.e.time), type: TYPES[x.e.type] || 'Task', color: colorOf(x.e.type) }));
 }
-window.JundCal = { render, onLesson, merge, goToday, toast, upcoming, open: (e, d) => openDialog(e ? events.find(x => x.id === e) : null, d || today()), events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
+window.JundCal = { render, onLesson, merge, goToday, toast, upcoming, save: () => { save(); render(); }, addDays, today, open: (e, d) => openDialog(e ? events.find(x => x.id === e) : null, d || today()), events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
 banner();
 setTimeout(() => {
   const missed = checkReminders();

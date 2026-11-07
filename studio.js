@@ -105,6 +105,14 @@ function build() {
   <div class="muted" id="st-status"></div>
 
   <div class="card" style="margin-top:16px">
+    <div class="card-h">Carousel</div>
+    <p class="muted" style="margin:0 0 8px;font-size:.88rem">One slide per paragraph (leave an empty line between slides). Each slide uses the look, font, colour and background chosen above.</p>
+    <textarea id="st-car" rows="6" dir="auto" placeholder="Slide 1 text&#10;&#10;Slide 2 text&#10;&#10;Slide 3 text"></textarea>
+    <div class="row-gap" style="margin-top:8px"><button type="button" class="ghost small" id="st-car-ai">Write slides from my last note</button><button type="button" class="primary small" id="st-car-go">Make the carousel</button></div>
+    <small class="muted" id="st-car-st"></small>
+  </div>
+
+  <div class="card" style="margin-top:16px">
     <div class="card-h">Saved captions — tap to copy</div>
     <div id="st-caps"></div>
     <div class="row-gap" style="margin-top:8px"><textarea id="st-cap-new" rows="2" dir="auto" placeholder="Write a caption or hashtags to keep"></textarea></div>
@@ -136,6 +144,8 @@ function build() {
   $('#st-ideas').onclick = ideas;
   $('#st-cap-save').onclick = () => { const t = $('#st-cap-new').value.trim(); if (t) { saveCaption(t); $('#st-cap-new').value = ''; } };
   renderCaps();
+  $('#st-car-go').onclick = carousel;
+  $('#st-car-ai').onclick = carouselFromNote;
   ['st-t0', 'st-t1'].forEach(id => $('#' + id).oninput = () => {
     trim.start = Math.min(Number($('#st-t0').value), Number($('#st-t1').value) - 0.5);
     trim.end = Math.max(Number($('#st-t1').value), trim.start + 0.5);
@@ -314,6 +324,37 @@ function renderSaved() {
     : '<span class="muted">Texts you save appear here. Next time, one tap puts the same text and look back.</span>';
   $$('[data-use]', box).forEach(b => b.onclick = () => { const x = saved().find(s => s.id === b.dataset.use); if (x) addLayer({ ...x }); });
   $$('[data-rm]', box).forEach(b => b.onclick = () => { store.set('studioSaved', saved().filter(s => s.id !== b.dataset.rm)); renderSaved(); });
+}
+
+/* ---------- carousel: several slides in one go ---------- */
+async function carousel() {
+  const slides = $('#st-car').value.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+  if (!slides.length) { $('#st-car-st').textContent = 'Write the slides first.'; return; }
+  await loadFonts();
+  const base = sel || layers[0] || { look: 'classic', font: 'modern', color: '#ffffff', size: 0.07, align: 'center' };
+  const keep = layers, keepSel = sel, [W, H] = SIZES[size], files = [];
+  for (let i = 0; i < slides.length; i++) {
+    layers = [{ ...base, id: 'c' + i, text: slides[i], x: 0.5, y: 0.5, size: slides[i].length > 120 ? 0.05 : slides[i].length > 60 ? 0.06 : base.size }];
+    if (slides.length > 1) layers.push({ id: 'n' + i, text: `${i + 1}/${slides.length}`, look: 'classic', font: 'modern', color: '#ffffff', size: 0.03, align: 'center', x: 0.5, y: 0.94 });
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    paint(c.getContext('2d'), W, H, false);
+    const b = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.93));
+    files.push(new File([b], `carousel-${stamp()}-${i + 1}.jpg`, { type: 'image/jpeg' }));
+  }
+  layers = keep; sel = keepSel; draw();
+  if (navigator.canShare?.({ files })) { try { await navigator.share({ files }); $('#st-car-st').textContent = '✓ Shared ' + files.length + ' slides.'; return; } catch (e) { if (e.name === 'AbortError') return; } }
+  for (const f of files) { J.download(f, f.name); await new Promise(r => setTimeout(r, 400)); }
+  $('#st-car-st').textContent = `✓ Saved ${files.length} slides to your downloads.`;
+}
+async function carouselFromNote() {
+  const l = (await J.allLessons()).filter(x => !x.draft).sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!l) { $('#st-car-st').textContent = 'Make some notes first.'; return; }
+  $('#st-car-st').textContent = 'Writing slides from “' + (l.notes?.title || l.unit) + '”…';
+  const text = window.JundFeatures.lessonText(l);
+  try {
+    const r = await J.callServer({ json: false, maxTokens: 2000, system: `Turn these notes into an Instagram carousel of 6 slides, in the same language as the notes. Slide 1 is a hook (max 10 words). Slides 2–5: one clear point each (max 30 words). Slide 6: a short takeaway. Separate slides with one empty line. Only the slide texts, no numbers, no labels. Stay faithful to the notes.`, user: text });
+    $('#st-car').value = r.text.trim(); $('#st-car-st').textContent = '✓ Check the slides, then make the carousel.';
+  } catch (e) { $('#st-car-st').textContent = '✗ ' + J.errText(e); }
 }
 
 /* ---------- caption bank ---------- */

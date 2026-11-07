@@ -21,6 +21,7 @@ function build() {
       <button type="button" class="ghost small" id="as-clear">New chat</button></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="brief" id="hm-brief"></div>
+    <div class="chips hm-study" id="hm-study" hidden></div>
     <div class="hm-sec"><div class="row-between"><div class="card-h" style="margin:0">Up next</div><button type="button" class="link" data-go="calendar">Calendar</button></div>
       <div class="upnext" id="hm-next"></div></div>
     <div class="quick" id="hm-quick">
@@ -64,7 +65,7 @@ async function renderHome() {
   if (!$('#hm-next')) return;
   const now = new Date(), h = now.getHours();
   $('#hm-date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  window.JundFeatures?.home();
+  window.JundFeatures?.home(); window.JundStudy?.home();
   const nm = J.me().name ? ', ' + J.me().name : '';
   $('#hm-hello').textContent = (h < 12 ? 'Good morning' : h < 18 ? 'Salam' : 'Good evening') + nm;
   $('#as-clear').hidden = !log.length;
@@ -143,7 +144,7 @@ Rules:
 - Work out dates yourself from today's date ("tomorrow", "next Tuesday", "بعد أسبوعين"). Use 24-hour times. "Remind me" means remind 0 unless he says otherwise; a task with a time and no reminder wish gets remind 30.
 - Timetable classes repeat weekly.
 - Only use ids that appear in the calendar or lessons below. Never invent calendar items or lesson content.
-- Questions about his studies: answer only from the lesson notes given. If they are not there, say so and suggest which lesson might have it.
+- Questions about his studies or work notes: answer only from the notes given, and end the reply with the source on its own line, like "📖 Lesson title › section heading". Put that lesson's id in "open". If the answer is not in the notes, say so and suggest which lesson might have it.
 - When he gives a YouTube link and wants it transcribed or made into notes, use the "youtube" action and say you started it.
 - Delete only when he clearly asks. If something is unclear (for example no day was given), ask one short question instead of guessing, with actions empty.
 - Keep "reply" short. Do not repeat the whole calendar unless asked; for "what do I have", list the items briefly with day and time.`;
