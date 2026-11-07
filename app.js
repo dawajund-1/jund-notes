@@ -213,7 +213,7 @@ function show(name) {
   for (const s of SCREENS) { const el = $('#screen-' + s); if (el) el.hidden = s !== name; }
   const tab = name === 'result' || name === 'new' ? 'library' : name;
   $$('.tabbar [data-nav]').forEach(b => b.classList.toggle('on', b.dataset.nav === tab));
-  if (name === 'library') renderLibrary();
+  if (name === 'library') { renderLibrary(); window.JundRecorder?.list(); }
   if (name === 'calendar') window.JundCal?.render();
   if (name === 'studio') window.JundStudio?.open();
   if (name === 'assistant') window.JundAssistant?.open();
@@ -1979,9 +1979,17 @@ async function receiveShared() {
 fillSubjects();
 initSettings();
 initMe();
+// Settings: each section folds, so the page stays short
+setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((c, i) => {
+  const h = c.querySelector(':scope > .card-h'); if (!h) return;
+  const d = document.createElement('details'); d.className = 'set-sec';
+  const s = document.createElement('summary'); s.textContent = h.textContent; d.appendChild(s);
+  c.replaceWith(d); d.appendChild(c);
+}), 0);
+document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '4.4';
+const APP_VERSION = '4.5';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});

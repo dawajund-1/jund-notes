@@ -19,6 +19,7 @@
   <button class="brand" id="go-home" type="button"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#173A7A"/><path d="M8 8.5c2.6-.9 5.2-.6 8 1v14c-2.8-1.6-5.4-1.9-8-1z" fill="#E8EDF6"/><path d="M24 8.5c-2.6-.9-5.2-.6-8 1v14c2.8-1.6 5.4-1.9 8-1z" fill="#C5D3EE"/><path d="M19.5 9.2v7.6l1.6-1.3 1.6 1.3V8.6" fill="#D9B36C"/></svg><span>Daftar</span></button>
   <div class="bar-right">
     <span class="server-dot" id="server-dot" title="Server"></span>
+    <button type="button" class="chip rec-pill" id="rec-pill" hidden onclick="document.querySelector('#rec-dialog').showModal()"></button>
     <button type="button" class="chip" id="go-today">Today</button>
   </div>
 </header>
@@ -166,6 +167,7 @@
     <div class="row-between"><h1 class="screen-title">Notes</h1><button type="button" class="primary" data-go="new">+ New notes</button></div>
     <input id="lib-search" class="search" type="search" dir="auto" placeholder="Search your notes">
     <div id="cloud-status" class="muted"></div>
+    <div class="card" hidden><div class="card-h">Recordings</div><div id="rec-list"></div></div>
     <div id="library-list"></div>
     <div class="row-gap lib-tools">
       <button type="button" class="primary" id="book-year">Make my year book</button>
@@ -468,9 +470,11 @@
   <h2>Recording</h2>
   <div class="rec-time" id="rec-time">00:00</div>
   <div class="rec-meter"><i id="rec-level"></i></div>
+  <div class="muted" id="rec-saved" style="text-align:center;font-size:.85rem"></div>
   <small class="muted" id="rec-status"></small>
   <div class="row-gap" style="margin-top:14px;justify-content:center">
-    <button type="button" class="ghost" id="rec-cancel">Discard</button>
+    <button type="button" class="ghost" id="rec-hide">Hide</button>
+    <button type="button" class="ghost danger" id="rec-cancel">Discard</button>
     <button type="button" class="ghost" id="rec-pause">Pause</button>
     <button type="button" class="primary" id="rec-stop">Stop and make notes</button>
   </div>
@@ -505,5 +509,6 @@
 <script src="features.js"></script>
 <script src="study.js"></script>
 <script src="reminders.js"></script>
+<script src="recorder.js"></script>
 </body>
 </html>

@@ -83,14 +83,18 @@ async function render() {
   const n = dayNo() + offset, [s, a] = VERSES[((n % VERSES.length) + VERSES.length) % VERSES.length];
   const say = SAYINGS[((n % SAYINGS.length) + SAYINGS.length) % SAYINGS.length];
   const verse = q[s - 1][1][a - 1], sura = q[s - 1][0];
-  box.innerHTML = `<div class="row-between"><div class="card-h" style="margin:0">Daily reminder</div>
-      <span class="row-gap" style="margin:0"><button type="button" class="ghost small" id="rm-next">Another</button><button type="button" class="ghost small" id="rm-studio">Use in Studio</button></span></div>
-    <div class="rm-verse" dir="rtl" lang="ar">﴿${esc(verse)}﴾</div>
-    <div class="rm-ref">[${esc(sura)}: ${AR(a)}] · ${s}:${a}</div>
-    <div class="rm-en" id="rm-en"></div>
-    <div class="rm-say" dir="rtl" lang="ar">${esc(say.ar)}</div>
-    <div class="rm-en">${esc(say.en)}</div>
-    <div class="rm-ref" dir="rtl">— ${esc(say.by)}، ${esc(say.src)}</div>`;
+  const open = box.dataset.open === '1';
+  box.innerHTML = `<button type="button" class="rm-tap" id="rm-tap" aria-expanded="${open}">
+      <div class="rm-verse" dir="rtl" lang="ar">﴿${esc(verse)}﴾</div>
+      <div class="rm-ref">${esc(sura)} ${AR(a)} · ${open ? 'less' : 'more'}</div></button>
+    <div ${open ? '' : 'hidden'}>
+      <div class="rm-en" id="rm-en"></div>
+      <div class="rm-say" dir="rtl" lang="ar">${esc(say.ar)}</div>
+      <div class="rm-en">${esc(say.en)}</div>
+      <div class="rm-ref" dir="rtl">— ${esc(say.by)}، ${esc(say.src)}</div>
+      <div class="row-gap" style="justify-content:center;margin-top:6px"><button type="button" class="ghost small" id="rm-next">Another</button><button type="button" class="ghost small" id="rm-studio">Use in Studio</button></div>
+    </div>`;
+  $('#rm-tap').onclick = () => { box.dataset.open = open ? '' : '1'; render(); };
   meaning(s, a).then(t => { const el = $('#rm-en'); if (el && t) el.innerHTML = `“${esc(t)}” <small>(Saheeh International)</small>`; });
   $('#rm-next').onclick = () => { offset++; render(); };
   $('#rm-studio').onclick = () => {

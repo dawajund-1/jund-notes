@@ -78,8 +78,10 @@ function prayerCard(np) {
   const t = timesFor(iso(new Date()));
   if (!t) { box.innerHTML = `<div class="muted" style="font-size:.9rem">Prayer times will show here. ${store.get('prayerPlace') ? '' : '<button type="button" class="link" id="pc-loc">Use my location</button>'}</div>`; const l = $('#pc-loc'); if (l) l.onclick = () => askLocation(true); return; }
   const left = np?.left, lt = left == null ? '' : left >= 60 ? `in ${Math.floor(left / 60)}h ${left % 60}m` : `in ${left} min`;
-  box.innerHTML = `<div class="pc-top"><div><small class="muted">Next prayer · ${esc(place().name)}</small><div class="pc-next">${np ? np.name : ''} <span>${np ? hm12(np.time) : ''}</span></div></div><div class="pc-left">${lt}</div></div>
-    <div class="pc-row">${PRAYERS.filter(n => n !== 'Sunrise').map(n => `<div class="${np?.name === n ? 'on' : ''}"><small>${n}</small><b>${hm12(t[n]).replace(/ (am|pm)/, '')}</b></div>`).join('')}</div>`;
+  const open = store.get('pbarOpen', false);
+  box.innerHTML = `<button type="button" class="pbar-top" id="pbar-t" aria-expanded="${open}"><span class="pbar-dot"></span><b>${np ? np.name : ''}</b> ${np ? hm12(np.time) : ''}<span class="muted">${lt ? ' · ' + lt : ''}</span><span class="pbar-place muted">${esc(place().name)} ${open ? '▴' : '▾'}</span></button>
+    ${open ? `<div class="pc-row">${PRAYERS.filter(n => n !== 'Sunrise').map(n => `<div class="${np?.name === n ? 'on' : ''}"><small>${n}</small><b>${hm12(t[n]).replace(/ (am|pm)/, '')}</b></div>`).join('')}</div>` : ''}`;
+  $('#pbar-t').onclick = () => { store.set('pbarOpen', !open); prayerCard(nextPrayer()); };
 }
 // first open: ask where the person is, so the times fit anyone, anywhere; travellers get updated times
 function askLocation(force) {
@@ -112,7 +114,7 @@ function renderHabits() {
   const t = iso(new Date()), list = habits();
   box.innerHTML = list.map(h => `<button type="button" class="habit ${h.days?.[t] ? 'on' : ''}" data-h="${h.id}" dir="auto">
       <span class="hc">${h.days?.[t] ? '✓' : ''}</span>${esc(h.name)}${streak(h) > 1 ? `<small>${streak(h)} days</small>` : ''}</button>`).join('') +
-    `<span class="habit-add"><input id="habit-new" type="text" dir="auto" placeholder="+ New habit"></span>`;
+    `<span class="habit-add"><input id="habit-new" type="text" dir="auto" placeholder="+ habit"></span>`;
   $$('[data-h]', box).forEach(b => {
     let timer;
     b.onclick = () => { const l = habits(), h = l.find(x => x.id === b.dataset.h); h.days ||= {}; if (h.days[t]) delete h.days[t]; else h.days[t] = true; saveHabits(l); renderHabits(); };
@@ -140,9 +142,9 @@ function home() {
   const today = items.filter(x => x.d === t && !x.late), late = items.filter(x => x.late);
   const np = nextPrayer();
   const parts = [];
-  parts.push(today.length ? `<b>${today.length}</b> ${today.length === 1 ? 'thing' : 'things'} today` : 'Nothing else today');
-  if (late.length) parts.push(`<span style="color:var(--danger)"><b>${late.length}</b> overdue</span>`);
-  b.innerHTML = parts.join('<span class="sep"></span>');
+  if (today.length) parts.push(`${today.length} today`);
+  if (late.length) parts.push(`<span style="color:var(--danger)">${late.length} overdue</span>`);
+  b.innerHTML = parts.length ? '· ' + parts.join(' · ') : '';
   prayerCard(np);
   renderHabits();
   morningNotice(today, late);
@@ -299,62 +301,8 @@ $('#focus-close').onclick = () => { $('#focus-dialog').close(); clearInterval(fo
 // a running timer keeps going even if the app was closed
 setInterval(() => { const r = store.get('focusRun'); if (r && Date.now() >= r.end) finishFocus(true); }, 15000);
 
-/* ---------- recording inside the app (clean WAV, cut into pieces later) ---------- */
-let rec = null;
-async function startRecording() {
-  const d = $('#rec-dialog'); d.showModal();
-  $('#rec-status').textContent = 'Starting the microphone…';
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-    let ctx; try { ctx = new AudioContext({ sampleRate: 16000 }); } catch { ctx = new AudioContext(); }
-    const src = ctx.createMediaStreamSource(stream);
-    const proc = ctx.createScriptProcessor(4096, 1, 1);
-    const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
-    const step = ctx.sampleRate / 16000;
-    rec = { stream, ctx, proc, an, chunks: [], samples: 0, paused: false, started: Date.now(), elapsed: 0, wake: await J.keepAwake() };
-    proc.onaudioprocess = e => {
-      if (rec.paused) return;
-      const x = e.inputBuffer.getChannelData(0), n = Math.floor(x.length / step), out = new Int16Array(n);
-      for (let i = 0; i < n; i++) { const v = x[Math.floor(i * step)]; out[i] = Math.max(-1, Math.min(1, v)) * 0x7fff; }
-      rec.chunks.push(out); rec.samples += n;
-    };
-    src.connect(proc); proc.connect(ctx.destination);
-    $('#rec-status').textContent = 'Recording. Keep the app open; the screen stays on.';
-    drawRec();
-  } catch (e) {
-    $('#rec-status').textContent = '✗ The microphone is not allowed. Allow it for this app in your phone settings, then try again.';
-  }
-}
-function drawRec() {
-  if (!rec) return;
-  const secs = Math.floor(rec.samples / 16000);
-  $('#rec-time').textContent = `${Math.floor(secs / 3600) ? Math.floor(secs / 3600) + ':' : ''}${pad(Math.floor(secs / 60) % 60)}:${pad(secs % 60)}`;
-  const a = new Uint8Array(rec.an.frequencyBinCount); rec.an.getByteTimeDomainData(a);
-  let peak = 0; for (const v of a) peak = Math.max(peak, Math.abs(v - 128));
-  $('#rec-level').style.transform = `scaleX(${rec.paused ? 0.02 : Math.min(1, peak / 70 + 0.02)})`;
-  $('#rec-pause').textContent = rec.paused ? 'Resume' : 'Pause';
-  requestAnimationFrame(drawRec);
-}
-function stopTracks() { rec.proc.disconnect(); rec.stream.getTracks().forEach(t => t.stop()); rec.ctx.close(); rec.wake?.release?.(); }
-$('#rec-pause').onclick = () => { if (rec) rec.paused = !rec.paused; };
-$('#rec-cancel').onclick = () => { if (rec) { stopTracks(); rec = null; } $('#rec-dialog').close(); };
-$('#rec-stop').onclick = async () => {
-  if (!rec) { $('#rec-dialog').close(); return; }
-  stopTracks();
-  const n = rec.samples, head = new ArrayBuffer(44), v = new DataView(head);
-  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
-  const now = new Date();
-  const file = new File([head, ...rec.chunks], `Recording ${iso(now)} ${pad(now.getHours())}-${pad(now.getMinutes())}.wav`, { type: 'audio/wav' });
-  rec = null; $('#rec-dialog').close();
-  if (n < 16000) { toast('The recording was too short.'); return; }
-  J.show('new'); await J.addFiles([file]);
-  toast('✓ Recording saved. Transcribing now…');
-};
-
 /* ---------- start ---------- */
-window.JundFeatures = { write, lessonText, home, onLesson, review, decorateCalendar, cleanCalendarExtras, openFocus, record: startRecording, hijri, timesFor, nextPrayer, prayerLine };
+window.JundFeatures = { write, lessonText, home, onLesson, review, decorateCalendar, cleanCalendarExtras, openFocus, record: () => window.JundRecorder?.start(), hijri, timesFor, nextPrayer, prayerLine };
 // prayer place setting
 function placeSetting() {
   const sel = $('#prayer-place'); if (!sel) return;

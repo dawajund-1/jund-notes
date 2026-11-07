@@ -20,22 +20,21 @@ function build() {
     <div class="row-between home-head"><div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
       <button type="button" class="ghost small" id="as-clear">New chat</button></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
-    <div class="brief" id="hm-brief"></div>
-    <div class="card prayer-card" id="hm-prayer"></div>
-    <div class="card remind-card" id="hm-remind" hidden></div>
-    <div class="chips hm-study" id="hm-study" hidden></div>
-    <div class="hm-sec"><div class="row-between"><div class="card-h" style="margin:0">Up next</div><button type="button" class="link" data-go="calendar">Calendar</button></div>
-      <div class="upnext" id="hm-next"></div></div>
+    <div class="intro due" id="rec-banner" hidden></div>
+    <div class="pbar" id="hm-prayer"></div>
     <div class="quick" id="hm-quick">
-      <button type="button" class="q" id="hm-rec"><span class="qi" style="color:#ff7d7d">●</span>Record</button>
-      <label class="q"><input type="file" id="hm-file" multiple accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,image/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm"><span class="qi">⬆</span>Upload</label>
-      <button type="button" class="q" id="hm-yt"><span class="qi">▶</span>YouTube</button>
-      <button type="button" class="q" id="hm-task"><span class="qi">✓</span>New task</button>
-      <button type="button" class="q" id="hm-focus"><span class="qi">◔</span>Focus</button>
-      <button type="button" class="q" data-go="studio"><span class="qi">T</span>Studio</button>
+      <button type="button" class="q q-rec" id="hm-rec"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Record</button>
+      <label class="q"><input type="file" id="hm-file" multiple accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,image/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 15V4m0 0 4 4m-4-4-4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Upload</label>
+      <button type="button" class="q" id="hm-yt"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM10.5 9.5v5l4-2.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>YouTube</button>
+      <button type="button" class="q" id="hm-task"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5l4 4 10-10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Task</button>
+      <button type="button" class="q" id="hm-focus"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 1.5M10 3h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Focus</button>
     </div>
-    <div class="hm-sec"><div class="card-h" style="margin:0 0 8px">Habits today</div><div class="habits" id="hm-habits"></div></div>
-    <div class="hm-sec" id="hm-recent-wrap"><div class="row-between"><div class="card-h" style="margin:0">Recent notes</div><button type="button" class="link" data-go="library">All notes</button></div><div id="hm-recent"></div></div>
+    <div class="chips hm-study" id="hm-study" hidden></div>
+    <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><button type="button" class="link" data-go="calendar">Calendar</button></div>
+      <div class="upnext" id="hm-next"></div></div>
+    <div class="hm-sec" id="hm-habits-wrap"><div class="habits" id="hm-habits"></div></div>
+    <div class="remind" id="hm-remind" hidden></div>
+    <div class="hm-sec" id="hm-recent-wrap" hidden><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
     <div class="as-try" id="as-try"></div>
     <div class="as-input">
@@ -80,7 +79,7 @@ async function renderHome() {
     : `<div class="muted nx-empty">Nothing coming up. Tell me below, e.g. “exam on Tuesday at 9”.</div>`;
   $$('.nx', $('#hm-next')).forEach(b => b.onclick = () => window.JundCal.open(b.dataset.ev, b.dataset.d));
   const ls = (await J.allLessons()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
-  $('#hm-recent-wrap').hidden = !ls.length || log.length > 0;
+  $('#hm-recent-wrap').hidden = true;
   $('#hm-recent').innerHTML = ls.map(l => `<button type="button" class="rc" data-open="${l.id}" dir="auto">${l.draft ? '<span class="tag">Draft</span> ' : ''}<b>${esc(l.notes?.title || l.unit)}</b><small>${esc(l.subject?.name || '')} · ${new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</small></button>`).join('');
   $$('[data-open]', $('#hm-recent')).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
 }
@@ -91,8 +90,8 @@ function render() {
     : '';
   $$('[data-open]', box).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
   const tries = J.me().use === 'work'
-    ? ['What do I have this week?', 'Add a meeting with the sales team Sunday 10am', 'Remind me to send the report tomorrow at 9', 'Summarise my last meeting']
-    : ['What do I have this week?', 'Add Usul exam next Tuesday at 9am', 'ذكرني بمراجعة الفقه يوم الخميس الساعة ٨ مساءً', 'Summarise my last lesson'];
+    ? ['What do I have this week?', 'Remind me to send the report tomorrow at 9']
+    : ['What do I have this week?', 'ذكرني بمراجعة الفقه يوم الخميس الساعة ٨ مساءً'];
   $('#as-try').innerHTML = log.length ? '' : tries.map(t => `<button type="button" class="chip-b" dir="auto">${esc(t)}</button>`).join('');
   $$('#as-try button').forEach(b => b.onclick = () => { $('#as-text').value = b.textContent; send(); });
   if (log.length) box.lastElementChild?.scrollIntoView({ block: 'end' });
