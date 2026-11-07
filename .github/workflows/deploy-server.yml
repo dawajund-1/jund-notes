@@ -20,6 +20,21 @@ jobs:
           C: ${{ secrets.GEMINI_API_KEY }}
         run: |
           if [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "Keys not added yet; skipping."; echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Claim a free workers.dev address (first time only)
+        if: steps.chk.outputs.ok == 'true'
+        env:
+          T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          api="https://api.cloudflare.com/client/v4/accounts/$A/workers/subdomain"
+          have=$(curl -fsS -H "Authorization: Bearer $T" "$api" | jq -r '.result.subdomain // empty' || true)
+          if [ -n "$have" ]; then echo "Already have: $have.workers.dev"; exit 0; fi
+          for name in jund-notes jundnotes jund-notes-app "jund-$(echo $A | cut -c1-6)"; do
+            r=$(curl -sS -X PUT -H "Authorization: Bearer $T" -H "content-type: application/json" --data "{\"subdomain\":\"$name\"}" "$api")
+            if [ "$(echo "$r" | jq -r .success)" = "true" ]; then echo "Claimed $name.workers.dev"; sleep 20; exit 0; fi
+            echo "$name: $(echo "$r" | jq -c .errors)"
+          done
+          exit 1
       - name: Deploy to Cloudflare
         if: steps.chk.outputs.ok == 'true'
         id: wr
