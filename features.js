@@ -1,4 +1,4 @@
-/* Daftar — extra tools: prayer times and Hijri dates, morning brief, habits, focus timer,
+/* Zad — extra tools: prayer times and Hijri dates, morning brief, habits, focus timer,
    recording inside the app, follow-up email, reel script, weekly report, caption bank. */
 (() => {
 'use strict';

@@ -59,11 +59,11 @@
                 <data android:scheme="daftar" android:host="widget" />
             </intent-filter>
         </activity>
-        <receiver android:name=".DaftarWidget" android:exported="false" android:label="Daftar: prayer and tasks">
+        <receiver android:name=".DaftarWidget" android:exported="false" android:label="Zad: prayer and tasks">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_main_info" />
         </receiver>
-        <receiver android:name=".PrayerWidget" android:exported="false" android:label="Daftar: next prayer">
+        <receiver android:name=".PrayerWidget" android:exported="false" android:label="Zad: next prayer">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_prayer_info" />
         </receiver>

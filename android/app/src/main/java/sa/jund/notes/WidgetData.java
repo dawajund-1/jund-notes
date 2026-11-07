@@ -76,8 +76,8 @@ public final class WidgetData {
         Intent open = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
         if (open != null) v.setOnClickPendingIntent(R.id.w_root, PendingIntent.getActivity(ctx, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         if (data == null) {
-            v.setTextViewText(R.id.w_prayer, "Daftar");
-            v.setTextViewText(R.id.w_prayer_time, "Open Daftar → Settings → Connect widget");
+            v.setTextViewText(R.id.w_prayer, "Zad");
+            v.setTextViewText(R.id.w_prayer_time, "Open Zad → Settings → Connect widget");
             if (!small) { v.setViewVisibility(R.id.w_item1, View.GONE); v.setViewVisibility(R.id.w_item2, View.GONE); v.setViewVisibility(R.id.w_item3, View.GONE); }
             return v;
         }

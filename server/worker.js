@@ -166,7 +166,7 @@ async function pushRoutes(req, env, h, path, url) {
     const b = await req.json().catch(() => ({}));
     const rec = await env.PUSH.get('s:' + b.id, 'json');
     if (!rec) return json({ error: 'not found' }, 404, h);
-    rec.reminders.push({ at: Date.now(), title: 'Test reminder', body: 'Reminders work even when Daftar is closed.', tag: 'test-' + Date.now(), sent: false });
+    rec.reminders.push({ at: Date.now(), title: 'Test reminder', body: 'Reminders work even when Zad is closed.', tag: 'test-' + Date.now(), sent: false });
     await env.PUSH.put('s:' + b.id, JSON.stringify(rec));
     const r = await sendPush(env, rec.sub);
     return json({ ok: r.ok, status: r.status }, 200, h);

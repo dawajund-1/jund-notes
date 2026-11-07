@@ -1786,7 +1786,7 @@ async function makeYearBook() {
   if (!ls.length) return;
   $('#book-progress').hidden = false; $('#book-progress-text').textContent = 'Preparing your year book…';
   await fontsReady();
-  const meta = { title: String(y), subtitle: '', subject: 'Daftar ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
+  const meta = { title: String(y), subtitle: '', subject: 'Zad ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
   const cover = coverPage(meta, `<div class="c-sub">${y}</div><div class="c-rule"></div>
     <div class="c-book">ملاحظات العام · Notes of the year</div><div class="c-place">${arD(ls.length)} درسًا · ${new Set(ls.map(l => l.subject.id)).size} subjects</div>
     <div class="c-place">${esc(me().nameAr || me().name || '')}</div>`);
@@ -1860,7 +1860,7 @@ $('#backup').onclick = async () => {
   const lessons = await allLessons();
   const data = { app: 'jund-notes', version: 2, saved: new Date().toISOString(), families: store.get('families', {}), lessons,
     events: store.get('events', []), studio: store.get('studioSaved', []) };
-  const name = `Daftar backup ${new Date().toISOString().slice(0, 10)}.json`;
+  const name = `Zad backup ${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   try {
     if (navigator.canShare?.({ files: [file] })) {

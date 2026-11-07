@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Daftar</string>
+    <string name="app_name">Zad</string>
     <string name="asset_statements" translatable="false">[{\"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://dawajund-1.github.io\"}}]</string>
     <string name="share_target" translatable="false">{\"action\": \"https://dawajund-1.github.io/jund-notes/share\", \"method\": \"POST\", \"enctype\": \"multipart/form-data\", \"params\": {\"title\": \"title\", \"text\": \"text\", \"files\": [{\"name\": \"file\", \"accept\": [\"text/plain\", \"application/pdf\", \"audio/*\", \"video/*\", \"image/*\"]}]}}</string>
     <string name="widget_main_desc">Next prayer and your upcoming tasks</string>
