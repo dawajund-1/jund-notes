@@ -196,7 +196,7 @@ function renderPaletteSettings() {
 }
 
 /* ---------- navigation ---------- */
-const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings'];
+const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings', 'assistant'];
 function show(name) {
   for (const s of SCREENS) { const el = $('#screen-' + s); if (el) el.hidden = s !== name; }
   const tab = name === 'result' ? 'library' : name;
@@ -204,6 +204,8 @@ function show(name) {
   if (name === 'library') renderLibrary();
   if (name === 'calendar') window.JundCal?.render();
   if (name === 'studio') window.JundStudio?.open();
+  if (name === 'assistant') window.JundAssistant?.open();
+  $('#go-ask')?.classList.toggle('on', name === 'assistant');
   if (name === 'settings') { renderPaletteSettings(); renderSpend(); window.__syncEngine?.(); }
   if (name === 'new') $('#key-missing').hidden = engineKind() !== 'claude' || !!store.get('key');
   if (name === 'result') requestAnimationFrame(fitPages);
@@ -212,6 +214,7 @@ function show(name) {
 $('#go-home').onclick = () => show('new');
 $('#go-today').onclick = () => { window.JundCal?.goToday(); show('calendar'); };
 $$('.tabbar [data-nav]').forEach(b => b.onclick = () => show(b.dataset.nav));
+$('#go-ask').onclick = () => show('assistant');
 document.addEventListener('click', e => { const g = e.target.closest('[data-go]'); if (g) show(g.dataset.go); });
 
 /* ---------- settings ---------- */
@@ -1895,7 +1898,7 @@ async function receiveShared() {
     if (title && !$('#unit').value) $('#unit').value = title;
   }
   const view = u.searchParams.get('view');
-  if (view === 'calendar' || view === 'studio') setTimeout(() => show(view), 0);
+  if (view === 'calendar' || view === 'studio' || view === 'assistant') setTimeout(() => show(view), 0);
   if (u.search) history.replaceState(null, '', location.pathname);
 }
 
@@ -1904,7 +1907,7 @@ fillSubjects();
 initSettings();
 receiveShared();
 show('new');
-const APP_VERSION = '3.0';
+const APP_VERSION = '3.1';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});

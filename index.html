@@ -20,6 +20,7 @@
   <div class="bar-right">
     <span class="server-dot" id="server-dot" title="Server"></span>
     <button type="button" class="chip" id="go-today">Today</button>
+    <button type="button" class="chip ask" id="go-ask"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Ask</button>
   </div>
 </header>
 
@@ -201,6 +202,9 @@
       <div id="upcoming-list"></div>
     </div>
   </section>
+
+  <!-- assistant: talk to the app (built by assistant.js) -->
+  <section class="screen" id="screen-assistant" hidden></section>
 
   <!-- studio: Instagram text editor and post ideas (built by studio.js) -->
   <section class="screen" id="screen-studio" hidden></section>
@@ -426,5 +430,6 @@
 <script src="calendar.js"></script>
 <script src="studio.js"></script>
 <script src="offline.js"></script>
+<script src="assistant.js"></script>
 </body>
 </html>

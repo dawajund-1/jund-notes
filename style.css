@@ -357,3 +357,16 @@ dialog h2 { margin: 0 0 12px; font-size: 1.2rem; }
 .st-trim-row input[type=range] { width: 100%; accent-color: var(--accent); }
 .idea { padding: 10px 0; border-top: 1px solid var(--line); }
 .idea:first-child { border-top: 0; }
+
+/* assistant */
+.chip.ask { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.as-log { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.as-log .msg { max-width: 88%; line-height: 1.6; }
+.as-done { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: .85rem; color: var(--ok); }
+.as-try { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.as-input { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; align-items: flex-end; background: var(--bg); padding: 8px 0; }
+.as-input textarea { flex: 1; min-width: 0; resize: none; min-height: 44px; }
+.as-mic { flex: none; height: 44px; width: 44px; display: grid; place-items: center; }
+.as-mic.on { background: var(--danger); color: #fff; border-color: var(--danger); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .6; } }
+.as-hint { font-size: .82rem; min-height: 1em; }
