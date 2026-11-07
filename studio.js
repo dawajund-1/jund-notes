@@ -105,6 +105,13 @@ function build() {
   <div class="muted" id="st-status"></div>
 
   <div class="card" style="margin-top:16px">
+    <div class="card-h">Saved captions — tap to copy</div>
+    <div id="st-caps"></div>
+    <div class="row-gap" style="margin-top:8px"><textarea id="st-cap-new" rows="2" dir="auto" placeholder="Write a caption or hashtags to keep"></textarea></div>
+    <button type="button" class="ghost small" id="st-cap-save">Save caption</button>
+  </div>
+
+  <div class="card" style="margin-top:16px">
     <div class="row-between"><div class="card-h" style="margin:0">Post ideas from your notes</div><button type="button" class="ghost small" id="st-ideas">Get ideas</button></div>
     <div id="st-ideas-list" class="muted" style="margin-top:8px">Ideas for your page from what you studied this week. Tap “Use” to put the hook on the picture.</div>
   </div>`;
@@ -127,6 +134,8 @@ function build() {
   $('#st-export').onclick = () => exportIt(false);
   $('#st-share').onclick = () => exportIt(true);
   $('#st-ideas').onclick = ideas;
+  $('#st-cap-save').onclick = () => { const t = $('#st-cap-new').value.trim(); if (t) { saveCaption(t); $('#st-cap-new').value = ''; } };
+  renderCaps();
   ['st-t0', 'st-t1'].forEach(id => $('#' + id).oninput = () => {
     trim.start = Math.min(Number($('#st-t0').value), Number($('#st-t1').value) - 0.5);
     trim.end = Math.max(Number($('#st-t1').value), trim.start + 0.5);
@@ -307,6 +316,22 @@ function renderSaved() {
   $$('[data-rm]', box).forEach(b => b.onclick = () => { store.set('studioSaved', saved().filter(s => s.id !== b.dataset.rm)); renderSaved(); });
 }
 
+/* ---------- caption bank ---------- */
+const caps = () => store.get('captions', []);
+function saveCaption(t) {
+  store.set('captions', [t, ...caps().filter(x => x !== t)].slice(0, 80));
+  J.cloud.putData('captions', { saved: Date.now(), list: caps() }).catch(() => {});
+  renderCaps();
+}
+function renderCaps() {
+  const box = $('#st-caps'); if (!box) return;
+  const l = caps();
+  box.innerHTML = l.length ? l.map((t, i) => `<div class="cap-row"><button type="button" class="cap-t" data-c="${i}" dir="auto">${esc(t)}</button><button type="button" class="x ghost small" data-cx="${i}" aria-label="Remove">×</button></div>`).join('')
+    : '<span class="muted">Captions you save, and the ones from post ideas, appear here.</span>';
+  $$('[data-c]', box).forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(caps()[+b.dataset.c]); status('✓ Caption copied'); } catch {} });
+  $$('[data-cx]', box).forEach(b => b.onclick = () => { const l2 = caps(); l2.splice(+b.dataset.cx, 1); store.set('captions', l2); renderCaps(); });
+}
+
 /* ---------- export ---------- */
 function status(t) { const s = $('#st-status'); if (s) s.textContent = t; }
 async function deliver(blob, name, share) {
@@ -408,7 +433,8 @@ function showIdeas(list) {
   $$('[data-idea]', box).forEach(b => b.onclick = () => {
     const x = list[+b.dataset.idea];
     addLayer({ text: x.hook, look: 'box', color: '#ffffff' });
-    try { navigator.clipboard.writeText(x.caption || ''); status('✓ The hook is on the picture and the caption is copied.'); } catch {}
+    if (x.caption) saveCaption(x.caption);
+    try { navigator.clipboard.writeText(x.caption || ''); status('✓ The hook is on the picture; the caption is copied and saved.'); } catch {}
     $('#st-canvas').scrollIntoView({ block: 'center' });
   });
 }

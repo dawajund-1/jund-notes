@@ -20,15 +20,18 @@ function build() {
     <div class="row-between home-head"><div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
       <button type="button" class="ghost small" id="as-clear">New chat</button></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
+    <div class="brief" id="hm-brief"></div>
     <div class="hm-sec"><div class="row-between"><div class="card-h" style="margin:0">Up next</div><button type="button" class="link" data-go="calendar">Calendar</button></div>
       <div class="upnext" id="hm-next"></div></div>
     <div class="quick" id="hm-quick">
-      <label class="q"><input type="file" id="hm-file" multiple accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm"><span class="qi">⬆</span>Upload</label>
+      <button type="button" class="q" id="hm-rec"><span class="qi" style="color:#ff7d7d">●</span>Record</button>
+      <label class="q"><input type="file" id="hm-file" multiple accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,image/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm"><span class="qi">⬆</span>Upload</label>
       <button type="button" class="q" id="hm-yt"><span class="qi">▶</span>YouTube</button>
-      <button type="button" class="q" id="hm-paste"><span class="qi">¶</span>Paste text</button>
       <button type="button" class="q" id="hm-task"><span class="qi">✓</span>New task</button>
+      <button type="button" class="q" id="hm-focus"><span class="qi">◔</span>Focus</button>
       <button type="button" class="q" data-go="studio"><span class="qi">T</span>Studio</button>
     </div>
+    <div class="hm-sec"><div class="card-h" style="margin:0 0 8px">Habits today</div><div class="habits" id="hm-habits"></div></div>
     <div class="hm-sec" id="hm-recent-wrap"><div class="row-between"><div class="card-h" style="margin:0">Recent notes</div><button type="button" class="link" data-go="library">All notes</button></div><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
     <div class="as-try" id="as-try"></div>
@@ -45,7 +48,8 @@ function build() {
   $('#as-mic').onclick = listen;
   $('#hm-file').onchange = async e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) { J.show('new'); await J.addFiles(f); } };
   $('#hm-yt').onclick = () => { J.show('new'); setTimeout(() => document.querySelector('#yt').focus(), 50); };
-  $('#hm-paste').onclick = () => { J.show('new'); const d = document.querySelector('#paste-box'); d.open = true; setTimeout(() => document.querySelector('#transcript').focus(), 50); };
+  $('#hm-rec').onclick = () => window.JundFeatures?.record();
+  $('#hm-focus').onclick = () => window.JundFeatures?.openFocus();
   $('#hm-task').onclick = () => window.JundCal?.open();
   render();
 }
@@ -60,6 +64,7 @@ async function renderHome() {
   if (!$('#hm-next')) return;
   const now = new Date(), h = now.getHours();
   $('#hm-date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  window.JundFeatures?.home();
   const nm = J.me().name ? ', ' + J.me().name : '';
   $('#hm-hello').textContent = (h < 12 ? 'Good morning' : h < 18 ? 'Salam' : 'Good evening') + nm;
   $('#as-clear').hidden = !log.length;
@@ -109,7 +114,8 @@ async function context(q) {
   let notes = '', budget = 24000;
   for (const { l } of scored) { const tx = lessonText(l).slice(0, budget); budget -= tx.length; notes += tx + '\n\n'; if (budget < 1000) break; }
   const subs = (J.me().use === 'work' ? [] : (window.SUBJECTS || [])).map(s => `${s.name}${s.book ? ' (' + s.book + ')' : ''}${s.place ? ' — ' + s.place : ''}`).join('; ');
-  return `${subs ? 'HIS SUBJECTS: ' + subs + '\n' : ''}Today: ${t} (${DAYS[now.getDay()]}), time ${pad(now.getHours())}:${pad(now.getMinutes())}, Saudi Arabia.
+  const pt = window.JundFeatures?.timesFor(t);
+  return `${subs ? 'HIS SUBJECTS: ' + subs + '\n' : ''}${pt ? 'PRAYER TIMES TODAY: ' + Object.entries(pt).map(([k, v]) => k + ' ' + v).join(', ') + ' (plan around them)\n' : ''}Hijri date: ${window.JundFeatures?.hijri(now) || ''}\nToday: ${t} (${DAYS[now.getDay()]}), time ${pad(now.getHours())}:${pad(now.getMinutes())}, Saudi Arabia.
 Week starts on ${DAYS[Number(store.get('weekStart', 0))]}.
 
 CALENDAR (past 2 weeks to next 2 months, plus weekly items):

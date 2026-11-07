@@ -21,6 +21,14 @@ const HEAR = `Transcribe this recording word for word, in the language that is s
 - If there is no speech at all, reply only: [[NOSPEECH]]
 Return only the transcript.`;
 
+const READ = `Read all the text in this photo exactly as it is written, in its own language.
+- Arabic stays Arabic (keep the diacritics that are shown); English stays English. Never translate.
+- Keep the order: headings, paragraphs, lists. Write a table as rows with " | " between cells.
+- Handwriting: read it as well as you can; put [?] after a word you are not sure of.
+- Leave out page furniture such as running headers and page numbers.
+- If there is no text, describe what the picture shows in one line.
+Return only the text.`;
+
 function cors(origin) {
   const ok = ALLOWED.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || '');
   return {
@@ -167,12 +175,13 @@ export default {
       const mime = (url.searchParams.get('mime') || req.headers.get('content-type') || '').split(';')[0].trim();
       if (!len || !req.body) return json({ error: 'empty', code: 'empty' }, 411, h);
       if (len > MAX_AUDIO) return json({ error: 'piece too big', code: 'toolong' }, 413, h);
-      if (!/^(audio|video)\/[\w.+-]+$/.test(mime)) return json({ error: 'not audio', code: 'type' }, 415, h);
+      if (!/^(audio|video|image)\/[\w.+-]+$/.test(mime)) return json({ error: 'not audio', code: 'type' }, 415, h);
+      const isImg = mime.startsWith('image/');
       const up = await uploadToGoogle(env, req, len, mime);
       if (up.error) return json({ error: up.error.text, code: errCode(up.error.status), status: up.error.status }, up.error.status === 429 ? 429 : 502, h);
       const part = { fileData: { mimeType: up.file.mimeType || mime, fileUri: up.file.uri } };
-      return generate(env, h, { models: HEAR_MODELS, system: HEAR, maxTokens: 60000, wantJson: false,
-        variants: [{ parts: [part, { text: 'Transcribe this recording.' }], temperature: 0 }] });
+      return generate(env, h, { models: HEAR_MODELS, system: isImg ? READ : HEAR, maxTokens: 60000, wantJson: false,
+        variants: [{ parts: [part, { text: isImg ? 'Read this page.' : 'Transcribe this recording.' }], temperature: 0 }] });
     }
 
     /* ----- YouTube link → transcript of one time range ----- */

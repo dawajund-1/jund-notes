@@ -103,6 +103,7 @@ function renderReview() {
     ${late.length ? `<div style="margin-top:8px">${late.slice(0, 5).map(e => evRow(e, e.date, true)).join('')}</div>` : ''}`;
   wire($('#week-review'));
   $('#rv-ideas').onclick = () => { J.show('studio'); window.JundStudio?.ideas(); };
+  window.JundFeatures?.review($('#week-review'), ws);
   const as = $('#add-study'); if (as) as.onclick = () => openDialog(null, addDays(as.dataset.d, -1), { type: 'study', title: 'Study for ' + exam.e.title });
 }
 
@@ -158,6 +159,7 @@ function render() {
   for (let i = 1; i <= 14; i++) { const d = addDays(today(), i); for (const e of on(d)) if (!isDone(e, d) && e.type !== 'class') rows.push(evRow(e, d, true)); }
   $('#upcoming-list').innerHTML = rows.length ? rows.slice(0, 20).join('') : '<div class="muted">Nothing in the next two weeks.</div>';
   wire($('#upcoming-list'));
+  window.JundFeatures?.cleanCalendarExtras(); window.JundFeatures?.decorateCalendar();
   banner();
   window.JundAssistant?.home();
 }

@@ -39,11 +39,11 @@
     <div class="card">
       <div class="card-h">1 · Add what you heard or read</div>
       <label class="file-btn big-pick">
-        <input id="file" type="file" accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm" multiple>
+        <input id="file" type="file" accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,image/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm" multiple>
         <span class="pick-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 15V3m0 0 4.5 4.5M12 3 7.5 7.5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
-        <span class="pick-text"><b>Choose files</b><small>Audio, video, PDF or text — one or many</small></span>
+        <span class="pick-text"><b>Choose files</b><small>Audio, video, photos of pages, PDF or text</small></span>
       </label>
 
       <div class="field">
@@ -133,6 +133,7 @@
     </div>
 
     <div class="intro found" id="found-tasks" hidden></div>
+    <div class="row-gap" id="result-tools"></div>
 
     <div class="tabs" role="tablist">
       <button type="button" role="tab" class="tab" data-tab="notes" aria-selected="true">Study file</button>
@@ -306,6 +307,12 @@
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-h">Prayer times</div>
+      <label class="field"><span>City</span><select id="prayer-place"></select></label>
+      <small class="muted" id="prayer-status"></small>
+    </div>
+
     <div class="card" id="offline-card"></div>
 
     <div class="card">
@@ -421,6 +428,41 @@
   </form>
 </dialog>
 
+<!-- AI-written text: copy, share, email -->
+<dialog id="out-dialog">
+  <div class="row-between"><h2 id="out-title">Text</h2><button type="button" class="ghost small" id="out-close">Close</button></div>
+  <textarea id="out-text" rows="14" dir="auto"></textarea>
+  <div class="row-gap" style="margin-top:10px"><button type="button" class="primary" id="out-copy">Copy</button><button type="button" class="ghost" id="out-share">Share</button><button type="button" class="ghost" id="out-email" hidden>Open in email</button></div>
+  <small class="muted" id="out-status"></small>
+</dialog>
+
+<!-- focus timer -->
+<dialog id="focus-dialog">
+  <div class="row-between"><h2>Focus timer</h2><button type="button" class="ghost small" id="focus-close">Close</button></div>
+  <div id="focus-setup">
+    <label class="field"><span>What are you working on?</span><select id="focus-subject" dir="auto"></select></label>
+    <div class="field"><span>How long?</span><div class="row-gap" id="focus-min"><button type="button" class="primary" data-m="25">25 min</button><button type="button" class="primary" data-m="45">45 min</button><button type="button" class="primary" data-m="60">60 min</button></div></div>
+  </div>
+  <div id="focus-live" hidden>
+    <div class="focus-ring" id="focus-ring"><div><b id="focus-time">25:00</b><span id="focus-what" dir="auto"></span></div></div>
+    <div class="row-gap" style="justify-content:center"><button type="button" class="ghost" id="focus-stop">Stop and save</button></div>
+    <small class="muted" style="display:block;text-align:center">You can close this; the timer keeps running.</small>
+  </div>
+</dialog>
+
+<!-- recorder -->
+<dialog id="rec-dialog">
+  <h2>Recording</h2>
+  <div class="rec-time" id="rec-time">00:00</div>
+  <div class="rec-meter"><i id="rec-level"></i></div>
+  <small class="muted" id="rec-status"></small>
+  <div class="row-gap" style="margin-top:14px;justify-content:center">
+    <button type="button" class="ghost" id="rec-cancel">Discard</button>
+    <button type="button" class="ghost" id="rec-pause">Pause</button>
+    <button type="button" class="primary" id="rec-stop">Stop and make notes</button>
+  </div>
+</dialog>
+
 <nav class="tabbar" aria-label="Main">
   <button type="button" data-nav="assistant" class="on">
     <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Home</span></button>
@@ -447,5 +489,6 @@
 <script src="studio.js"></script>
 <script src="offline.js"></script>
 <script src="assistant.js"></script>
+<script src="features.js"></script>
 </body>
 </html>

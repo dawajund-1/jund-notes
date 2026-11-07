@@ -61,16 +61,20 @@
   },
   "shortcuts": [
     {
-      "name": "Assistant",
+      "name": "Record",
+      "url": "./?view=record"
+    },
+    {
+      "name": "New task",
+      "url": "./?view=task"
+    },
+    {
+      "name": "Ask",
       "url": "./?view=assistant"
     },
     {
-      "name": "Calendar",
-      "url": "./?view=calendar"
-    },
-    {
-      "name": "Studio",
-      "url": "./?view=studio"
+      "name": "Focus timer",
+      "url": "./?view=focus"
     }
   ],
   "description": "Your notebook: notes from lessons and meetings, tasks, calendar and an assistant, in Arabic and English."

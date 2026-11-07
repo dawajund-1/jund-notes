@@ -404,3 +404,34 @@ dialog h2 { margin: 0 0 12px; font-size: 1.2rem; }
 .qi { border-radius: 12px; }
 button.primary { box-shadow: 0 1px 0 rgb(255 255 255 / .08) inset; }
 .msg.ai { border: 1px solid var(--line); }
+
+/* batch 1: brief, habits, prayer times, focus, recorder */
+.brief { font-size: .95rem; color: var(--ink-2); margin: -4px 0 16px; line-height: 1.7; }
+.brief b { color: var(--ink); }
+.brief .sep { width: 4px; height: 4px; border-radius: 50%; background: var(--gold); margin: 0 10px; display: inline-block; vertical-align: middle; }
+.quick { grid-template-columns: repeat(3, 1fr); }
+.habits { display: flex; flex-wrap: wrap; gap: 8px; }
+.habit { display: inline-flex; align-items: center; gap: 8px; border-radius: 99px; padding: 6px 14px 6px 6px; min-height: 40px; background: var(--surface); font-weight: 500; }
+.habit .hc { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-size: .85rem; color: #fff; }
+.habit.on .hc { background: var(--ok); border-color: var(--ok); }
+.habit small { color: var(--gold); font-weight: 700; font-size: .72rem; }
+.habit-add input { min-height: 40px; padding: 6px 14px; border-radius: 99px; width: 150px; }
+.cal-day { gap: 1px; }
+.cal-day .hd { font-size: .55rem; color: var(--ink-2); font-weight: 500; line-height: 1; margin-top: auto; padding-bottom: 3px; }
+.cal-day.sel .hd { color: var(--on-accent); opacity: .8; }
+.hj { display: block; font-size: .82rem; color: var(--ink-2); font-weight: 400; font-family: var(--ui); }
+.pray { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .82rem; color: var(--ink-2); padding: 0 0 10px; margin-bottom: 4px; border-bottom: 1px dashed var(--line); }
+.pray b { color: var(--gold); font-weight: 600; }
+#out-text { margin-top: 10px; font-size: .95rem; }
+.focus-ring { --p: 0; width: 230px; height: 230px; margin: 10px auto 16px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--gold) calc(var(--p) * 1%), var(--surface-2) 0); }
+.focus-ring > div { width: 200px; height: 200px; border-radius: 50%; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.focus-ring b { font-family: var(--head); font-size: 3rem; font-weight: 600; letter-spacing: -1px; }
+.focus-ring span { color: var(--ink-2); font-size: .9rem; max-width: 160px; text-align: center; }
+.rec-time { font-family: var(--head); font-size: 3.4rem; font-weight: 600; text-align: center; letter-spacing: -1px; margin: 6px 0; }
+.rec-meter { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin: 6px 0 12px; }
+.rec-meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--ok), var(--gold)); transform-origin: left; transform: scaleX(.02); transition: transform .08s; }
+#result-tools:empty { display: none; }
+#result-tools { margin-top: 10px; }
+.cap-row { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
+.cap-t { flex: 1; text-align: start; font-weight: 400; font-size: .9rem; white-space: pre-wrap; background: var(--surface-2); min-height: 0; }

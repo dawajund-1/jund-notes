@@ -511,6 +511,17 @@ async function hearPiece(piece, signal, onText) {
 }
 // a whole audio or video file, piece by piece
 async function hearFile(item, signal, onStatus) {
+  if (item.images) {
+    const out = [];
+    for (let i = 0; i < item.images.length; i++) {
+      const f = item.images[i];
+      onStatus(item.images.length > 1 ? `Reading page ${i + 1} of ${item.images.length}…` : 'Reading the photo…');
+      const blob = await shrinkImage(f);
+      const r = await hearPiece({ blob, mime: blob.type || 'image/jpeg' }, signal, () => {});
+      out.push(cleanHeard(r.text));
+    }
+    return out.filter(Boolean).join('\n\n');
+  }
   onStatus('Taking out the sound…');
   const prep = await window.JundMedia.prepare(item.file, f => onStatus('Taking out the sound… ' + ar(Math.round(f * 100)) + '%'), signal);
   item.audio = prep.audio || null;
@@ -531,6 +542,17 @@ async function hearFile(item, signal, onStatus) {
     out.push(cleanHeard(r.text));
   }
   return out.filter(Boolean).join('\n\n');
+}
+// big phone photos are made smaller first (faster upload, same text)
+async function shrinkImage(f) {
+  try {
+    const bmp = await createImageBitmap(f);
+    const k = Math.min(1, 2200 / Math.max(bmp.width, bmp.height));
+    if (k === 1 && f.size < 3e6 && /jpe?g|png|webp/.test(f.type)) return f;
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+  } catch { return f; }
 }
 // a YouTube video, 15 minutes at a time, until the video ends (up to 4 hours)
 async function hearYouTube(item, signal, onStatus) {
@@ -852,7 +874,8 @@ async function hearAll() {
   try {
     let p;
     while ((p = pending.find(x => x.media && !x.text && !x.bad && !x.busy))) {
-      const offline = !navigator.onLine || (store.get('hearOn', 'auto') === 'phone' && !p.yt);
+      const offline = !navigator.onLine || (store.get('hearOn', 'auto') === 'phone' && !p.yt && !p.images);
+      if (offline && p.images) { p.bad = true; p.status = '✗ Reading photos needs the internet. Connect, then add them again.'; renderPending(); continue; }
       if (offline && p.yt) { p.bad = true; p.status = '✗ YouTube needs the internet. Connect, then add it again.'; renderPending(); continue; }
       if (offline && !(await window.JundOffline?.ready())) { p.bad = true; p.status = '✗ No internet, and offline transcription is not downloaded yet (Settings → Offline transcription).'; renderPending(); continue; }
       p.busy = true;
@@ -977,6 +1000,9 @@ async function addFiles(files) {
   pending = []; hearNote = '';
   const box = $('#pending'); box.hidden = false; box.textContent = 'Reading the files…';
   let sawPdf = false, sawMedia = false;
+  // photos of pages (book, whiteboard, handwriting): read together, as one lesson
+  const imgs = files.filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
+  if (imgs.length) { sawMedia = true; files = files.filter(f => !imgs.includes(f)); pending.push({ media: true, images: imgs, unit: imgs.length > 1 ? 'Photos of ' + imgs.length + ' pages' : imgs[0].name.replace(/\.[^.]+$/, ''), text: '', status: '⏳ Waiting' }); }
   for (const f of files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))) {
     const unit = f.name.replace(/\.[^.]+$/, '');
     if (window.JundMedia?.isMedia(f)) { sawMedia = true; pending.push({ media: true, file: f, unit, text: '', status: '⏳ Waiting' }); continue; }
@@ -1535,6 +1561,7 @@ async function openLesson(lesson) {
   selectTab(currentTab);
   fitPages();
   window.JundCal?.onLesson(lesson);
+  window.JundFeatures?.onLesson(lesson);
 }
 
 function renderReport(r) {
@@ -1941,6 +1968,9 @@ async function receiveShared() {
   }
   const view = u.searchParams.get('view');
   if (view === 'calendar' || view === 'studio' || view === 'assistant') setTimeout(() => show(view), 0);
+  if (view === 'record') setTimeout(() => window.JundFeatures?.record(), 300);
+  if (view === 'task') setTimeout(() => window.JundCal?.open(), 300);
+  if (view === 'focus') setTimeout(() => window.JundFeatures?.openFocus(), 300);
   if (u.search) history.replaceState(null, '', location.pathname);
 }
 
@@ -1950,7 +1980,7 @@ initSettings();
 initMe();
 show('assistant');
 receiveShared();
-const APP_VERSION = '4.0';
+const APP_VERSION = '4.1';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
