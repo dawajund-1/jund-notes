@@ -46,9 +46,11 @@ jobs:
           A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           api="https://api.cloudflare.com/client/v4/accounts/$A/storage/kv/namespaces"
-          id=$(curl -sS -H "Authorization: Bearer $T" "$api?per_page=100" | jq -r '.result[]? | select(.title=="daftar-push") | .id' | head -1)
+          l=$(curl -sS -H "Authorization: Bearer $T" "$api?per_page=100"); echo "list: $(echo "$l" | jq -c '.success, .errors')"
+          id=$(echo "$l" | jq -r '.result[]? | select(.title=="daftar-push") | .id' | head -1)
           if [ -z "$id" ]; then
-            id=$(curl -sS -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" --data '{"title":"daftar-push"}' "$api" | jq -r '.result.id // empty')
+            r=$(curl -sS -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" --data '{"title":"daftar-push"}' "$api"); echo "$r" | jq -c '.errors' || true
+            id=$(echo "$r" | jq -r '.result.id // empty')
           fi
           if [ -n "$id" ]; then sed -i "s/KV_ID_PLACEHOLDER/$id/" server/wrangler.toml; echo "Reminders store: ready"
           else echo "Could not make the reminders store; deploying without it"; python3 - <<'PY'
