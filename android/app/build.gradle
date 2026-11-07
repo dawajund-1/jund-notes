@@ -1,0 +1,31 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'sa.jund.notes'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'sa.jund.notes'
+        minSdk 23
+        targetSdk 34
+        versionCode (System.getenv('BUILD_NUMBER') ?: '1').toInteger()
+        versionName '2.2'
+    }
+    signingConfigs {
+        release {
+            // a personal key for installing on your own phone; Google Play will use its own signing later
+            storeFile file('../jund-notes.keystore')
+            storePassword 'jundnotes2026'
+            keyAlias 'jundnotes'
+            keyPassword 'jundnotes2026'
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    lint { checkReleaseBuilds false; abortOnError false }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}

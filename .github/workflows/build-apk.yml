@@ -1,0 +1,33 @@
+name: Build the Android app (APK)
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/build-apk.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: build-apk
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.9' }
+      - name: Build
+        working-directory: android
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: gradle --no-daemon assembleRelease
+      - name: Signing fingerprint (for the full-screen link file)
+        run: keytool -list -v -keystore android/jund-notes.keystore -storepass jundnotes2026 | grep SHA256
+      - name: Publish as a download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk JundNotes.apk
+          gh release create "apk-${{ github.run_number }}" JundNotes.apk --latest \
+            --title "ملاحظاتي — Android app ${{ github.run_number }}" \
+            --notes "Download JundNotes.apk on your phone and open it to install."
