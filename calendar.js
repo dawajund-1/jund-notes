@@ -145,7 +145,7 @@ function renderBoard() {
   const projects = [...new Set(events.map(e => e.project).filter(Boolean))];
   $('#cal-month').textContent = 'Board';
   $('#cal-grid').className = 'board-wrap';
-  const card = e => `<button type="button" class="bcard" data-b="${e.id}" style="border-left-color:${colorOf(e.type)}" dir="auto"><b>${esc(e.title)}</b><small>${when(e.date)}${e.time ? ' ' + hm(e.time) : ''}${e.who ? ' · 👤 ' + esc(e.who) : ''}</small></button>`;
+  const card = e => `<button type="button" class="bcard" data-b="${e.id}" style="border-color:${colorOf(e.type)}" dir="auto"><b>${esc(e.title)}</b><small>${when(e.date)}${e.time ? ' ' + hm(e.time) : ''}${e.who ? ' · 👤 ' + esc(e.who) : ''}</small></button>`;
   $('#cal-grid').innerHTML = (projects.length ? `<select id="board-proj" style="margin-bottom:10px"><option value="">All projects</option>${projects.map(p => `<option ${p === boardProject ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>` : '') +
     `<div class="board">${[['todo', 'To do'], ['doing', 'Doing'], ['done', 'Done']].map(([k, n]) => `<div class="bcol"><h4>${n} <span>${cols[k].length}</span></h4>${cols[k].sort((a, b) => a.date.localeCompare(b.date)).map(card).join('') || '<div class="muted" style="font-size:.8rem">Empty</div>'}</div>`).join('')}</div>
     <small class="muted">Tap a card to move it: To do → Doing → Done.</small>`;

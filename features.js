@@ -328,3 +328,5 @@ placeSetting();
 J.cloud.getData('habits').then(r => { if (r?.habits && !habits().length) { store.set('habits', r.habits); renderHabits(); } }).catch(() => {});
 setInterval(home, 60000);
 })();
+// Home may be drawn before this file loads: draw its parts now
+setTimeout(() => { try { window.JundAssistant?.home(); } catch {} }, 0);
