@@ -17,8 +17,9 @@ function build() {
   built = true;
   const s = $('#screen-assistant');
   s.innerHTML = `
-    <div class="row-between home-head"><div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam, Junaid</h1></div>
+    <div class="row-between home-head"><div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
       <button type="button" class="ghost small" id="as-clear">New chat</button></div>
+    <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name and where you study, so the notes and the Assistant fit you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="hm-sec"><div class="row-between"><div class="card-h" style="margin:0">Up next</div><button type="button" class="link" data-go="calendar">Calendar</button></div>
       <div class="upnext" id="hm-next"></div></div>
     <div class="quick" id="hm-quick">
@@ -59,7 +60,10 @@ async function renderHome() {
   if (!$('#hm-next')) return;
   const now = new Date(), h = now.getHours();
   $('#hm-date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  $('#hm-hello').textContent = h < 12 ? 'Good morning, Junaid' : h < 18 ? 'Salam, Junaid' : 'Good evening, Junaid';
+  const nm = J.me().name ? ', ' + J.me().name : '';
+  $('#hm-hello').textContent = (h < 12 ? 'Good morning' : h < 18 ? 'Salam' : 'Good evening') + nm;
+  const ask = $('#hm-about');
+  if (ask) ask.hidden = !!J.me().name;
   const up = window.JundCal?.upcoming(7, 8) || [];
   $('#hm-next').innerHTML = up.length ? up.map(x => `<button type="button" class="nx" data-ev="${x.e.id}" data-d="${x.d}" style="border-top-color:${x.color}">
       <span class="nx-w" style="${x.late ? 'color:var(--danger)' : ''}">${x.when}${x.time ? ' · ' + x.time : ''}</span>
@@ -101,7 +105,8 @@ async function context(q) {
     .sort((a, b) => b.s - a.s).slice(0, 3).filter(x => x.s > 0);
   let notes = '', budget = 24000;
   for (const { l } of scored) { const tx = lessonText(l).slice(0, budget); budget -= tx.length; notes += tx + '\n\n'; if (budget < 1000) break; }
-  return `Today: ${t} (${DAYS[now.getDay()]}), time ${pad(now.getHours())}:${pad(now.getMinutes())}, Saudi Arabia.
+  const subs = (window.SUBJECTS || []).map(s => `${s.name}${s.book ? ' (' + s.book + ')' : ''}${s.place ? ' — ' + s.place : ''}`).join('; ');
+  return `${subs ? 'HIS SUBJECTS: ' + subs + '\n' : ''}Today: ${t} (${DAYS[now.getDay()]}), time ${pad(now.getHours())}:${pad(now.getMinutes())}, Saudi Arabia.
 Week starts on ${DAYS[Number(store.get('weekStart', 0))]}.
 
 CALENDAR (past 2 weeks to next 2 months, plus weekly items):
@@ -113,7 +118,7 @@ ${all.slice(0, 80).map(l => `- id ${l.id} | ${l.date.slice(0, 10)} | ${l.subject
 MOST RELEVANT LESSON NOTES:
 ${notes || '(none matched)'}`;
 }
-const SYSTEM = `You are the assistant inside "Jund Notes", the personal study app of Junaid, a student. He talks to you in Arabic or English; always answer in the language of his last message, briefly and plainly, like a helpful friend.
+const SYSTEM = () => `You are the assistant inside "Jund Notes", the personal study app of ${J.me().name || 'a student'}${J.me().study ? ', who studies at: ' + J.me().study : ''}. He talks to you in Arabic or English; always answer in the language of his last message, briefly and plainly, like a helpful friend.
 You can act on his calendar. Reply with JSON only, in this shape:
 {"reply": "what you say to him",
  "actions": [
@@ -141,9 +146,9 @@ async function send() {
   log.push({ who: 'me', text: t }); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
   const pend = { who: 'ai', text: '…' }; log.push(pend); render();
   try {
-    const history = log.slice(-12, -2).map(m => `${m.who === 'me' ? 'Junaid' : 'You'}: ${m.text}`).join('\n');
-    const user = `${await context(t)}\n\nRECENT CHAT:\n${history || '(start)'}\n\nJunaid now says: ${t}`;
-    const r = await J.callServer({ system: SYSTEM, user, maxTokens: 3000, onText: () => { pend.text = 'Thinking…'; } });
+    const history = log.slice(-12, -2).map(m => `${m.who === 'me' ? 'Student' : 'You'}: ${m.text}`).join('\n');
+    const user = `${await context(t)}\n\nRECENT CHAT:\n${history || '(start)'}\n\nThe student now says: ${t}`;
+    const r = await J.callServer({ system: SYSTEM(), user, maxTokens: 3000, onText: () => { pend.text = 'Thinking…'; } });
     const out = J.parseJSON(r.text);
     pend.text = out.reply || 'Done.';
     pend.done = apply(out.actions || []);

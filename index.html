@@ -212,6 +212,15 @@
   <section class="screen" id="screen-settings" hidden>
     <h1 class="screen-title">Settings</h1>
 
+    <div class="card" id="about-card">
+      <div class="card-h">About you</div>
+      <label class="field"><span>Your name</span><input id="me-name" type="text" dir="auto" placeholder="e.g. Junaid"></label>
+      <label class="field"><span>Full name in Arabic (for book covers)</span><input id="me-name-ar" type="text" dir="rtl" placeholder="الاسم الكامل"></label>
+      <label class="field"><span>Where and what you study</span><textarea id="me-study" rows="3" dir="auto" placeholder="e.g. Dar al-Hadith al-Khayriyyah and Kulliyat al-Masjid al-Haram, Makkah"></textarea>
+        <small class="muted">The Assistant and your notes use this, so they know your places and subjects.</small></label>
+      <div class="row-gap"><button type="button" class="primary" id="me-save">Save</button><span class="muted" id="me-status"></span></div>
+    </div>
+
     <div class="card">
       <div class="card-h">Appearance</div>
       <label class="field">

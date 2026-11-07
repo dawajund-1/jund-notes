@@ -1023,6 +1023,7 @@ async function makeOne({ text, unit, sub, kind, lang, id }, onStatus) {
     const user = en ? `Subject: ${sub.name}${sub.book ? ' (book: ' + sub.book + ')' : ''}
 Lesson / unit: ${unit}
 Input type: ${src.name}
+Student: ${me().name || 'the student'}${me().study ? ' — studies at: ' + me().study : ''}
 Today's date: ${todayISO()} (${new Date().toLocaleDateString('en-GB', { weekday: 'long' })})
 
 ${src.ask}
@@ -1032,6 +1033,7 @@ ${text}
 ${src.name}>>>` : `المادة: ${sub.name}${sub.book ? ' (الكتاب: ' + sub.book + ')' : ''}${sub.place ? ' — ' + sub.place : ''}
 الدرس / الوحدة: ${unit}
 نوع المدخل: ${src.name}
+الطالب: ${me().nameAr || me().name || 'الطالب'}${me().study ? ' — يدرس في: ' + me().study : ''}
 تاريخ اليوم: ${todayISO()} (${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][new Date().getDay()]})
 
 ${src.ask}
@@ -1740,7 +1742,7 @@ async function makeYearBook() {
   const meta = { title: String(y), subtitle: '', subject: 'Jund Notes ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
   const cover = coverPage(meta, `<div class="c-sub">${y}</div><div class="c-rule"></div>
     <div class="c-book">ملاحظات العام · Notes of the year</div><div class="c-place">${arD(ls.length)} درسًا · ${new Set(ls.map(l => l.subject.id)).size} subjects</div>
-    <div class="c-place">جُنيد محمد بن عبدالسلام</div>`);
+    <div class="c-place">${esc(me().nameAr || me().name || '')}</div>`);
   const chapters = [];
   for (let i = 0; i < ls.length; i++) {
     $('#book-progress-text').textContent = `Laying out lesson ${i + 1} of ${ls.length}…`;
@@ -1769,7 +1771,7 @@ async function makeBook(subjectId) {
   const cover = coverPage(meta, `<div class="c-sub">${esc(ls[0].subject.name)}</div>
     ${ls[0].subject.book ? `<div class="c-book">${esc(ls[0].subject.book)}</div>` : ''}<div class="c-rule"></div>
     <div class="c-place">${esc(ls[0].subject.place || '')}${ls[0].subject.place ? ' — ' : ''}${esc(year)}</div>
-    <div class="c-place">جُنيد محمد بن عبدالسلام</div>`);
+    <div class="c-place">${esc(me().nameAr || me().name || '')}</div>`);
   const rows = [];
   const chapters = [];
   ls.forEach((l, i) => {
@@ -1840,6 +1842,17 @@ $('#restore').onchange = async e => {
   e.target.value = '';
 };
 
+/* ---------- about you ---------- */
+function me() { return store.get('me', {}); }
+function initMe() {
+  const m = me();
+  $('#me-name').value = m.name || ''; $('#me-name-ar').value = m.nameAr || ''; $('#me-study').value = m.study || '';
+  $('#me-save').onclick = () => {
+    store.set('me', { name: $('#me-name').value.trim(), nameAr: $('#me-name-ar').value.trim(), study: $('#me-study').value.trim() });
+    $('#me-status').textContent = '✓ Saved'; window.JundAssistant?.home();
+  };
+}
+
 /* ---------- theme ---------- */
 function applyTheme() {
   const t = store.get('theme', 'navy');
@@ -1905,9 +1918,10 @@ async function receiveShared() {
 /* ---------- start ---------- */
 fillSubjects();
 initSettings();
+initMe();
 show('assistant');
 receiveShared();
-const APP_VERSION = '3.2';
+const APP_VERSION = '3.3';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
@@ -1923,7 +1937,7 @@ $('#lib-search').addEventListener('input', () => renderLibrary());
 function startYouTube(url) { show('new'); $('#yt').value = url; $('#yt-go').click(); }
 // shared with calendar.js, studio.js and offline.js
 window.JN = { store, cloud, esc, ar, show, callServer, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
-  saveLesson, download, safeName, addFiles, startYouTube, keepAwake, engineKind, splitText, cleanHeard, current: () => current };
+  saveLesson, download, safeName, addFiles, startYouTube, me, keepAwake, engineKind, splitText, cleanHeard, current: () => current };
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };
 })();
