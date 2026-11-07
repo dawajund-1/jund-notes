@@ -55,6 +55,15 @@
       </select>
     </label>
 
+    <label class="field">
+      <span>لغة الملاحظات</span>
+      <select id="lang">
+        <option value="auto">تلقائي — بلغة الدرس</option>
+        <option value="ar">العربية</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+
     <label class="field" id="unit-wrap">
       <span>الدرس أو الوحدة</span>
       <input id="unit" type="text" placeholder="مثل: الدرس الثالث">
@@ -65,14 +74,32 @@
       <textarea id="transcript" rows="9" placeholder="الصق هنا التفريغ أو الملاحظات أو المقطع"></textarea>
       <div class="row-between">
         <label class="file-btn">
-          <input id="file" type="file" accept=".txt,.pdf,text/plain,application/pdf" multiple>
-          أو اختر ملف PDF أو نص (واحد أو عدة ملفات)
+          <input id="file" type="file" accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm" multiple>
+          أو اختر ملفات: صوت، فيديو، PDF، نص
         </label>
         <small id="word-count" class="muted"></small>
       </div>
     </div>
 
+    <div class="field">
+      <span>أو رابط يوتيوب</span>
+      <div class="yt-row">
+        <textarea id="yt" rows="2" dir="ltr" placeholder="الصق رابط فيديو أو قائمة تشغيل"></textarea>
+        <button type="button" class="ghost" id="yt-go">فرّغ من يوتيوب</button>
+      </div>
+    </div>
+
     <div class="intro" id="pending" hidden></div>
+
+    <section class="script-box" id="script-box" hidden>
+      <div class="row-between"><b id="script-title">نص مرتب</b><button type="button" class="ghost small" id="script-close">إغلاق</button></div>
+      <textarea id="script-text" rows="12" readonly></textarea>
+      <div class="row-gap">
+        <button type="button" class="primary" id="script-copy">نسخ</button>
+        <button type="button" class="ghost" id="script-save">حفظ ملف نص</button>
+      </div>
+      <small class="muted" id="script-status"></small>
+    </section>
 
     <button type="button" class="primary big" id="make">اصنع الملاحظات</button>
 
@@ -242,6 +269,8 @@
 <script src="prompt.js"></script>
 <script src="quran.js"></script>
 <script src="local-ai.js"></script>
+<script src="vendor/mp4box.all.min.js"></script>
+<script src="media.js"></script>
 <script src="subjects.js"></script>
 <script src="app.js"></script>
 </body>
