@@ -45,6 +45,7 @@ jobs:
           T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          T=$(printf %s "$T" | tr -d '[:space:]'); A=$(printf %s "$A" | tr -d '[:space:]')   # a pasted key may end with a new line
           api="https://api.cloudflare.com/client/v4/accounts/$A/storage/kv/namespaces"
           l=$(curl -sS -H "Authorization: Bearer $T" "$api?per_page=100"); echo "list: $(echo "$l" | jq -c '.success, .errors')"
           id=$(echo "$l" | jq -r '.result[]? | select(.title=="daftar-push") | .id' | head -1)
