@@ -159,6 +159,7 @@ function render() {
   $('#upcoming-list').innerHTML = rows.length ? rows.slice(0, 20).join('') : '<div class="muted">Nothing in the next two weeks.</div>';
   wire($('#upcoming-list'));
   banner();
+  window.JundAssistant?.home();
 }
 $('#cal-prev').onclick = () => { if (mode === 'week') selDay = addDays(selDay, -7); else { const [y, m] = viewMonth.split('-').map(Number); viewMonth = iso(new Date(y, m - 2, 1)).slice(0, 7); } render(); };
 $('#cal-next').onclick = () => { if (mode === 'week') selDay = addDays(selDay, 7); else { const [y, m] = viewMonth.split('-').map(Number); viewMonth = iso(new Date(y, m, 1)).slice(0, 7); } render(); };
@@ -188,7 +189,7 @@ $('#ev-form').onsubmit = ev => {
   if (editing) Object.assign(editing, v); else events.push({ id: newId(), created: Date.now(), ...v });
   save(); $('#ev-dialog').close();
   selDay = date; viewMonth = date.slice(0, 7); render();
-  J.show('calendar');
+  if ($('#screen-assistant').hidden) J.show('calendar');
   toast(editing ? 'Saved' : 'Added to your calendar');
 };
 $('#ev-delete').onclick = () => {
@@ -305,7 +306,12 @@ async function pullCloud() {
     if (r?.events && (r.saved || 0) > (store.get('eventsSaved', 0))) { merge(r.events); store.set('eventsSaved', r.saved); }
   } catch {}
 }
-window.JundCal = { render, onLesson, merge, goToday, toast, events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
+function upcoming(days = 7, max = 8) {
+  const out = overdue().map(e => ({ e, d: e.date, late: true }));
+  for (let i = 0; i <= days; i++) { const d = addDays(today(), i); for (const e of on(d)) if (!isDone(e, d)) out.push({ e, d }); }
+  return out.slice(0, max).map(x => ({ ...x, when: x.late ? 'Overdue' : when(x.d), time: hm(x.e.time), type: TYPES[x.e.type] || 'Task', color: colorOf(x.e.type) }));
+}
+window.JundCal = { render, onLesson, merge, goToday, toast, upcoming, open: (e, d) => openDialog(e ? events.find(x => x.id === e) : null, d || today()), events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
 banner();
 setTimeout(() => {
   const missed = checkReminders();

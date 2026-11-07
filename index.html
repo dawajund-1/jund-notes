@@ -20,7 +20,6 @@
   <div class="bar-right">
     <span class="server-dot" id="server-dot" title="Server"></span>
     <button type="button" class="chip" id="go-today">Today</button>
-    <button type="button" class="chip ask" id="go-ask"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Ask</button>
   </div>
 </header>
 
@@ -163,7 +162,7 @@
 
   <!-- library -->
   <section class="screen" id="screen-library" hidden>
-    <h1 class="screen-title">Library</h1>
+    <div class="row-between"><h1 class="screen-title">Notes</h1><button type="button" class="primary" data-go="new">+ New notes</button></div>
     <input id="lib-search" class="search" type="search" dir="auto" placeholder="Search your notes">
     <div id="cloud-status" class="muted"></div>
     <div id="library-list"></div>
@@ -406,10 +405,10 @@
 </dialog>
 
 <nav class="tabbar" aria-label="Main">
-  <button type="button" data-nav="new" class="on">
-    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New</span></button>
+  <button type="button" data-nav="assistant" class="on">
+    <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span>Home</span></button>
   <button type="button" data-nav="library">
-    <svg viewBox="0 0 24 24"><path d="M4 19.5V5a1 1 0 0 1 1-1h5v16H5a1 1 0 0 1-1-.5zM10 4h4v16h-4zM15 5.5l3.5-1 3 14.5-3.5 1z"/></svg><span>Library</span></button>
+    <svg viewBox="0 0 24 24"><path d="M4 19.5V5a1 1 0 0 1 1-1h5v16H5a1 1 0 0 1-1-.5zM10 4h4v16h-4zM15 5.5l3.5-1 3 14.5-3.5 1z"/></svg><span>Notes</span></button>
   <button type="button" data-nav="calendar">
     <svg viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></svg><span>Calendar</span></button>
   <button type="button" data-nav="studio">

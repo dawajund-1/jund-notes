@@ -199,22 +199,20 @@ function renderPaletteSettings() {
 const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings', 'assistant'];
 function show(name) {
   for (const s of SCREENS) { const el = $('#screen-' + s); if (el) el.hidden = s !== name; }
-  const tab = name === 'result' ? 'library' : name;
+  const tab = name === 'result' || name === 'new' ? 'library' : name;
   $$('.tabbar [data-nav]').forEach(b => b.classList.toggle('on', b.dataset.nav === tab));
   if (name === 'library') renderLibrary();
   if (name === 'calendar') window.JundCal?.render();
   if (name === 'studio') window.JundStudio?.open();
   if (name === 'assistant') window.JundAssistant?.open();
-  $('#go-ask')?.classList.toggle('on', name === 'assistant');
   if (name === 'settings') { renderPaletteSettings(); renderSpend(); window.__syncEngine?.(); }
   if (name === 'new') $('#key-missing').hidden = engineKind() !== 'claude' || !!store.get('key');
   if (name === 'result') requestAnimationFrame(fitPages);
   window.scrollTo(0, 0);
 }
-$('#go-home').onclick = () => show('new');
+$('#go-home').onclick = () => show('assistant');
 $('#go-today').onclick = () => { window.JundCal?.goToday(); show('calendar'); };
 $$('.tabbar [data-nav]').forEach(b => b.onclick = () => show(b.dataset.nav));
-$('#go-ask').onclick = () => show('assistant');
 document.addEventListener('click', e => { const g = e.target.closest('[data-go]'); if (g) show(g.dataset.go); });
 
 /* ---------- settings ---------- */
@@ -1887,13 +1885,15 @@ async function receiveShared() {
         const type = fr.headers.get('content-type') || '';
         const blob = await fr.blob(); await c.delete('shared-file');
         if (/^image\//.test(type)) { show('studio'); window.JundStudio?.load(new File([blob], name, { type })); }
-        else await addFiles([new File([blob], name, { type: type === 'application/octet-stream' ? '' : (type || blob.type || 'application/pdf') })]);
+        else { show('new'); await addFiles([new File([blob], name, { type: type === 'application/octet-stream' ? '' : (type || blob.type || 'application/pdf') })]); }
       }
       const t = await c.match('shared-title');
       if (t) { if (!$('#unit').value) $('#unit').value = await t.text(); await c.delete('shared-title'); }
     } catch {}
   }
+  if (text && /youtu\.?be/.test(text) && text.trim().split(/\s+/).length < 4) { startYouTube(text.trim()); text = ''; }
   if (text) {
+    show('new'); $('#paste-box').open = true;
     $('#transcript').value = text; countWords();
     if (title && !$('#unit').value) $('#unit').value = title;
   }
@@ -1905,9 +1905,9 @@ async function receiveShared() {
 /* ---------- start ---------- */
 fillSubjects();
 initSettings();
+show('assistant');
 receiveShared();
-show('new');
-const APP_VERSION = '3.1';
+const APP_VERSION = '3.2';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
@@ -1919,9 +1919,11 @@ $('#app-version').textContent = 'version ' + APP_VERSION;
 setTimeout(checkServer, 1200);
 $('#lib-search').addEventListener('input', () => renderLibrary());
 
+// start transcribing a YouTube link from anywhere (the Assistant, a share)
+function startYouTube(url) { show('new'); $('#yt').value = url; $('#yt-go').click(); }
 // shared with calendar.js, studio.js and offline.js
 window.JN = { store, cloud, esc, ar, show, callServer, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
-  saveLesson, download, safeName, keepAwake, engineKind, splitText, cleanHeard, current: () => current };
+  saveLesson, download, safeName, addFiles, startYouTube, keepAwake, engineKind, splitText, cleanHeard, current: () => current };
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };
 })();

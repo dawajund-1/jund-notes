@@ -17,12 +17,23 @@ function build() {
   built = true;
   const s = $('#screen-assistant');
   s.innerHTML = `
-    <div class="row-between"><h1 class="screen-title">Assistant</h1><button type="button" class="ghost small" id="as-clear">New chat</button></div>
+    <div class="row-between home-head"><div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam, Junaid</h1></div>
+      <button type="button" class="ghost small" id="as-clear">New chat</button></div>
+    <div class="hm-sec"><div class="row-between"><div class="card-h" style="margin:0">Up next</div><button type="button" class="link" data-go="calendar">Calendar</button></div>
+      <div class="upnext" id="hm-next"></div></div>
+    <div class="quick" id="hm-quick">
+      <label class="q"><input type="file" id="hm-file" multiple accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm"><span class="qi">⬆</span>Upload</label>
+      <button type="button" class="q" id="hm-yt"><span class="qi">▶</span>YouTube</button>
+      <button type="button" class="q" id="hm-paste"><span class="qi">¶</span>Paste text</button>
+      <button type="button" class="q" id="hm-task"><span class="qi">✓</span>New task</button>
+      <button type="button" class="q" data-go="studio"><span class="qi">T</span>Studio</button>
+    </div>
+    <div class="hm-sec" id="hm-recent-wrap"><div class="row-between"><div class="card-h" style="margin:0">Recent notes</div><button type="button" class="link" data-go="library">All notes</button></div><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
     <div class="as-try" id="as-try"></div>
     <div class="as-input">
       <button type="button" class="icon-btn as-mic" id="as-mic" aria-label="Speak"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-      <textarea id="as-text" rows="1" dir="auto" placeholder="Ask, or give me a task…"></textarea>
+      <textarea id="as-text" rows="1" dir="auto" placeholder="Message Jund Notes…"></textarea>
       <button type="button" class="primary" id="as-send">Send</button>
     </div>
     <div class="muted as-hint" id="as-hint"></div>`;
@@ -31,6 +42,10 @@ function build() {
   $('#as-text').addEventListener('input', () => { const t = $('#as-text'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; });
   $('#as-clear').onclick = () => { log = []; persist(); render(); };
   $('#as-mic').onclick = listen;
+  $('#hm-file').onchange = async e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) { J.show('new'); await J.addFiles(f); } };
+  $('#hm-yt').onclick = () => { J.show('new'); setTimeout(() => document.querySelector('#yt').focus(), 50); };
+  $('#hm-paste').onclick = () => { J.show('new'); const d = document.querySelector('#paste-box'); d.open = true; setTimeout(() => document.querySelector('#transcript').focus(), 50); };
+  $('#hm-task').onclick = () => window.JundCal?.open();
   render();
 }
 
@@ -40,15 +55,32 @@ function persist() {
   persist.t = setTimeout(() => J.cloud.putData('assistant', { saved: Date.now(), log: log.slice(-60) }).catch(() => {}), 3000);
 }
 
+async function renderHome() {
+  if (!$('#hm-next')) return;
+  const now = new Date(), h = now.getHours();
+  $('#hm-date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  $('#hm-hello').textContent = h < 12 ? 'Good morning, Junaid' : h < 18 ? 'Salam, Junaid' : 'Good evening, Junaid';
+  const up = window.JundCal?.upcoming(7, 8) || [];
+  $('#hm-next').innerHTML = up.length ? up.map(x => `<button type="button" class="nx" data-ev="${x.e.id}" data-d="${x.d}" style="border-top-color:${x.color}">
+      <span class="nx-w" style="${x.late ? 'color:var(--danger)' : ''}">${x.when}${x.time ? ' · ' + x.time : ''}</span>
+      <b dir="auto">${esc(x.e.title)}</b><span class="nx-t" style="color:${x.color}">${x.type}</span></button>`).join('')
+    : `<div class="muted nx-empty">Nothing coming up. Tell me below, e.g. “exam on Tuesday at 9”.</div>`;
+  $$('.nx', $('#hm-next')).forEach(b => b.onclick = () => window.JundCal.open(b.dataset.ev, b.dataset.d));
+  const ls = (await J.allLessons()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
+  $('#hm-recent-wrap').hidden = !ls.length || log.length > 0;
+  $('#hm-recent').innerHTML = ls.map(l => `<button type="button" class="rc" data-open="${l.id}" dir="auto">${l.draft ? '<span class="tag">Draft</span> ' : ''}<b>${esc(l.notes?.title || l.unit)}</b><small>${esc(l.subject?.name || '')} · ${new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</small></button>`).join('');
+  $$('[data-open]', $('#hm-recent')).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
+}
 function render() {
+  renderHome();
   const box = $('#as-log'); if (!box) return;
   box.innerHTML = log.length ? log.map(m => `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto">${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${m.open ? `<button type="button" class="link" data-open="${esc(m.open)}">Open the lesson</button>` : ''}</div>`).join('')
-    : `<div class="empty"><b>Hi Junaid.</b><br>Tell me what to add to your calendar, ask what is coming up, or ask about anything in your notes — in Arabic or English.</div>`;
+    : '';
   $$('[data-open]', box).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
   const tries = ['What do I have this week?', 'Add Usul exam next Tuesday at 9am', 'ذكرني بمراجعة الفقه يوم الخميس الساعة ٨ مساءً', 'Summarise my last lesson'];
   $('#as-try').innerHTML = log.length ? '' : tries.map(t => `<button type="button" class="chip-b" dir="auto">${esc(t)}</button>`).join('');
   $$('#as-try button').forEach(b => b.onclick = () => { $('#as-text').value = b.textContent; send(); });
-  box.lastElementChild?.scrollIntoView({ block: 'end' });
+  if (log.length) box.lastElementChild?.scrollIntoView({ block: 'end' });
 }
 
 /* what the assistant is told about you */
@@ -89,7 +121,8 @@ You can act on his calendar. Reply with JSON only, in this shape:
    {"do": "done", "id": "calendar id"},
    {"do": "undone", "id": "calendar id"},
    {"do": "move", "id": "calendar id", "date": "YYYY-MM-DD", "time": "HH:MM or empty"},
-   {"do": "delete", "id": "calendar id"}
+   {"do": "delete", "id": "calendar id"},
+   {"do": "youtube", "url": "a YouTube video or playlist link he gave, to transcribe and make notes from"}
  ],
  "open": "a lesson id to offer to open, or empty"}
 Rules:
@@ -97,6 +130,7 @@ Rules:
 - Timetable classes repeat weekly.
 - Only use ids that appear in the calendar or lessons below. Never invent calendar items or lesson content.
 - Questions about his studies: answer only from the lesson notes given. If they are not there, say so and suggest which lesson might have it.
+- When he gives a YouTube link and wants it transcribed or made into notes, use the "youtube" action and say you started it.
 - Delete only when he clearly asks. If something is unclear (for example no day was given), ask one short question instead of guessing, with actions empty.
 - Keep "reply" short. Do not repeat the whole calendar unless asked; for "what do I have", list the items briefly with day and time.`;
 
@@ -137,6 +171,8 @@ function apply(actions) {
       e.updated = Date.now(); done.push(`${a.do === 'done' ? 'Done' : 'Not done'}: ${e.title}`);
     } else if (e && a.do === 'move' && /^\d{4}-\d\d-\d\d$/.test(a.date || '')) {
       e.date = a.date; if (a.time !== undefined) e.time = a.time; e.updated = Date.now(); done.push(`Moved: ${e.title} → ${nice(e.date, e.time)}`);
+    } else if (a.do === 'youtube' && /youtu\.?be/.test(a.url || '')) {
+      setTimeout(() => J.startYouTube(a.url), 600); done.push('Started: transcribing the YouTube link');
     } else if (e && a.do === 'delete') {
       evs.splice(evs.indexOf(e), 1); done.push(`Deleted: ${e.title}`);
     }
@@ -163,6 +199,6 @@ function listen() {
   r.start();
 }
 
-window.JundAssistant = { open() { if (!built) build(); render(); setTimeout(() => $('#as-text')?.focus({ preventScroll: true }), 50); } };
+window.JundAssistant = { open() { if (!built) build(); render(); }, home: () => renderHome() };
 J.cloud.getData('assistant').then(r => { if (r?.log && (r.saved || 0) > 0 && !log.length) { log = r.log; render(); } }).catch(() => {});
 })();
