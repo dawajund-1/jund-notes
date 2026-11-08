@@ -76,16 +76,17 @@ function step(n) {
             <li>${L('Come back here and tap <b>Paste my key</b>.', 'ارجع هنا واضغط <b>الصق مفتاحي</b>.')}</li></ol>
           <a class="primary wl-go" href="${KEY_URL}" target="_blank" rel="noopener">${L('1 · Get my free key from Google', '١ · احصل على مفتاحي المجاني من Google')}</a>
           <button type="button" class="ghost wl-paste">${L('2 · Paste my key', '٢ · الصق مفتاحي')}</button>
-          <input id="wl-key" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="AIza…" value="${esc(has)}">
+          <input id="wl-key" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="AIza… / AQ.…" value="${esc(has)}">
           <div class="wl-msg muted" aria-live="polite"></div>
+          <button type="button" class="primary wl-cont">${L('Continue →', 'متابعة ←')}</button>
         </div>
         <button type="button" class="wl-box wl-shared"><b>${L('Start now with the shared AI', 'ابدأ الآن بالذكاء المشترك')}</b>
           <span class="muted">${L('Works straight away; the daily limit is shared by everyone. You can add your key later in Settings.', 'يعمل فورًا، والحد اليومي مشترك بين الجميع. يمكنك إضافة مفتاحك لاحقًا من الإعدادات.')}</span></button>
       </div>`);
     const msg = box.querySelector('.wl-msg'), inp = box.querySelector('#wl-key');
     const check = async k => {
-      k = (k || '').trim().replace(/^["']|["']$/g, '');
-      if (!/^AIza[\w-]{30,60}$/.test(k)) { msg.textContent = L('That does not look like a Google AI key (it starts with AIza). Copy it again.', 'هذا لا يبدو مفتاح Google (يبدأ بـ AIza). انسخه مرة أخرى.'); return; }
+      k = (k || '').replace(/\s+/g, '').replace(/^["']|["']$/g, '');
+      if (!/^(AIza[\w-]{30,60}|AQ\.[\w.-]{20,300}|[\w.-]{30,300})$/.test(k)) { msg.textContent = L('That does not look like a Google AI key (it starts with AIza or AQ.). Copy it again.', 'هذا لا يبدو مفتاح Google (يبدأ بـ AIza أو AQ.). انسخه مرة أخرى.'); return; }
       inp.value = k; msg.textContent = L('Checking the key…', 'جارٍ فحص المفتاح…');
       let ok = null;
       try { const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(k)}`); ok = r.ok; } catch { ok = null; }
@@ -101,6 +102,7 @@ function step(n) {
       if (t) check(t); else { inp.focus(); msg.textContent = L('Long-press the box above and choose Paste.', 'اضغط مطولًا على الخانة أعلاه واختر لصق.'); }
     };
     inp.onchange = () => inp.value && check(inp.value);
+    box.querySelector('.wl-cont').onclick = () => inp.value.trim() ? check(inp.value) : done();
     inp.onpaste = () => setTimeout(() => check(inp.value), 0);
     box.querySelector('.wl-shared').onclick = () => { window.JundReport?.event('shared-ai'); done(); };
   }

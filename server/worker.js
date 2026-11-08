@@ -239,7 +239,7 @@ export default {
     if (env.GEMINI_BASE) G = env.GEMINI_BASE;
     // someone using their own free AI key gets their own daily limit
     const own = req.headers.get('x-user-key') || '';
-    if (/^AIza[\w-]{30,60}$/.test(own)) env = { ...env, GEMINI_API_KEY: own };
+    if (/^(AIza[\w-]{30,60}|AQ\.[\w.-]{20,300}|[\w.-]{30,300})$/.test(own)) env = { ...env, GEMINI_API_KEY: own };
     const origin = req.headers.get('origin') || '';
     const h = cors(origin);
     const url = new URL(req.url);

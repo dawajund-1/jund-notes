@@ -1909,7 +1909,7 @@ function initMe() {
   $('#user-key').value = store.get('userKey', '');
   $('#user-key-save').onclick = () => {
     const k = $('#user-key').value.trim();
-    if (k && !/^AIza[\w-]{30,60}$/.test(k)) { $('#user-key-status').textContent = '✗ That does not look like a Gemini key (it starts with AIza).'; return; }
+    if (k && !/^(AIza[\w-]{30,60}|AQ\.[\w.-]{20,300}|[\w.-]{30,300})$/.test(k)) { $('#user-key-status').textContent = '✗ That does not look like a Gemini key (it starts with AIza or AQ.).'; return; }
     store.set('userKey', k); $('#user-key-status').textContent = k ? '✓ Saved. You now have your own daily limit.' : 'Removed. The shared key is used.';
   };
 }
@@ -1993,7 +1993,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '5.0';
+const APP_VERSION = '5.1';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
