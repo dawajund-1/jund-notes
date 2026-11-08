@@ -92,6 +92,22 @@ function persist() {
   persist.t = setTimeout(() => J.cloud.putData('assistant', { saved: Date.now(), log: log.slice(-60) }).catch(() => {}), 3000);
 }
 
+// nothing coming: today as a 24-hour line, the five prayers marked on it, and a dot that moves with the time
+function dayClock() {
+  const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+  const pct = m => (m / 1440 * 100).toFixed(2);
+  const t = window.JundFeatures?.timesFor?.(iso(now)) || null;
+  const marks = t ? ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map(n => { const [h, m] = String(t[n] || '').split(':').map(Number); return Number.isFinite(h) ? { n, m: h * 60 + m, past: h * 60 + m <= mins } : null; }).filter(Boolean) : [];
+  const time = now.toLocaleTimeString(window.ZadLang === 'ar' ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' });
+  const left = 1440 - mins;
+  return `<div class="dc" role="img" aria-label="Your day is clear">
+    <div class="dc-top"><b>Your day is clear</b><span class="dc-now">${time}</span></div>
+    <div class="dc-line"><span class="dc-fill" style="width:${pct(mins)}%"></span>
+      ${marks.map(x => `<span class="dc-mark${x.past ? ' past' : ''}" style="inset-inline-start:${pct(x.m)}%"><i></i><small>${x.n}</small></span>`).join('')}
+      <span class="dc-dot" style="inset-inline-start:${pct(mins)}%"></span></div>
+    <div class="dc-foot muted"><span>${window.ZadLang === 'ar' ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`}</span></div>
+  </div>`;
+}
 async function renderHome() {
   if (!$('#hm-next')) return;
   const now = new Date(), h = now.getHours();
@@ -102,12 +118,13 @@ async function renderHome() {
   const ask = $('#hm-about');
   if (ask) ask.hidden = !!J.me().name;
   const up = window.JundCal?.upcoming(7, 8) || [];
-  // a timeline: when on one side, a dot on the line, what on the other
-  $('#hm-next').innerHTML = up.length ? `<div class="tl">${up.slice(0, 5).map(x => `<button type="button" class="nx tl-row" data-ev="${x.e.id}" data-d="${x.d}">
-      <span class="tl-when${x.late ? ' late' : ''}">${x.when}${x.time ? `<small>${x.time}</small>` : ''}</span>
-      <span class="tl-dot" style="background:${x.color}"></span>
+  // a timeline: time on one side, a dot on the rail, the item on the other (each row draws its own piece of the rail, so they always line up)
+  $('#hm-next').innerHTML = up.length ? `<div class="tl">${up.slice(0, 5).map((x, i, arr) => `<button type="button" class="nx tl-row${i === 0 ? ' first' : ''}${i === arr.length - 1 ? ' last' : ''}" data-ev="${x.e.id}" data-d="${x.d}">
+      <span class="tl-when${x.late ? ' late' : ''}"><span>${x.when}</span>${x.time ? `<b dir="ltr">${x.time}</b>` : ''}</span>
+      <span class="tl-rail"><i style="--c:${x.color}"></i></span>
       <span class="tl-what"><b dir="auto">${esc(x.e.title)}</b><small style="color:${x.color}">${x.type}</small></span></button>`).join('')}</div>`
-    : `<div class="tl tl-empty"><div class="tl-row"><span class="tl-when">${'Today'}</span><span class="tl-dot"></span><span class="tl-what"><b>Your day is clear</b><small>Tell me below, e.g. “exam on Tuesday at 9”</small></span></div></div>`;
+    : dayClock();
+  clearInterval(renderHome.tick); if (!up.length) renderHome.tick = setInterval(() => { const c = $('#hm-next .dc'); if (c) c.outerHTML = dayClock(); }, 30000);
   $$('.nx', $('#hm-next')).forEach(b => b.onclick = () => window.JundCal.open(b.dataset.ev, b.dataset.d));
   const ls = (await J.allLessons()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   $('#hm-recent-wrap').hidden = true;
