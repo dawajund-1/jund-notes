@@ -477,6 +477,7 @@ async function callServer({ system, user, maxTokens = 30000, onText, signal, jso
   const res = await serverFetch('/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens, json, deep }) });
   return readStream(res, onText);
 }
+const cutOff = s => s === 'max_tokens' || s === 'incomplete';
 async function readStream(res, onText) {
   const reader = res.body.getReader(), dec = new TextDecoder();
   let buf = '', text = '', stop = '';
@@ -495,7 +496,8 @@ async function readStream(res, onText) {
       if (c?.finishReason) stop = c.finishReason;
     }
   }
-  return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop };
+  // a stream that closes without a finish reason was cut off (dropped connection, upstream error): never treat it as complete
+  return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop || 'incomplete' };
 }
 // the strong AI: the free server, or Claude with the owner's own key
 async function callBig({ system, messages, onText, signal, maxTokens, deep }) {
@@ -743,7 +745,7 @@ ${parts[i]}
       partial = `⚠ Stopped at part ${ar(i + 1)} of ${ar(parts.length)} (${errText(e).split('\n')[0]}). What was finished is saved; make the remaining pages on their own.`;
       break;
     }
-    if (r.stop === 'max_tokens') cut = true;
+    if (cutOff(r.stop)) cut = true;
     try { results.push(parseJSON(r.text)); }
     catch { results.push({ report: { maybe_wrong: [`Part ${ar(i + 1)} could not be read; make it again if something is missing.`] } }); }
   }
@@ -1205,7 +1207,7 @@ ${src.name}>>>`;
     // two parts at a time
     const rs = new Array(parts.length);
     for (let i = 0; i < parts.length; i += 2) await Promise.all([0, 1].filter(k => i + k < parts.length).map(k => one(parts[i + k], i + k).then(r => { rs[i + k] = r; })));
-    const r = rs.length === 1 ? rs[0] : { text: '', stop: rs.some(x => x.stop === 'max_tokens') ? 'max_tokens' : '', usd: rs.reduce((n, x) => n + (x.usd || 0), 0), parts: rs };
+    const r = rs.length === 1 ? rs[0] : { text: '', stop: rs.some(x => cutOff(x.stop)) ? 'max_tokens' : '', usd: rs.reduce((n, x) => n + (x.usd || 0), 0), parts: rs };
     onStatus('Laying out the pages…', 0.97, 'write');
     if (r.parts) {
       const got = [];
@@ -1223,7 +1225,7 @@ ${src.name}>>>`;
       (notes.report ||= {}).inferred ||= [];
       notes.report.inferred.unshift(`Questions covered: about ${outQ} of ${qCount}.`);
     }
-    note = (engineKind() === 'claude' ? `Ready. Cost about ${ar((r.usd * SAR).toFixed(2))} SAR.` : 'Ready. Written for free on the app server.') + (r.stop === 'max_tokens' ? '\n⚠ The text is very long, so it stopped before the end; the end may be missing. Split it in two.' : '');
+    note = (engineKind() === 'claude' ? `Ready. Cost about ${ar((r.usd * SAR).toFixed(2))} SAR.` : 'Ready. Written for free on the app server.') + (cutOff(r.stop) ? '\n⚠ The text is very long, so it stopped before the end; the end may be missing. Split it in two.' : '');
   }
   if (!en) { onStatus('Checking verses against the Mushaf…', 1, 'write'); try { await window.Mushaf.check(notes); } catch {} }
   const lesson = {

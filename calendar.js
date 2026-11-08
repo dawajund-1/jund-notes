@@ -58,7 +58,7 @@ let viewMonth = today().slice(0, 7), selDay = today(), mode = store.get('calMode
 
 function evRow(e, d, showDate = false) {
   const done = isDone(e, d);
-  return `<div class="ev ${done ? 'done' : ''}" data-ev="${e.id}" data-d="${d}">
+  return `<div class="ev ${done ? 'done' : ''}" data-ev="${esc(e.id)}" data-d="${d}">
     <span class="bar-c" style="background:${colorOf(e.type)}"></span>
     <input type="checkbox" ${done ? 'checked' : ''} aria-label="Done">
     <div class="body">

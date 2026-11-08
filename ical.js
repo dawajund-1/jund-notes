@@ -58,7 +58,7 @@ async function refresh(force) {
       if (j.name && !src.nameSet) src.name = j.name;
       const fresh = [];
       for (const ev of j.events || []) for (const d of occurrences(ev, from, to)) {
-        fresh.push({ id: `x:${src.id}:${(ev.uid || ev.title).slice(0, 30)}:${isoD(d)}`, ext: src.id, title: ev.title || L('(no title)', '(بلا عنوان)'), date: isoD(d),
+        fresh.push({ id: `x:${src.id}:${String(ev.uid || ev.title).slice(0, 30).replace(/[^\w.@-]/g, '_')}:${isoD(d)}`, ext: src.id, title: ev.title || L('(no title)', '(بلا عنوان)'), date: isoD(d),
           time: ev.allDay ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}`, type: 'meeting', repeat: 'none', remind: ev.allDay ? -1 : Number(store.get('remindDefault', 30)), notes: src.name || '', created: 0, updated: 0 });
       }
       // replace this calendar's old copies (keep anything you ticked as done)

@@ -157,7 +157,7 @@ async function renderHome() {
   });
   const run = rows.findIndex(r => r.st === 'run');
   if (run < 0) { const nxt = rows.findIndex(r => r.st !== 'past'); dotAt = nxt > 0 ? nxt : -1; }
-  $('#hm-next').innerHTML = up.length ? `<div class="tl">${rows.map((x, i, arr) => `<button type="button" class="nx tl-row${i === 0 ? ' first' : ''}${i === arr.length - 1 ? ' last' : ''}${x.st ? ' ' + x.st : ''}${i === dotAt ? ' here' : ''}" ${x.st === 'run' ? `style="--p:${x.p.toFixed(3)}"` : ''} data-ev="${x.e.id}" data-d="${x.d}">
+  $('#hm-next').innerHTML = up.length ? `<div class="tl">${rows.map((x, i, arr) => `<button type="button" class="nx tl-row${i === 0 ? ' first' : ''}${i === arr.length - 1 ? ' last' : ''}${x.st ? ' ' + x.st : ''}${i === dotAt ? ' here' : ''}" ${x.st === 'run' ? `style="--p:${x.p.toFixed(3)}"` : ''} data-ev="${J.esc(x.e.id)}" data-d="${x.d}">
       <span class="tl-when${x.late ? ' late' : ''}"><span>${x.when}</span>${x.time ? `<b dir="ltr">${x.time}</b>` : ''}</span>
       <span class="tl-rail"><i style="--c:${x.color}"></i></span>
       <span class="tl-what"><b dir="auto">${esc(x.e.title)}</b><small style="color:${x.color}">${x.st === 'run' ? (window.ZadLang === 'ar' ? 'الآن · ' : 'Now · ') : ''}${x.type}</small></span></button>`).join('')}</div>`
@@ -317,6 +317,8 @@ async function send() {
       if (pend.done.length) S.ok(st, pend.done.join(' · ')); else S.fail(st, ar ? 'لم يُنفَّذ شيء (تاريخ أو معرّف غير صالح)' : 'nothing could be done (missing date or unknown item)');
     }
     pend.text = out.reply || 'Done.';
+    if (acts.length && pend.done && pend.done.length < acts.length) pend.text += `
+⚠ ${pend.done.length} of ${acts.length} changes were made; the rest were skipped or declined.`;
     if (out.open && /^L/.test(out.open)) pend.open = out.open;
   } catch (e) {
     if (st && st.state === 'run') S.fail(st, J.errText(e));
@@ -334,6 +336,7 @@ function apply(actions) {
   for (const a of actions) {
     const e = a.id && evs.find(x => x.id === a.id);
     if (a.do === 'add' && a.title && /^\d{4}-\d\d-\d\d$/.test(a.date || '')) {
+      if (evs.some(x => x.title === a.title && x.date === a.date && (x.time || '') === (/^\d\d:\d\d$/.test(a.time || '') ? a.time : ''))) continue;   // already there: never add the same thing twice
       cal.add({ title: a.title, date: a.date, time: /^\d\d:\d\d$/.test(a.time || '') ? a.time : '', type: a.type || 'task', repeat: a.repeat === 'weekly' ? 'weekly' : 'none',
         remind: Number.isFinite(+a.remind) ? +a.remind : Number(store.get('remindDefault', 30)), notes: a.notes || '' });
       done.push(`Added: ${a.title} — ${nice(a.date, a.time)}${a.repeat === 'weekly' ? ', every week' : ''}`);
@@ -342,10 +345,12 @@ function apply(actions) {
       if (e.repeat === 'weekly') { e.doneDates ||= {}; if (a.do === 'done') e.doneDates[d] = true; else delete e.doneDates[d]; } else e.done = a.do === 'done';
       e.updated = Date.now(); done.push(`${a.do === 'done' ? 'Done' : 'Not done'}: ${e.title}`);
     } else if (e && a.do === 'move' && /^\d{4}-\d\d-\d\d$/.test(a.date || '')) {
+      if (!confirm(`Move "${e.title}" to ${nice(a.date, a.time)}?`)) continue;   // changes to existing items are always asked first
       e.date = a.date; if (a.time !== undefined) e.time = a.time; e.updated = Date.now(); done.push(`Moved: ${e.title} → ${nice(e.date, e.time)}`);
     } else if (a.do === 'youtube' && /youtu\.?be/.test(a.url || '')) {
       setTimeout(() => J.startYouTube(a.url), 600); done.push('Started: transcribing the YouTube link');
     } else if (e && a.do === 'delete') {
+      if (!confirm(`Delete "${e.title}" from your calendar?`)) continue;   // changes to existing items are always asked first
       evs.splice(evs.indexOf(e), 1); done.push(`Deleted: ${e.title}`);
     }
   }

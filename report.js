@@ -108,7 +108,7 @@ async function owner() {
   const active = [...people.values()].filter(p => p.last > week).length;
   const errs = items.filter(x => x.k === 'error'), fbs = items.filter(x => x.k === 'feedback').sort((a, z) => z.t - a.t);
   const groups = new Map(); errs.forEach(x => { const g = groups.get(x.m) || { m: x.m, n: 0, who: new Set(), last: 0, p: x.p, ex: x }; g.n++; g.who.add(x.n || x.a); g.last = Math.max(g.last, x.t); groups.set(x.m, g); });
-  const tops = {}; items.filter(x => x.k === 'usage' && x.t > week - 23 * 864e5).forEach(x => { try { for (const [k, v] of Object.entries(JSON.parse(x.c || '{}'))) tops[k] = (tops[k] || 0) + v; } catch {} });
+  const tops = {}; items.filter(x => x.k === 'usage' && x.t > week - 23 * 864e5).forEach(x => { try { for (const [k, v] of Object.entries(JSON.parse(x.c || '{}'))) { const n = Number.isInteger(v) && v >= 0 && v <= 1e6 ? v : 0; if (n) tops[String(k).slice(0, 40)] = (tops[String(k).slice(0, 40)] || 0) + n; } } catch {} });
   const when = t => new Date(t).toLocaleString(AR ? 'ar-SA' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
   const gl = [...groups.values()].sort((a, z) => z.n - a.n);
   const tl = Object.entries(tops).sort((a, z) => z[1] - a[1]);
@@ -121,7 +121,7 @@ async function owner() {
     <h3>${L('Problems (most common first)', 'المشاكل (الأكثر تكرارًا أولًا)')}</h3>
     ${gl.map(g => `<div class="ow-item"><div class="ow-meta">×${g.n} · ${esc([...g.who].join(', '))} · ${esc(g.p)} · ${when(g.last)}</div><div dir="auto">${esc(g.m)}</div></div>`).join('') || `<p class="muted">${L('No problems reported.', 'لا مشاكل.')}</p>`}
     <h3>${L('Most used (last 30 days)', 'الأكثر استخدامًا (آخر ٣٠ يومًا)')}</h3>
-    <div class="ow-tops">${tl.slice(0, 30).map(([k, v]) => `<span>${esc(k)} <b>${v}</b></span>`).join('') || `<p class="muted">${L('No counts yet (sent once a day).', 'لا أرقام بعد (تُرسل مرة يوميًا).')}</p>`}</div>
+    <div class="ow-tops">${tl.slice(0, 30).map(([k, v]) => `<span>${esc(k)} <b>${esc(v)}</b></span>`).join('') || `<p class="muted">${L('No counts yet (sent once a day).', 'لا أرقام بعد (تُرسل مرة يوميًا).')}</p>`}</div>
     <h3>${L('People', 'الأشخاص')}</h3>
     ${[...people.values()].sort((a, z) => z.last - a.last).map(p => `<div class="ow-item"><div class="ow-meta">${esc(p.name || L('(no name)', '(بلا اسم)'))} · ${esc(p.roles || '')} · ${esc(p.ua || '')} · v${esc(p.v || '')}</div><div>${L('last seen', 'آخر ظهور')} ${when(p.last)}</div></div>`).join('')}
     <button type="button" class="ghost small ow-clear">${L('Clear the problems list', 'امسح قائمة المشاكل')}</button>`;

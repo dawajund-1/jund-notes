@@ -152,14 +152,14 @@ async function sendPush(env, sub) {
   const unsigned = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'https://mustatar-app.github.io/' });
   const key = await crypto.subtle.importKey('jwk', k.priv, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsigned));
-  return fetch(sub.endpoint, { method: 'POST', headers: { TTL: '3600', Urgency: 'high', Authorization: `vapid t=${unsigned}.${b64u(sig)}, k=${k.pub}`, 'Content-Length': '0' } });
+  return fetch(sub.endpoint, { method: 'POST', headers: { TTL: '3600', Urgency: 'high', Authorization: `vapid t=${unsigned}.${b64u(sig)}, k=${k.pub}`, 'Content-Length': '0' }, redirect: 'manual' });
 }
 async function pushRoutes(req, env, h, path, url) {
   if (!env.PUSH) return json({ error: 'push not set up', code: 'nopush' }, 501, h);
   if (path === '/push/key') return json({ key: (await vapid(env)).pub }, 200, h);
   if (path === '/push/sync' && req.method === 'POST') {
     const b = await req.json().catch(() => ({}));
-    if (!/^[a-f0-9]{16,64}$/.test(b.id || '') || !b.sub?.endpoint) return json({ error: 'bad' }, 400, h);
+    if (!/^[a-f0-9]{16,64}$/.test(b.id || '') || !pushEndpointOk(b.sub?.endpoint)) return json({ error: 'bad' }, 400, h);
     const old = await env.PUSH.get('s:' + b.id, 'json');
     const sent = new Set((old?.reminders || []).filter(r => r.sent).map(r => r.tag));
     const reminders = (b.reminders || []).slice(0, 200).map(r => ({ at: +r.at, title: String(r.title).slice(0, 120), body: String(r.body || '').slice(0, 200), tag: String(r.tag).slice(0, 80), sent: sent.has(String(r.tag)) }))
@@ -259,10 +259,44 @@ async function cron(env) {
     if (!due.length) continue;
     const r = await sendPush(env, rec.sub).catch(() => null);
     if (r && (r.status === 404 || r.status === 410)) { keep.pop(); await env.PUSH.delete('s:' + id); continue; }  // the phone unsubscribed
+    if (!r || !r.ok) continue;   // the push service did not accept it: leave it unsent so the next minute tries again (it stays due for 30 minutes)
     due.forEach(d => { d.sent = true; });
     await env.PUSH.put('s:' + id, JSON.stringify(rec));
   }
   if (keep.length !== ids.length) await env.PUSH.put('index', JSON.stringify(keep));
+}
+
+/* ---------- where the server is allowed to send requests ---------- */
+// browsers' push services only: a caller can no longer make the server POST to any address it likes
+const PUSH_HOSTS = /(^|\.)(googleapis\.com|push\.services\.mozilla\.com|notify\.windows\.com|push\.apple\.com)$/i;
+const pushEndpointOk = e => { try { const u = new URL(e); return u.protocol === 'https:' && !u.port && PUSH_HOSTS.test(u.hostname); } catch { return false; } };
+// calendar links: public https hosts only (no localhost, private or internal addresses)
+const publicHost = h => {
+  h = String(h).toLowerCase();
+  if (!h || h.includes(':') || h.startsWith('[')) return false;                       // IPv6 literals
+  if (h === 'localhost' || /\.(local|localhost|internal|localdomain|lan|home)$/.test(h)) return false;
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) { const [a, b] = [+m[1], +m[2]]; return !(a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224); }
+  return /^[a-z0-9.-]+$/.test(h) && h.includes('.');
+};
+// fetch a calendar link, following at most 3 redirects and checking every hop
+async function fetchCal(u) {
+  for (let hop = 0; hop < 4; hop++) {
+    let x; try { x = new URL(u); } catch { return null; }
+    if (x.protocol !== 'https:' || x.port || !publicHost(x.hostname)) return null;
+    const r = await fetch(x, { headers: { accept: 'text/calendar,*/*' }, redirect: 'manual' }).catch(() => null);
+    if (!r) return null;
+    if (r.status >= 300 && r.status < 400) { const loc = r.headers.get('location'); if (!loc) return null; u = new URL(loc, x).href; continue; }
+    return r;
+  }
+  return null;
+}
+// read at most `max` characters of a response, so a huge file is never fully downloaded
+async function readCapped(r, max) {
+  const reader = r.body.getReader(), dec = new TextDecoder(); let out = '';
+  while (out.length < max) { const { done, value } = await reader.read(); if (done) break; out += dec.decode(value, { stream: true }); }
+  try { await reader.cancel(); } catch {}
+  return out.slice(0, max);
 }
 
 export default {
@@ -288,10 +322,10 @@ export default {
       const b = await req.json().catch(() => ({}));
       let u = String(b.url || '').trim().replace(/^webcal:/i, 'https:');
       if (!/^https:\/\/[^\s]{8,900}$/i.test(u)) return json({ error: 'bad link', code: 'bad' }, 400, h);
-      let r = await fetch(u, { headers: { accept: 'text/calendar,*/*' }, redirect: 'follow' }).catch(() => null);
-      if (r && !r.ok && u.includes('%')) r = await fetch(decodeURI(u), { headers: { accept: 'text/calendar,*/*' }, redirect: 'follow' }).catch(() => r);
+      let r = await fetchCal(u);
+      if (r && !r.ok && u.includes('%')) r = (await fetchCal(decodeURI(u))) || r;
       if (!r || !r.ok) return json({ error: 'could not open that calendar link', code: 'bad', status: r?.status || 0 }, 400, h);
-      const text = (await r.text()).slice(0, 3_000_000);
+      const text = await readCapped(r, 3_000_000);
       if (!/BEGIN:VCALENDAR/.test(text)) return json({ error: 'that link is not a calendar (iCal) link', code: 'bad' }, 400, h);
       const name = (text.match(/X-WR-CALNAME:(.*)/) || [])[1]?.trim() || '';
       const unfold = text.replace(/\r?\n[ \t]/g, '');
@@ -348,6 +382,7 @@ export default {
     }
 
     if (req.method !== 'POST') return json({ error: 'not found' }, 404, h);
+    if (!origin && !req.headers.get('x-user-key')) return json({ error: 'forbidden' }, 403, h);
     if (!env.GEMINI_API_KEY) return json({ error: 'server has no key', code: 'nokey' }, 500, h);
 
     /* ----- reports from the app: problems, feedback, usage counts ----- */
@@ -358,7 +393,7 @@ export default {
       const kind = ['error', 'feedback', 'usage', 'event'].includes(b.kind) ? b.kind : 'event';
       const cut = (v, n) => String(v ?? '').slice(0, n);
       const meta = { k: kind, t: Date.now(), n: cut(b.name, 40), a: cut(b.anon, 16), m: cut(b.msg || b.text, 300), p: cut(b.page, 40), v: cut(b.app, 12), l: cut(b.lang, 4), r: cut(b.roles, 60), u: cut(b.ua, 60) };
-      if (kind === 'usage') meta.c = JSON.stringify(b.counts || {}).slice(0, 500);
+      if (kind === 'usage') meta.c = JSON.stringify(Object.fromEntries(Object.entries(b.counts && typeof b.counts === 'object' ? b.counts : {}).filter(([k, v]) => Number.isInteger(v) && v >= 0 && v <= 1e6).slice(0, 30).map(([k, v]) => [String(k).slice(0, 40), v]))).slice(0, 500);
       const key = `r:${kind}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
       await env.PUSH.put(key, raw.slice(0, 12000), { metadata: meta, expirationTtl: (kind === 'feedback' ? 365 : 120) * 86400 });
       return json({ ok: true }, 200, h);
