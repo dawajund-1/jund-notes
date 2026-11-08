@@ -420,7 +420,6 @@ function down(e) {
 function move(e) {
   if (!drag) return;
   const p = pt(e), cv = $('#st-canvas');
-  drag.l.x = Math.min(0.98, Math.max(0.02, (p.x - drag.dx) / cv.width));
   const ox = drag.l.x, oy = drag.l.y;
   drag.l.y = Math.min(0.98, Math.max(0.02, (p.y - drag.dy) / cv.height));
   drag.l.x = Math.min(0.98, Math.max(0.02, (p.x - drag.dx) / cv.width));
