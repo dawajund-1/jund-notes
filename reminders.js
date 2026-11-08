@@ -143,7 +143,8 @@ async function render() {
       <div class="rm-ref" dir="rtl">${esc(it.by ? it.by + ' · ' : '')}${esc(it.src)}</div></button>
     <div class="rm-more" ${open ? '' : 'hidden'}>
       ${it.verse ? '<div class="rm-en" id="rm-en"></div>' : it.en ? `<div class="rm-en">${esc(it.en)}</div>` : ''}
-      <div class="row-gap rm-acts"><button type="button" class="ghost small" id="rm-next">Another</button><button type="button" class="ghost small" id="rm-add">＋ Add your own</button><button type="button" class="ghost small" id="rm-studio">Use in Studio</button>${it.own ? '<button type="button" class="link small" id="rm-del">Remove</button>' : ''}</div>
+      <div class="row-gap rm-acts"><button type="button" class="ghost small" id="rm-next">Another</button><button type="button" class="ghost small" id="rm-add">＋ Add your own</button><button type="button" class="ghost small" id="rm-share">Share</button><button type="button" class="ghost small" id="rm-studio">Use in Studio</button>${it.own ? '<button type="button" class="link small" id="rm-del">Remove</button>' : ''}</div>
+      <div class="row-gap rm-acts" id="rm-sh" hidden><button type="button" class="ghost small" data-sh="1">With harakat</button><button type="button" class="ghost small" data-sh="0">Without harakat</button></div>
       <form class="rm-form" id="rm-form" hidden>
         <textarea id="rm-text" dir="auto" rows="3" placeholder="A verse, hadith or wise word you want to see…"></textarea>
         <textarea id="rm-en-in" dir="ltr" rows="2" placeholder="English translation — optional"></textarea>
@@ -155,6 +156,14 @@ async function render() {
   $('#rm-tap').onclick = () => { el.dataset.open = open ? '' : '1'; render(); };
   if (it.verse) meaning(...it.verse).then(t => { const m = $('#rm-en'); if (m && t) m.innerHTML = `“${esc(t)}” <small>(Saheeh International)</small>`; });
   $('#rm-next').onclick = () => { pos++; store.set('wisIdx', pos); render(); };
+  $('#rm-share').onclick = () => { $('#rm-sh').hidden = !$('#rm-sh').hidden; };
+  el.querySelectorAll('[data-sh]').forEach(b => b.onclick = async () => {
+    const strip = window.noHarakat || (t => t), keep = b.dataset.sh === '1';
+    const ar = it.verse ? `﴿${keep ? it.full : strip(it.full)}﴾` : (keep ? it.full : strip(it.full));
+    const text = [ar, (it.by ? it.by + ' · ' : '') + it.src, it.en || $('#rm-en')?.textContent || ''].filter(Boolean).join('\n\n');
+    try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); b.textContent = '✓ Copied'; } }
+    catch { try { await navigator.clipboard.writeText(text); b.textContent = '✓ Copied'; } catch {} }
+  });
   $('#rm-add').onclick = () => { $('#rm-form').hidden = false; $('#rm-text').focus(); };
   $('#rm-tr').onclick = async () => {
     const text = $('#rm-text').value.trim(), b = $('#rm-tr'); if (!text) { $('#rm-text').focus(); return; }

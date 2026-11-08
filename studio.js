@@ -41,6 +41,11 @@ let bg = { kind: 'color', key: 'navy' };   // or { kind: 'image', img } / { kind
 let layers = [], sel = null, built = false, fontsLoaded = false;
 let trim = { start: 0, end: 0 };
 const newId = () => 'T' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+// Arabic without harakat (also the small Quran marks), for easy reading or when the marks come out jumbled
+const noHarakat = t => String(t).replace(/\u0640\u0670/g, 'ا').replace(/\u0671/g, 'ا').replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u08D3-\u08FF\u0640]/g, '');
+window.noHarakat = noHarakat;
+let harakat = store.get('studioHarakat', true);
+const shown = l => harakat ? (l.text || '') : noHarakat(l.text || '');
 const isAr = t => (String(t).match(/[؀-ۿ]/g) || []).length > (String(t).match(/[A-Za-z]/g) || []).length;
 
 function loadFonts() {
@@ -95,6 +100,8 @@ function build() {
     <div class="chips" id="st-looks">${Object.entries(LOOKS).map(([k, v]) => `<button type="button" class="chip-b" data-look="${k}">${v.name}</button>`).join('')}</div>
     <div class="card-h" style="margin:12px 0 6px">Font</div>
     <div class="chips" id="st-fonts">${Object.entries(FONTS).map(([k, v]) => `<button type="button" class="chip-b" data-font="${k}" style="font-family:${v.css};font-weight:${v.w}">${v.name}</button>`).join('')}</div>
+    <div class="card-h" style="margin:12px 0 6px">Arabic marks (harakat)</div>
+    <div class="seg" id="st-hk"><button type="button" data-h="1">With harakat</button><button type="button" data-h="0">Without</button></div>
     <div class="card-h" style="margin:12px 0 6px">Colour</div>
     <div class="st-bgs" id="st-colors">${COLORS.map(c => `<button type="button" class="sw" data-color="${c}" aria-label="colour ${c}" style="background:${c}"></button>`).join('')}</div>
     <div class="st-trim-row" style="margin-top:10px"><span>Size</span><input type="range" id="st-size-r" min="0.03" max="0.16" step="0.002"></div>
@@ -170,6 +177,7 @@ function build() {
   $('#st-share').onclick = () => exportIt(true);
   $('#st-ideas').onclick = ideas;
   $('#st-tr').onclick = translate;
+  $$('#st-hk button').forEach(b => b.onclick = () => { harakat = b.dataset.h === '1'; store.set('studioHarakat', harakat); sync(); draw(); });
   $('#st-design').onclick = designIdeas;
   $('#st-cap-save').onclick = () => { const t = $('#st-cap-new').value.trim(); if (t) { saveCaption(t); $('#st-cap-new').value = ''; } };
   renderCaps();
@@ -204,6 +212,7 @@ function sync() {
   if (sel) { $('#st-size-r').value = sel.size; if (document.activeElement !== $('#st-text')) $('#st-text').value = sel.text; }
   $('#st-export').textContent = bg.kind === 'video' ? 'Save video' : 'Save image';
   $('#st-trim').hidden = bg.kind !== 'video';
+  $$('#st-hk button').forEach(b => b.classList.toggle('on', (b.dataset.h === '1') === harakat));
 }
 
 /* ---------- the list of texts, undo, compare, drafts ---------- */
@@ -358,12 +367,12 @@ function wrap(ctx, text, maxW) {
 }
 function drawLayer(ctx, l, W, H, showSel) {
   const look = LOOKS[l.look] || LOOKS.classic, font = FONTS[l.font] || FONTS.modern;
-  const px = Math.round(l.size * W), rtl = isAr(l.text);
+  const px = Math.round(l.size * W), rtl = isAr(l.text), txt = shown(l);
   ctx.save();
   ctx.font = `${font.w} ${px}px ${font.css}`;
   ctx.direction = rtl ? 'rtl' : 'ltr';
   ctx.textBaseline = 'middle';
-  const lines = wrap(ctx, l.text || ' ', W * 0.84);
+  const lines = wrap(ctx, txt || ' ', W * 0.84);
   const lh = px * (l.font === 'naskh' || l.font === 'ruqaa' ? 1.55 : 1.3);
   const widths = lines.map(t => ctx.measureText(t).width);
   const maxW = Math.max(...widths, 10), totalH = lh * lines.length;
@@ -566,7 +575,7 @@ function hOf(l) {
   const [W, H] = SIZES[size], font = FONTS[l.font] || FONTS.modern, px = Math.round(l.size * W);
   const ctx = document.createElement('canvas').getContext('2d'); ctx.font = `${font.w} ${px}px ${font.css}`;
   const lh = px * (l.font === 'naskh' || l.font === 'ruqaa' ? 1.55 : 1.3);
-  return wrap(ctx, l.text || ' ', W * 0.84).length * lh / H;
+  return wrap(ctx, shown(l) || ' ', W * 0.84).length * lh / H;
 }
 function placeTr(base) {
   for (const t of layers.filter(x => x.of === base.id)) {
