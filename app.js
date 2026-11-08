@@ -11,8 +11,8 @@ const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Updated file size limits for exam uploads
-const MAX_FILE_SIZE_DOCUMENT = 50 * 1024 * 1024; // 50 MB
-const MAX_FILE_SIZE_MEDIA = 60 * 1024 * 1024;    // 60 MB
+const MAX_FILE_SIZE_DOCUMENT = 50 * 1024 * 1024;  // 50 MB
+const MAX_FILE_SIZE_MEDIA = 150 * 1024 * 1024;   // 150 MB
 const MAX_FILES_COUNT = 8;
 
 const PRICES = { // USD per million tokens
@@ -1132,8 +1132,7 @@ function validateAndQueueFiles(files) {
   for (let file of files) {
     const isAudio = file.type.startsWith('audio/') || file.name.endsWith('.mp3') || file.name.endsWith('.m4a') || file.name.endsWith('.wav');
     const limit = isAudio ? MAX_FILE_SIZE_MEDIA : MAX_FILE_SIZE_DOCUMENT;
-    const limitLabel = isAudio ? '60 MB' : '50 MB';
-
+    const limitLabel = isAudio ? '150 MB' : '50 MB';
     if (file.size > limit) {
       alert(`File "${file.name}" is too large. Maximum allowed size is ${limitLabel}.`);
       return false;
