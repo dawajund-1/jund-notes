@@ -869,3 +869,19 @@ body.on-home .toast { bottom: calc(170px + env(safe-area-inset-bottom, 0px)); }
 body[data-screen="calendar"] #go-today { display: inline-flex; }
 body[data-screen="library"] #top-search { display: none; }
 .bar-right { gap: 6px; }
+
+/* ---------- prayer card v3: passed prayers green, the coming one yellow; day-left outside the card ---------- */
+:root { --done: #3FBF7F; }
+.dc-mark.p i { background: var(--bg); border: 2px solid color-mix(in srgb, var(--ink-2) 70%, transparent); }
+.dc-mark.p.past i { background: var(--done); border-color: var(--done); }
+.dc-mark.p.past small { color: color-mix(in srgb, var(--done) 85%, var(--ink)); }
+.dc-mark.p.next i { width: 11px; height: 11px; background: #F2C14E; border-color: #F2C14E; box-shadow: 0 0 0 4px color-mix(in srgb, #F2C14E 25%, transparent); }
+.dc-mark.p.next small { color: #F2C14E; font-weight: 600; }
+.dc-mark.x.past i { background: var(--done); border-color: var(--done); border-style: solid; }
+.dc-foot { justify-content: space-between; }
+.dc-foot .dc-now { font-size: .8rem; color: var(--ink-2); font-weight: 600; }
+.dc-foot .np i { background: #F2C14E; }
+.dc-foot .np b { color: #F2C14E; }
+.dc-left { font-size: .74rem; margin: 6px 4px 0; }
+.dc-left:empty { display: none; }
+#hm-brief { text-transform: none; letter-spacing: 0; font-weight: 500; }

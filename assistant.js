@@ -56,7 +56,7 @@ function build() {
     <div class="intro due" id="rec-banner" hidden></div>
     <div class="chips hm-study" id="hm-study" hidden></div>
     <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><button type="button" class="link" data-go="calendar">Calendar</button></div>
-      <div class="hm-card"><div class="upnext" id="hm-next"></div><div class="pbar" id="hm-prayer"></div></div></div>
+      <div class="hm-card"><div class="upnext" id="hm-next"></div><div class="pbar" id="hm-prayer"></div></div><div class="dc-left muted" id="hm-left"></div></div>
     <div class="hm-sec" id="hm-habits-wrap"><div class="habits" id="hm-habits"></div></div>
     <div class="hm-sec" id="hm-recent-wrap" hidden><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
@@ -102,6 +102,11 @@ function nextPrayerText() {
   const l = np.left; const lt = l == null ? '' : AR ? ` · بعد ${l >= 60 ? `${Math.floor(l / 60)} س ${l % 60} د` : `${l} د`}` : ` · in ${l >= 60 ? `${Math.floor(l / 60)}h ${l % 60}m` : `${l} min`}`;
   return `<span class="np"><i></i><b>${np.name}</b> ${tm}${lt}</span>`;
 }
+// how much of today is left — day management, so it sits outside the prayer card
+function dayLeft() {
+  const now = new Date(), left = 1440 - (now.getHours() * 60 + now.getMinutes());
+  return window.ZadLang === 'ar' ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`;
+}
 function dayClock() {
   const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
   const pct = m => (((m % 1440) + 1440) % 1440 / 1440 * 100).toFixed(2);
@@ -118,16 +123,16 @@ function dayClock() {
     if (mg != null && fj != null) { const night = fj + 1440 - mg; marks.push({ n: AR ? 'الثلث الأخير' : 'Last third', m: (fj + 1440 - night / 3) % 1440, k: 'x' }); }
   }
   marks.sort((a, b) => a.m - b.m);
-  marks.forEach((x, i) => { x.up = i % 2 === 1; x.past = x.m <= mins; });   // labels take turns above and below the line, so they never overlap
+  marks.forEach((x, i) => { x.up = i % 2 === 1; x.past = x.m <= mins; });
+  const nx = marks.find(x => x.k === 'p' && !x.past); if (nx) nx.next = true;   // passed: green · the coming prayer: yellow   // labels take turns above and below the line, so they never overlap
   const hhmm = m => { const h = Math.floor(m / 60) % 24, mm = Math.round(m % 60); const d = new Date(); d.setHours(h, mm); return d.toLocaleTimeString(AR ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' }); };
   const time = now.toLocaleTimeString(AR ? 'ar-SA' : 'en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const left = 1440 - mins;
-  return `<div class="dc" role="img" aria-label="Your day is clear">
-    <div class="dc-top"><b>Your day is clear</b><span class="dc-now">${time}</span></div>
+  return `<div class="dc" role="img" aria-label="Today">
     <div class="dc-line${marks.length ? ' has-marks' : ''}"><span class="dc-fill" style="width:${pct(mins)}%"></span>
-      ${marks.map(x => `<span class="dc-mark ${x.k}${x.past ? ' past' : ''}${x.up ? ' up' : ''}" style="inset-inline-start:${pct(x.m)}%" title="${hhmm(x.m)}"><i></i><small>${x.n}<em>${hhmm(x.m)}</em></small></span>`).join('')}
+      ${marks.map(x => `<span class="dc-mark ${x.k}${x.past ? ' past' : ''}${x.next ? ' next' : ''}${x.up ? ' up' : ''}" style="inset-inline-start:${pct(x.m)}%" title="${hhmm(x.m)}"><i></i><small>${x.n}<em>${hhmm(x.m)}</em></small></span>`).join('')}
       <span class="dc-dot" style="inset-inline-start:${pct(mins)}%"></span></div>
-    <div class="dc-foot muted"><span>${AR ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`}</span>${nextPrayerText()}</div>
+    <div class="dc-foot muted"><span class="dc-now">${time}</span>${nextPrayerText()}</div>
   </div>`;
 }
 async function renderHome() {
@@ -146,7 +151,9 @@ async function renderHome() {
       <span class="tl-rail"><i style="--c:${x.color}"></i></span>
       <span class="tl-what"><b dir="auto">${esc(x.e.title)}</b><small style="color:${x.color}">${x.type}</small></span></button>`).join('')}</div>`
     : dayClock();
-  clearInterval(renderHome.tick); if (!up.length) renderHome.tick = setInterval(() => { const c = $('#hm-next .dc'); if (c) c.outerHTML = dayClock(); }, 30000);
+  $('#hm-left').textContent = dayLeft();
+  if (!up.length) $('#hm-brief').textContent = '· ' + (window.ZadLang === 'ar' ? 'يومك خالٍ' : 'Your day is clear');
+  clearInterval(renderHome.tick); if (!up.length) renderHome.tick = setInterval(() => { const c = $('#hm-next .dc'); if (c) c.outerHTML = dayClock(); const l = $('#hm-left'); if (l) l.textContent = dayLeft(); }, 30000);
   $$('.nx', $('#hm-next')).forEach(b => b.onclick = () => window.JundCal.open(b.dataset.ev, b.dataset.d));
   const ls = (await J.allLessons()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   $('#hm-recent-wrap').hidden = true;
