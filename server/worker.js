@@ -8,7 +8,7 @@
 //   POST /owner/reports, /owner/delete   the app owner's view of those reports (needs the owner code)
 //   POST /ask-voice   a short spoken question (+ the file being discussed) → what was heard and the answer
 
-const ALLOWED = ['https://dawajund-1.github.io'];
+const ALLOWED = ['https://mustatar-app.github.io', 'https://dawajund-1.github.io'];
 let G = 'https://generativelanguage.googleapis.com';  // GEMINI_BASE replaces it only in local tests
 const WRITE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash'];
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
@@ -145,7 +145,7 @@ async function vapid(env) {
 async function sendPush(env, sub) {
   const k = await vapid(env), aud = new URL(sub.endpoint).origin;
   const enc = o => b64u(new TextEncoder().encode(JSON.stringify(o)));
-  const unsigned = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'https://dawajund-1.github.io/jund-notes/' });
+  const unsigned = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'https://mustatar-app.github.io/' });
   const key = await crypto.subtle.importKey('jwk', k.priv, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, new TextEncoder().encode(unsigned));
   return fetch(sub.endpoint, { method: 'POST', headers: { TTL: '3600', Urgency: 'high', Authorization: `vapid t=${unsigned}.${b64u(sig)}, k=${k.pub}`, 'Content-Length': '0' } });

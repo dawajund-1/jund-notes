@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "sa.jund.notes",
+    "sha256_cert_fingerprints": ["16:F0:53:D0:04:63:7C:09:BB:4E:DA:A2:A8:4D:03:11:E9:6E:14:34:82:F9:DE:19:70:97:2B:A7:ED:7A:3B:92"]
+  }
+}]
