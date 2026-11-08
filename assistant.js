@@ -55,8 +55,8 @@ function build() {
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="intro due" id="rec-banner" hidden></div>
     <div class="chips hm-study" id="hm-study" hidden></div>
-    <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><button type="button" class="link" data-go="calendar">Calendar</button></div>
-      <div class="hm-card"><div class="upnext" id="hm-next"></div><div class="pbar" id="hm-prayer"></div></div><div class="dc-left muted" id="hm-left"></div></div>
+    <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><span class="dc-left muted" id="hm-left"></span></div>
+      <div class="hm-card"><div class="upnext" id="hm-next"></div><div class="pbar" id="hm-prayer"></div></div></div>
     <div class="hm-sec" id="hm-habits-wrap"><div class="habits" id="hm-habits"></div></div>
     <div class="hm-sec" id="hm-recent-wrap" hidden><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
@@ -132,7 +132,7 @@ function dayClock() {
     <div class="dc-line${marks.length ? ' has-marks' : ''}"><span class="dc-fill" style="width:${pct(mins)}%"></span>
       ${marks.map(x => `<span class="dc-mark ${x.k}${x.past ? ' past' : ''}${x.next ? ' next' : ''}${x.up ? ' up' : ''}" style="inset-inline-start:${pct(x.m)}%" title="${hhmm(x.m)}"><i></i><small>${x.n}<em>${hhmm(x.m)}</em></small></span>`).join('')}
       <span class="dc-dot" style="inset-inline-start:${pct(mins)}%"></span></div>
-    <div class="dc-foot muted"><span class="dc-now">${time}</span>${nextPrayerText()}</div>
+    <div class="dc-foot muted">${nextPrayerText()}<span class="dc-now">${time}</span></div>
   </div>`;
 }
 async function renderHome() {
@@ -160,7 +160,16 @@ async function renderHome() {
   $('#hm-recent').innerHTML = ls.map(l => `<button type="button" class="rc" data-open="${l.id}" dir="auto">${l.draft ? '<span class="tag">Draft</span> ' : ''}<b>${esc(l.notes?.title || l.unit)}</b><small>${esc(l.subject?.name || '')} · ${new Date(l.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</small></button>`).join('');
   $$('[data-open]', $('#hm-recent')).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
 }
+let helloTimer = null;
+function foldHello() { const h = $('#hm-hello'); if (h && !h.classList.contains('gone')) h.classList.add('gone'); }
+function armHello() {
+  if (helloTimer || !$('#hm-hello')) return;
+  helloTimer = setTimeout(foldHello, 150000);
+  $('#as-text')?.addEventListener('focus', foldHello, { once: true });
+  $('#as-mic')?.addEventListener('pointerdown', foldHello, { once: true });
+}
 function render() {
+  armHello();
   $('#screen-assistant')?.classList.toggle('talking', log.length > 0);
   renderHome();
   const box = $('#as-log'); if (!box) return;

@@ -923,3 +923,9 @@ a, .link { color: var(--gold); }
 .dc-dot { background: var(--ink); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ink) 14%, transparent); width: 10px; height: 10px; }
 .dc-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 15%, transparent), color-mix(in srgb, var(--gold) 45%, transparent)) !important; }
 .server-dot[data-ok="1"] { background: var(--ok); }
+
+/* Up next header: time left today on the right; greeting folds away; next prayer on the left of the card's bottom line */
+.row-between .dc-left { margin: 0; font-size: .72rem; }
+#hm-hello { transition: opacity .5s ease, max-height .6s ease, margin .6s ease; max-height: 3em; overflow: hidden; }
+#hm-hello.gone { opacity: 0; max-height: 0; margin: 0 !important; }
+.dc-foot .dc-now { margin-inline-start: auto; }
