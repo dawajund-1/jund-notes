@@ -304,7 +304,7 @@ function initSettings() {
   // appearance and defaults
   $('#ui-lang').value = window.ZadLang || 'en';
   $('#ui-lang').onchange = () => { store.set('uiLang', $('#ui-lang').value); location.reload(); };
-  $('#theme').value = store.get('theme', 'navy');
+  $('#theme').value = store.get('theme', 'auto');
   $('#theme').onchange = () => { store.set('theme', $('#theme').value); applyTheme(); };
   $('#lang-default').value = store.get('langDefault', 'auto');
   $('#lang-default').onchange = () => { store.set('langDefault', $('#lang-default').value); $('#lang').value = $('#lang-default').value; };
@@ -1926,11 +1926,14 @@ function initMe() {
 }
 
 /* ---------- theme ---------- */
+// themes: Auto (follows the phone's light/dark setting), Night, Day
 function applyTheme() {
-  const t = store.get('theme', 'navy');
+  const pick = store.get('theme', 'auto');
+  const t = pick === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'navy') : pick;
   document.documentElement.dataset.theme = t;
-  $('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#F3F5FA' : '#0A1222');
+  $('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#F6F7F4' : '#0E1513');
 }
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { if (store.get('theme', 'auto') === 'auto') applyTheme(); });
 applyTheme();
 
 /* ---------- the server: is it up? ---------- */
@@ -2004,7 +2007,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '6.9';
+const APP_VERSION = '7.0';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

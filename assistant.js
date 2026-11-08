@@ -51,7 +51,7 @@ function build() {
   const s = $('#screen-assistant');
   s.innerHTML = `
     <div class="remind" id="hm-remind" hidden></div>
-    <div class="home-head"><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
+    <div class="home-head"><div class="hm-mark" id="hm-mark"></div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="intro due" id="rec-banner" hidden></div>
     <div class="chips hm-study" id="hm-study" hidden></div>
@@ -170,10 +170,11 @@ function armHello() {
 }
 function render() {
   armHello();
+  const mk = $('#hm-mark'); if (mk && !mk.innerHTML) mk.innerHTML = window.MustatarMark?.(40, false) || '';
   $('#screen-assistant')?.classList.toggle('talking', log.length > 0);
   renderHome();
   const box = $('#as-log'); if (!box) return;
-  box.innerHTML = log.length ? log.map(m => `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto">${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${m.open ? `<button type="button" class="link" data-open="${esc(m.open)}">Open the lesson</button>` : ''}</div>`).join('')
+  box.innerHTML = log.length ? log.map(m => m.who !== 'me' && /^(…|Thinking…|Reading the file…)$/.test(m.text) ? `<div class="msg ai working">${window.MustatarMark?.(26, true) || ''}<span>${m.text === '…' ? 'Thinking…' : esc(m.text)}</span></div>` : `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto">${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${m.open ? `<button type="button" class="link" data-open="${esc(m.open)}">Open the lesson</button>` : ''}</div>`).join('')
     : '';
   $$('[data-open]', box).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
   const tries = J.me().use === 'work'

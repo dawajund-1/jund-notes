@@ -929,3 +929,60 @@ a, .link { color: var(--gold); }
 #hm-hello { transition: opacity .5s ease, max-height .6s ease, margin .6s ease; max-height: 3em; overflow: hidden; }
 #hm-hello.gone { opacity: 0; max-height: 0; margin: 0 !important; }
 .dc-foot .dc-now { margin-inline-start: auto; }
+
+/* =================== Mustatar palette v3 — "Tile & Ink" ===================
+   Inspired by the turquoise of old Islamic tiles on deep ink. One accent (turquoise), quiet neutrals,
+   warm terracotta only for urgent things. Night and Day versions; "Auto" follows the phone. */
+:root, :root[data-theme="navy"] {
+  --bg: #0E1513; --surface: #151D1B; --surface-2: #1B2522; --line: #273330;
+  --ink: #E9EFEC; --ink-2: #8FA39C;
+  --accent: #3CC0A8; --accent-2: #2C9E8B; --on-accent: #05211C;
+  --gold: #3CC0A8; --gold-2: #2C9E8B; --gold-soft: color-mix(in srgb, #3CC0A8 16%, transparent);
+  --ok: #3CC0A8; --done: #4F8F83; --warn: #E3B35C; --danger: #E2735C;
+  --t-task: #78A9DB; --t-homework: #E3B35C; --t-exam: #E2735C; --t-class: #3CC0A8; --t-meeting: #A996DE; --t-study: #84C9E6;
+  --mk-a: #8BE6D4; --mk-b: #2C9E8B; --mk-dot: #C6F4EA;
+  --shadow: 0 10px 30px rgb(0 0 0 / .4);
+}
+:root[data-theme="light"] {
+  --bg: #F6F7F4; --surface: #FFFFFF; --surface-2: #EEF2EF; --line: #DCE3DF;
+  --ink: #14201D; --ink-2: #5E6E69;
+  --accent: #0E8C7A; --accent-2: #0A6E60; --on-accent: #FFFFFF;
+  --gold: #0E8C7A; --gold-2: #0A6E60; --gold-soft: color-mix(in srgb, #0E8C7A 12%, transparent);
+  --ok: #0E8C7A; --done: #6FA79C; --warn: #B7841F; --danger: #C2543D;
+  --t-task: #3F6FB0; --t-homework: #B7841F; --t-exam: #C2543D; --t-class: #0E8C7A; --t-meeting: #7357B5; --t-study: #2E86A8;
+  --mk-a: #23B39C; --mk-b: #0A6E60; --mk-dot: #0E8C7A;
+  --shadow: 0 8px 24px rgb(20 40 35 / .09);
+}
+.dc-mark.p.past i { background: var(--done); border-color: var(--done); }
+.dc-mark.p.past small { color: var(--ink-2); }
+.dc-mark.p.next i { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px var(--gold-soft); }
+.dc-mark.x i { border-color: var(--accent); }
+.dc-mark.x small { color: color-mix(in srgb, var(--accent) 80%, var(--ink)); }
+.dc-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), color-mix(in srgb, var(--accent) 40%, transparent)) !important; }
+.as-go { background: var(--accent); color: var(--on-accent); }
+.as-input:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, transparent) !important; }
+
+/* ---------- an empty top bar, like Claude: only the menu ---------- */
+.topbar .brand, #top-search, #top-new, .server-dot { display: none !important; }
+.topbar { border-bottom: 0; background: transparent; }
+body[data-screen="calendar"] #go-today { display: inline-flex; }
+
+/* ---------- the living mark ---------- */
+.mk .mk-d { fill: var(--mk-dot); }
+.mk .mk-l { stroke-dasharray: 240; stroke-dashoffset: 0; }
+.hm-mark { height: 40px; margin: 2px 0 10px; }
+.hm-mark .mk .mk-l { animation: mkwrite 1.1s cubic-bezier(.4, 0, .2, 1) both; }
+.hm-mark .mk .mk-2 { animation-delay: .18s; } .hm-mark .mk .mk-3 { animation-delay: .36s; }
+.hm-mark .mk .mk-d { animation: mkpop .5s ease both; transform-box: fill-box; transform-origin: center; }
+.hm-mark .mk .mk-s { animation-delay: .55s; } .hm-mark .mk .mk-b { animation-delay: .7s; }
+.mk.busy .mk-l { animation: mkloop 1.6s cubic-bezier(.5, 0, .3, 1) infinite; }
+.mk.busy .mk-2 { animation-delay: .2s; } .mk.busy .mk-3 { animation-delay: .4s; }
+.mk.busy .mk-d { animation: mkbeat 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.mk.busy .mk-b { animation-delay: .25s; }
+@keyframes mkwrite { from { stroke-dashoffset: 240; } to { stroke-dashoffset: 0; } }
+@keyframes mkpop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes mkloop { 0% { stroke-dashoffset: 240; } 45%, 70% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -240; } }
+@keyframes mkbeat { 0%, 100% { transform: scale(.7); opacity: .5; } 50% { transform: scale(1.1); opacity: 1; } }
+.msg.working { display: inline-flex; align-items: center; gap: 10px; color: var(--ink-2); background: none; border: 0; padding-inline-start: 0; }
+@media (prefers-reduced-motion: reduce) { .mk .mk-l, .mk .mk-d { animation: none !important; } }
+#dr-open { background: transparent; border: 0; box-shadow: none; } .topbar { min-height: 52px; }
