@@ -785,3 +785,32 @@ body.vx-open { overflow: hidden; }
 .dict-stop span { width: 13px; height: 13px; border-radius: 3px; background: var(--ink); }
 .dict-send { border-radius: 50%; flex: none; }
 #screen-assistant #hm-next { display: block; overflow: visible; } .dc-top { gap: 12px; }
+
+/* ---------- Home v7: more air, smaller type, Claude-like calm ---------- */
+#screen-assistant .remind { margin: 0 0 30px; padding: 2px 0 22px; }
+#screen-assistant .remind .rm-verse { font-size: 1.3rem; }
+#screen-assistant:not(.talking) .home-head { margin: 0 0 34px; }
+#screen-assistant .home-head #hm-date { font-size: .78rem; letter-spacing: .01em; }
+#screen-assistant:not(.talking) .home-head .screen-title { font-size: 1.35rem; font-weight: 600; margin: 6px 0 10px; }
+#screen-assistant .home-head .pbar { font-size: .84rem; }
+#screen-assistant .sec-t { font-size: .7rem; }
+#screen-assistant .hm-sec { margin-bottom: 26px; }
+#screen-assistant .tl-what b { font-size: .9rem; }
+#screen-assistant .tl-when { font-size: .74rem; }
+#screen-assistant .dc { padding: 16px 16px 14px; border-radius: 18px; }
+#screen-assistant .dc-top b { font-size: .9rem; }
+#screen-assistant .as-dock .quick { margin-bottom: 12px; }
+#screen-assistant .q { font-size: .74rem; padding: 6px 11px 6px 9px; }
+#screen-assistant .as-input textarea { font-size: .95rem; }
+
+/* day line: labels above and below in turns (never overlapping), Duha and the last third of the night in gold */
+.dc-line.has-marks { margin: 34px 6px 38px; }
+.dc-mark small { top: 12px; display: flex; flex-direction: column; align-items: center; line-height: 1.15; font-size: .6rem; }
+.dc-mark small em { font-style: normal; color: color-mix(in srgb, var(--ink-2) 75%, transparent); font-size: .56rem; }
+.dc-mark.up small { top: auto; bottom: 12px; flex-direction: column-reverse; }
+.dc-mark.x i { border-color: var(--gold); border-style: dotted; }
+.dc-mark.x small { color: var(--gold); }
+
+/* smooth wave */
+.dict-wave { gap: 3px; height: 30px; }
+.dict-wave i { max-width: 3px; transition: none; background: var(--ink); will-change: transform; }

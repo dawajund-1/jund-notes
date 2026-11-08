@@ -1,14 +1,14 @@
-/* Mustatar — tap the microphone in the message box and just talk, like Claude:
-   the box turns into a recording bar (✕ cancel · moving sound bars · ■ stop · ↑ send) and your words are written into the box.
-   Where the phone can, the words appear live while you talk; the final text comes from the AI, so Arabic and English are both exact.
-   Hold the microphone to open the spoken conversation instead. */
+/* Mustatar — tap the microphone in the message box and just talk, like Claude.
+   The box turns into a recording bar (✕ cancel · smooth sound wave · ■ stop · ↑ send) and your words are written
+   into the box WHILE you talk: every short pause, the piece you just said is written down (works in every browser,
+   Arabic and English). Hold the microphone to open the spoken conversation instead. */
 (() => {
 'use strict';
 const J = window.JN; if (!J) return;
 const AR = window.ZadLang === 'ar';
 const L = (en, ar) => AR ? ar : en;
 const $ = s => document.querySelector(s);
-const BARS = 34;
+const BARS = 40;
 let R = null;   // the recording in progress
 
 function setup() {
@@ -24,107 +24,136 @@ function setup() {
   mic.title = L('Tap to speak · hold for a spoken conversation', 'اضغط لتتكلم · اضغط مطولًا لمحادثة صوتية');
 }
 
+const TYPE = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
+
 async function start() {
   const box = $('.as-input'), ta = $('#as-text');
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
   catch { hint(L('Allow the microphone for Mustatar (in the browser’s site settings), then try again.', 'اسمح لمستطر باستخدام المايك (من إعدادات الموقع في المتصفح) ثم حاول مرة أخرى.')); return; }
-  const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
-  const rec = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 32000 } : undefined);
-  const parts = []; rec.ondataavailable = e => e.data.size && parts.push(e.data);
-  const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser(); an.fftSize = 512;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.6;
   ctx.createMediaStreamSource(stream).connect(an);
   const before = ta.value ? ta.value.replace(/\s*$/, ' ') : '';
-  R = { rec, parts, stream, ctx, an, before, t0: Date.now(), levels: Array(BARS).fill(0.05) };
+  R = { stream, ctx, an, before, t0: Date.now(), heights: Array(BARS).fill(0.08), target: 0.08, level: 0, pieces: [], seq: 0, pending: 0, floor: 0.008 };
 
-  // the recording bar, inside the message box
   const bar = document.createElement('div'); bar.className = 'dict'; bar.setAttribute('data-noi18n', '');
   bar.innerHTML = `<button type="button" class="dict-x" aria-label="${L('Cancel', 'إلغاء')}">✕</button>
     <div class="dict-wave">${'<i></i>'.repeat(BARS)}</div><span class="dict-t">0:00</span>
-    <button type="button" class="dict-stop" aria-label="${L('Stop and write it', 'أوقف واكتب')}"><span></span></button>
+    <button type="button" class="dict-stop" aria-label="${L('Stop', 'إيقاف')}"><span></span></button>
     <button type="button" class="dict-send as-go" aria-label="${L('Send', 'أرسل')}"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
   box.appendChild(bar); box.classList.add('dictating');
-  ta.placeholder = L('Listening…', 'أسمعك…');
+  ta.placeholder = L('Listening… start talking', 'أسمعك… تكلّم');
   bar.querySelector('.dict-x').onclick = cancel;
   bar.querySelector('.dict-stop').onclick = () => stop(false);
   bar.querySelector('.dict-send').onclick = () => stop(true);
-  R.bar = bar;
+  R.bar = bar; R.bars = [...bar.querySelectorAll('.dict-wave i')]; R.tEl = bar.querySelector('.dict-t');
 
-  // live words, where the phone offers it (Chrome); Brave and others get the words when you stop
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (SR) {
-    try {
-      const sr = new SR(); sr.continuous = true; sr.interimResults = true; sr.lang = AR ? 'ar-SA' : (navigator.language || 'en-US');
-      sr.onresult = e => { if (R) { ta.value = before + [...e.results].map(x => x[0].transcript).join(' '); grow(ta); } };
-      sr.onerror = () => {}; sr.onend = () => { if (R && R.sr === sr) try { sr.start(); } catch {} };
-      sr.start(); R.sr = sr;
-    } catch {}
-  }
-
-  // moving bars from the microphone level
-  const data = new Float32Array(an.fftSize), bars = [...bar.querySelectorAll('.dict-wave i')], tEl = bar.querySelector('.dict-t');
-  let last = 0;
-  const draw = now => {
-    if (!R) return;
-    if (now - last > 70) {
-      last = now;
-      an.getFloatTimeDomainData(data); let e = 0; for (const v of data) e += v * v;
-      const lvl = Math.min(1, Math.sqrt(e / data.length) * 7);
-      R.levels.push(Math.max(0.06, lvl)); R.levels.shift();
-      bars.forEach((b, i) => { b.style.transform = `scaleY(${R.levels[i].toFixed(3)})`; });
-      const s = Math.floor((Date.now() - R.t0) / 1000); tEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-      if (s >= 300) stop(false);   // 5 minutes at most in one go
-    }
-    R.raf = requestAnimationFrame(draw);
-  };
-  R.raf = requestAnimationFrame(draw);
-  rec.start(250);
+  newPiece();
+  R.raf = requestAnimationFrame(frame);
 }
 
-function end() {
-  const r = R; R = null; if (!r) return null;
+/* ---------- pieces: a new short recording starts at every pause, and the finished one is written down ---------- */
+function newPiece() {
+  const r = R; if (!r) return;
+  const type = TYPE();
+  const rec = new MediaRecorder(r.stream, type ? { mimeType: type, audioBitsPerSecond: 32000 } : undefined);
+  const piece = { seq: r.seq++, rec, parts: [], spoke: false, t0: performance.now(), text: '', done: false };
+  rec.ondataavailable = e => e.data.size && piece.parts.push(e.data);
+  rec.onstop = () => writePiece(r, piece);
+  rec.start(200);
+  r.cur = piece; r.pieces.push(piece);
+}
+function cutPiece() {
+  const r = R; if (!r?.cur) return;
+  const old = r.cur; r.cur = null;
+  try { old.rec.stop(); } catch {}
+  newPiece();
+}
+async function writePiece(r, piece) {
+  if (!piece.spoke || r.cancelled) { piece.done = true; show(r); maybeFinish(r); return; }
+  r.pending++;
+  try {
+    const blob = new Blob(piece.parts, { type: piece.rec.mimeType || 'audio/webm' });
+    const file = new File([blob], 'voice.' + (/mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm'), { type: blob.type.split(';')[0] });
+    const prev = r.pieces.filter(p => p.seq < piece.seq && p.text).map(p => p.text).join(' ').slice(-300);
+    const res = await window.JundAttach.askFile(file, {
+      system: 'You write down speech for a message box. Output ONLY the exact words spoken in this short audio, in the language(s) spoken (Arabic in Arabic script, English in English), with normal punctuation. No notes, no quotes. If nothing clear was said, output nothing.',
+      user: prev ? `The words just before this (for context only, do not repeat them): ${prev}\n\nWrite down what is said in this audio.` : 'Write down what is said in this audio.', maxTokens: 1500,
+      onText: t => { piece.text = t.trim(); show(r); },
+    });
+    piece.text = res.text.trim().replace(/^["“]|["”]$/g, '');
+  } catch (e) { piece.failed = true; r.err = e; }
+  piece.done = true; r.pending--;
+  show(r); maybeFinish(r);
+}
+function maybeFinish(r) { if (r.finishing && !r.pending && r.pieces.every(p => p.done)) r.finishing(); }
+// the box shows everything written so far, in order; a "…" while the newest piece is still being written
+function show(r) {
+  const ta = $('#as-text'); if (!ta || r.cancelled) return;
+  const words = r.pieces.filter(p => p.text).map(p => p.text).join(' ');
+  const waiting = r.pieces.some(p => p.spoke && !p.done);
+  ta.value = (r.before + words).replace(/\s+/g, ' ').trimStart() + (waiting ? ' …' : '');
+  grow(ta); ta.scrollTop = ta.scrollHeight;
+}
+
+/* ---------- the smooth wave + pause detection, every frame ---------- */
+function frame(now) {
+  const r = R; if (!r) return;
+  const data = frame.d || (frame.d = new Float32Array(r.an.fftSize));
+  r.an.getFloatTimeDomainData(data);
+  let e = 0; for (const v of data) e += v * v;
+  const rms = Math.sqrt(e / data.length);
+  if (now - (r.started ||= now) < 500) r.floor = Math.max(r.floor, rms * 1.3);     // learn the room's noise first
+  const speaking = rms > Math.max(0.018, r.floor * 2.2);
+  const p = r.cur;
+  if (p) {
+    if (speaking) { p.spoke = true; p.lastVoice = now; }
+    const len = now - p.t0, quiet = now - (p.lastVoice || p.t0);
+    // cut at a short pause (so words are never split), or at the next small pause after 7 s, or at 12 s
+    if (p.spoke && ((len > 1500 && quiet > 550) || (len > 7000 && quiet > 200) || len > 12000)) cutPiece();
+    else if (!p.spoke && len > 15000) cutPiece();   // long silence: start a fresh piece
+  }
+  // the wave: the level glides (no jumps), and the bars glide toward it
+  r.level += ((Math.min(1, rms * 9)) - r.level) * 0.25;
+  if (now - (r.lastPush || 0) > 55) { r.lastPush = now; r.heights.push(Math.max(0.08, r.level)); r.heights.shift(); }
+  r.bars.forEach((b, i) => { const h = r.heights[i]; b.style.transform = `scaleY(${h.toFixed(3)})`; b.style.opacity = (0.45 + h * 0.55).toFixed(2); });
+  const s = Math.floor((Date.now() - r.t0) / 1000); r.tEl.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  if (s >= 600) { stop(false); return; }   // 10 minutes at most in one go
+  r.raf = requestAnimationFrame(frame);
+}
+
+function closeBar(r) {
   cancelAnimationFrame(r.raf);
-  try { if (r.sr) { const sr = r.sr; r.sr = null; sr.onend = null; sr.stop(); } } catch {}
   r.bar?.remove(); $('.as-input')?.classList.remove('dictating');
-  return r;
+  r.stream.getTracks().forEach(t => t.stop()); try { r.ctx.close(); } catch {}
 }
 function cancel() {
-  const r = end(); if (!r) return;
-  r.rec.onstop = () => { r.stream.getTracks().forEach(t => t.stop()); try { r.ctx.close(); } catch {} };
-  try { r.rec.stop(); } catch {}
+  const r = R; if (!r) return; R = null; r.cancelled = true;
+  try { r.cur?.rec.stop(); } catch {}
+  closeBar(r);
   const ta = $('#as-text'); ta.value = r.before.trim(); ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); grow(ta);
 }
 function stop(andSend) {
-  const r = end(); if (!r) return;
+  const r = R; if (!r) return; R = null;
+  cancelAnimationFrame(r.raf);
+  const last = r.cur; r.cur = null;
   const ta = $('#as-text');
   ta.placeholder = L('Writing what you said…', 'أكتب ما قلته…');
-  r.rec.onstop = async () => {
-    r.stream.getTracks().forEach(t => t.stop()); try { r.ctx.close(); } catch {}
-    const blob = new Blob(r.parts, { type: r.rec.mimeType || 'audio/webm' });
-    const live = ta.value;
-    if (blob.size < 2500) { ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); return; }
-    try {
-      const file = new File([blob], 'voice.' + (/mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm'), { type: blob.type.split(';')[0] });
-      const res = await window.JundAttach.askFile(file, {
-        system: 'You write down speech for a message box. Output ONLY the exact words spoken, in the language(s) spoken (Arabic in Arabic script, English in English), with normal punctuation. No notes, no quotes, nothing else. If nothing was said, output nothing.',
-        user: 'Write down what is said in this audio.', maxTokens: 4000,
-        onText: t => { ta.value = r.before + t.trim(); grow(ta); },
-      });
-      ta.value = (r.before + res.text.trim()).trim();
-    } catch (e) {
-      if (live.trim() === r.before.trim()) hint('✗ ' + J.errText(e));
-      ta.value = live;   // keep the live words if the AI could not be reached
-    }
+  r.finishing = () => {
+    r.finishing = null;
+    show(r); ta.value = ta.value.replace(/ …$/, '');
     ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); grow(ta);
+    if (r.err && !r.pieces.some(p => p.text)) hint('✗ ' + J.errText(r.err));
     if (andSend && ta.value.trim()) $('#as-send')?.click(); else ta.focus();
   };
-  try { r.rec.stop(); } catch {}
+  if (last) { last.rec.onstop = () => { closeBar(r); writePiece(r, last); }; try { last.rec.stop(); } catch { closeBar(r); r.finishing?.(); } }
+  else { closeBar(r); }
+  if (!last) maybeFinish(r);
 }
 function grow(t) { t.style.height = 'auto'; t.style.height = Math.min(180, t.scrollHeight) + 'px'; }
 function hint(t) { const h = $('#as-hint'); if (h) { h.textContent = t; setTimeout(() => { if (h.textContent === t) h.textContent = ''; }, 6000); } }
 
 window.JundDictate = { setup, start };
-// the Home box is drawn by assistant.js; set up once it exists
 const tryIt = () => { setup(); if (!$('#as-mic')?.dataset.dict) setTimeout(tryIt, 300); };
 tryIt();
 })();

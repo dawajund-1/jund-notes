@@ -286,15 +286,29 @@ function loadMedia(f) {
       $('#st-canvas')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }).catch(() => {
       const heic = /heic|heif/i.test(f.type + f.name);
-      const msg = heic ? '✗ This photo is in HEIC format, which the browser cannot open. In your gallery, share it as JPG, or take a screenshot of it and use that.' : '✗ This picture cannot be opened. Try another photo, or a screenshot of it.';
+      const msg = heic ? '✗ This HEIC photo could not be converted. Take a screenshot of it and use that.' : '✗ This picture cannot be opened. Try another photo, or a screenshot of it.';
       status(msg); window.JundCal?.toast(msg, 6000); window.JundReport?.problem('studio photo failed: ' + (f.type || 'no type') + ' ' + Math.round(f.size / 1024) + 'KB');
     });
   }
 }
+// iPhone and some Android cameras save photos as HEIC, which browsers cannot open: turn them into JPG here, on the phone
+const isHeic = f => /hei[cf]/i.test(f.type || '') || /\.hei[cf]$/i.test(f.name || '');
+function loadHeicTool() {
+  if (window.heic2any) return Promise.resolve(window.heic2any);
+  return loadHeicTool.p ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'vendor/heic2any.min.js'; sc.onload = () => window.heic2any ? ok(window.heic2any) : no(new Error('no converter')); sc.onerror = no; document.head.appendChild(sc); });
+}
+async function fromHeic(f) {
+  const conv = await loadHeicTool();
+  const out = await conv({ blob: f, toType: 'image/jpeg', quality: 0.9 });
+  return Array.isArray(out) ? out[0] : out;
+}
 async function openPicture(f, url) {
   const MAX = 2400;
   let src = null;
+  if (isHeic(f)) { status('Converting the HEIC photo…'); f = await fromHeic(f); URL.revokeObjectURL(url); url = URL.createObjectURL(f); }
   try { src = await createImageBitmap(f); } catch {}
+  // a photo with no file type that will not open may still be HEIC
+  if (!src && !isHeic(f)) { try { const j = await fromHeic(f); src = await createImageBitmap(j); } catch {} }
   if (!src) src = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = url; });
   const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
   if (!w || !h) throw new Error('empty');

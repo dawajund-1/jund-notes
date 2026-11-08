@@ -95,17 +95,30 @@ function persist() {
 // nothing coming: today as a 24-hour line, the five prayers marked on it, and a dot that moves with the time
 function dayClock() {
   const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
-  const pct = m => (m / 1440 * 100).toFixed(2);
+  const pct = m => (((m % 1440) + 1440) % 1440 / 1440 * 100).toFixed(2);
+  const AR = window.ZadLang === 'ar';
   const t = window.JundFeatures?.timesFor?.(iso(now)) || null;
-  const marks = t ? ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map(n => { const [h, m] = String(t[n] || '').split(':').map(Number); return Number.isFinite(h) ? { n, m: h * 60 + m, past: h * 60 + m <= mins } : null; }).filter(Boolean) : [];
-  const time = now.toLocaleTimeString(window.ZadLang === 'ar' ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' });
+  const tm = t ? window.JundFeatures?.timesFor?.(iso(new Date(+now + 864e5))) : null;
+  const toM = v => { const [h, m] = String(v || '').split(':').map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null; };
+  const marks = [];
+  if (t) {
+    for (const n of ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']) { const m = toM(t[n]); if (m != null) marks.push({ n, m, k: 'p' }); }
+    const sr = toM(t.Sunrise); if (sr != null) marks.push({ n: AR ? 'الضحى' : 'Duha', m: sr + 20, k: 'x' });   // Duha: about 20 minutes after sunrise
+    // the last third of the night: from Maghrib to tomorrow's Fajr, the last third begins at Fajr − night/3
+    const mg = toM(t.Maghrib), fj = toM((tm || t).Fajr);
+    if (mg != null && fj != null) { const night = fj + 1440 - mg; marks.push({ n: AR ? 'الثلث الأخير' : 'Last third', m: (fj + 1440 - night / 3) % 1440, k: 'x' }); }
+  }
+  marks.sort((a, b) => a.m - b.m);
+  marks.forEach((x, i) => { x.up = i % 2 === 1; x.past = x.m <= mins; });   // labels take turns above and below the line, so they never overlap
+  const hhmm = m => { const h = Math.floor(m / 60) % 24, mm = Math.round(m % 60); const d = new Date(); d.setHours(h, mm); return d.toLocaleTimeString(AR ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' }); };
+  const time = now.toLocaleTimeString(AR ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' });
   const left = 1440 - mins;
   return `<div class="dc" role="img" aria-label="Your day is clear">
     <div class="dc-top"><b>Your day is clear</b><span class="dc-now">${time}</span></div>
-    <div class="dc-line"><span class="dc-fill" style="width:${pct(mins)}%"></span>
-      ${marks.map(x => `<span class="dc-mark${x.past ? ' past' : ''}" style="inset-inline-start:${pct(x.m)}%"><i></i><small>${x.n}</small></span>`).join('')}
+    <div class="dc-line${marks.length ? ' has-marks' : ''}"><span class="dc-fill" style="width:${pct(mins)}%"></span>
+      ${marks.map(x => `<span class="dc-mark ${x.k}${x.past ? ' past' : ''}${x.up ? ' up' : ''}" style="inset-inline-start:${pct(x.m)}%" title="${hhmm(x.m)}"><i></i><small>${x.n}<em>${hhmm(x.m)}</em></small></span>`).join('')}
       <span class="dc-dot" style="inset-inline-start:${pct(mins)}%"></span></div>
-    <div class="dc-foot muted"><span>${window.ZadLang === 'ar' ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`}</span></div>
+    <div class="dc-foot muted"><span>${AR ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`}</span></div>
   </div>`;
 }
 async function renderHome() {
