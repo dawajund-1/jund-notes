@@ -1073,3 +1073,21 @@ a, .link { color: var(--accent); }
 .ws-list .ws-l { flex: 1; min-width: 0; }
 .ws-list small { display: block; color: var(--ink-2); font-size: .76rem; overflow-wrap: anywhere; }
 .ws-list em { font-style: normal; color: var(--ink-2); font-size: .74rem; font-variant-numeric: tabular-nums; }
+
+/* ---------- "it's working" (busy.js) ---------- */
+.is-working { position: relative; }
+.is-working::before { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-end: .4em; vertical-align: -.08em;
+  border: 2px solid color-mix(in srgb, var(--accent, #8CCBFF) 25%, transparent); border-top-color: var(--accent, #8CCBFF); border-radius: 50%;
+  animation: wk-spin .8s linear infinite; }
+.is-working { background: linear-gradient(90deg, currentColor 0%, currentColor 40%, var(--accent, #8CCBFF) 50%, currentColor 60%, currentColor 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: wk-shine 1.8s linear infinite; }
+.is-working::before { -webkit-text-fill-color: initial; }
+.is-working[data-sec]::after { content: " · " attr(data-sec); -webkit-text-fill-color: var(--muted, #8a8a8f); font-size: .85em; font-variant-numeric: tabular-nums; }
+@keyframes wk-spin { to { transform: rotate(360deg); } }
+@keyframes wk-shine { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+.net-bar { position: fixed; inset: 0 0 auto 0; height: 2px; z-index: 9999; pointer-events: none; opacity: 0; transition: opacity .3s; overflow: hidden; }
+.net-bar::after { content: ""; position: absolute; top: 0; bottom: 0; width: 35%; background: linear-gradient(90deg, transparent, var(--accent, #8CCBFF), transparent); animation: wk-bar 1.2s ease-in-out infinite; }
+body.net-busy .net-bar { opacity: 1; }
+@keyframes wk-bar { from { left: -35%; } to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .is-working, .is-working::before, .net-bar::after { animation-duration: 3s; } }
