@@ -24,6 +24,12 @@ function build() {
   el.innerHTML = `<aside class="dr-panel" role="dialog" aria-modal="true" aria-label="${L('Menu', 'القائمة')}">
       <div class="dr-top"><img src="icon-192.png" alt="" width="30" height="30"><b>${L('Mustatar', 'مستطر')}</b><button type="button" class="icon-btn dr-x" aria-label="${L('Close', 'إغلاق')}">✕</button></div>
       <button type="button" class="primary dr-new">＋ ${L('New chat', 'محادثة جديدة')}</button>
+      <nav class="dr-nav">
+        <button type="button" class="dr-item" data-nav-to="assistant"><span class="dr-ic">⌂</span><span class="dr-t">${L('Home', 'الرئيسية')}</span></button>
+        <button type="button" class="dr-item" data-nav-to="library"><span class="dr-ic">≡</span><span class="dr-t">${L('Notes', 'الملاحظات')}</span></button>
+        <button type="button" class="dr-item" data-nav-to="calendar"><span class="dr-ic">▦</span><span class="dr-t">${L('Calendar', 'التقويم')}</span></button>
+        <button type="button" class="dr-item" data-nav-to="studio"><span class="dr-ic">T</span><span class="dr-t">${L('Studio', 'الاستوديو')}</span></button>
+      </nav>
       <div class="dr-scroll">
         <div class="dr-h">${L('Projects', 'المشاريع')}</div><div class="dr-list" id="dr-projects"></div>
         <div class="dr-h">${L('Recent notes', 'آخر الملاحظات')}</div><div class="dr-list" id="dr-recent"></div>
@@ -36,6 +42,7 @@ function build() {
   $('.dr-x', el).onclick = close;
   $('.dr-new', el).onclick = () => { A()?.newChat(); J.show('assistant'); close(); setTimeout(() => $('#as-text')?.focus(), 200); };
   $('[data-to="settings"]', el).onclick = () => { J.show('settings'); close(); };
+  el.querySelectorAll('[data-nav-to]').forEach(b => b.onclick = () => { J.show(b.dataset.navTo); close(); });
   $('[data-to="habit"]', el).onclick = () => { close(); window.JundFeatures?.addHabit(); };
   // swipe in from the edge to open, swipe back to close
   let x0 = null;

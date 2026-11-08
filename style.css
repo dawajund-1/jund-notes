@@ -849,3 +849,10 @@ body.vx-open { overflow: hidden; }
 .dc-foot .np i { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
 .dc-foot .np b { color: var(--gold); font-weight: 600; }
 #screen-assistant .hm-card .dc { padding: 0; border: 0; background: none; } #screen-assistant .hm-card { padding: 12px 14px; }
+
+/* ---------- Home: no bottom bar, like Claude — only the message box; everything else is in the ☰ menu ---------- */
+body.on-home .tabbar { display: none; }
+body.on-home .as-dock { bottom: env(safe-area-inset-bottom, 0px); padding-bottom: 12px; }
+body.on-home main { padding-bottom: 0; }
+body.on-home #screen-assistant { padding-bottom: 160px; }
+.dr-nav { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
