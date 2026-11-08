@@ -195,6 +195,7 @@ async function widgetRoutes(req, env, h, path, url) {
       upcoming: (b.upcoming || []).slice(0, 12).map(x => ({ title: String(x.title || '').slice(0, 80), at: +x.at, end: +x.end || +x.at, timed: !!x.timed })),
       style: ['clear', 'dark', 'black', 'white'].includes(b.style) ? b.style : 'dark' };
     await env.PUSH.put('w:' + b.id, JSON.stringify(rec));
+    if (Array.isArray(b.feed)) await env.PUSH.put('f:' + b.id, JSON.stringify(b.feed.slice(0, 400).map(x => ({ t: String(x.t || '').slice(0, 120), d: String(x.d || ''), tm: String(x.tm || ''), r: +x.r, w: !!x.w, id: String(x.id || '').slice(0, 40), ty: String(x.ty || '') }))));
     return json({ ok: true }, 200, h);
   }
   if (path === '/widget') {
@@ -216,6 +217,31 @@ async function widgetRoutes(req, env, h, path, url) {
     return json({ place: rec.place.name, today, tomorrow, upcoming: rec.upcoming, style: rec.style || 'dark' }, 200, h);
   }
   return json({ error: 'not found' }, 404, h);
+}
+
+// the person's Mustatar calendar as an iCal feed, so the phone's own calendar (Google, Samsung, iPhone) shows it with alerts
+async function icsFeed(env, id) {
+  const list = await env.PUSH.get('f:' + id, 'json') || [];
+  const esc = t => String(t).replace(/[\;,]/g, m => '\\' + m).replace(/\n/g, '\\n');
+  const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mustatar//Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Mustatar', 'X-WR-TIMEZONE:Asia/Riyadh', 'REFRESH-INTERVAL;VALUE=DURATION:PT1H', 'X-PUBLISHED-TTL:PT1H'];
+  for (const e of list) {
+    if (!/^\d{4}-\d\d-\d\d$/.test(e.d)) continue;
+    const d = e.d.replace(/-/g, '');
+    lines.push('BEGIN:VEVENT', `UID:${e.id || d}@mustatar`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`, `SUMMARY:${esc(e.t)}`);
+    if (/^\d\d:\d\d$/.test(e.tm)) {
+      const [hh, mm] = e.tm.split(':').map(Number), endH = String(Math.min(23, hh + 1)).padStart(2, '0');
+      lines.push(`DTSTART;TZID=Asia/Riyadh:${d}T${e.tm.replace(':', '')}00`, `DTEND;TZID=Asia/Riyadh:${d}T${endH}${String(mm).padStart(2, '0')}00`);
+    } else {
+      const next = new Date(e.d + 'T12:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
+      lines.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${next.toISOString().slice(0, 10).replace(/-/g, '')}`);
+    }
+    if (e.w) lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${DAYS[new Date(e.d + 'T12:00:00Z').getUTCDay()]}`);
+    if (e.r >= 0) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(e.t)}`, `TRIGGER:-PT${Math.round(e.r)}M`, 'END:VALARM');
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return new Response(lines.join('\r\n'), { headers: { 'content-type': 'text/calendar; charset=utf-8', 'cache-control': 'max-age=900', 'access-control-allow-origin': '*' } });
 }
 
 // every minute: wake the phones that have a reminder due now
@@ -251,7 +277,31 @@ export default {
     if (req.method === 'GET' && path === '/') return json({ ok: true, app: 'jund-notes', version: 3, key: !!env.GEMINI_API_KEY, push: !!env.PUSH }, 200, h);
     if (path.startsWith('/push/')) return pushRoutes(req, env, h, path, url);
     if (path === '/widget' || path.startsWith('/widget/')) return widgetRoutes(req, env, h, path, url);
+    if (req.method === 'GET' && /^\/ics\/[a-f0-9]{16,64}\.ics$/.test(path)) return icsFeed(env, path.slice(5, -4));
     if (origin && !h['Access-Control-Allow-Origin'].startsWith(origin)) return json({ error: 'forbidden' }, 403, h);
+
+    /* ----- read another calendar (Google, Outlook, iCloud…) from its private iCal link ----- */
+    if (path === '/ical' && req.method === 'POST') {
+      const b = await req.json().catch(() => ({}));
+      let u = String(b.url || '').trim().replace(/^webcal:/i, 'https:');
+      if (!/^https:\/\/[^\s]{8,900}$/i.test(u)) return json({ error: 'bad link', code: 'bad' }, 400, h);
+      const r = await fetch(u, { headers: { 'user-agent': 'Mustatar calendar reader' }, cf: { cacheTtl: 900 } }).catch(() => null);
+      if (!r || !r.ok) return json({ error: 'could not open that calendar link', code: 'bad', status: r?.status || 0 }, 400, h);
+      const text = (await r.text()).slice(0, 3_000_000);
+      if (!/BEGIN:VCALENDAR/.test(text)) return json({ error: 'that link is not a calendar (iCal) link', code: 'bad' }, 400, h);
+      const name = (text.match(/X-WR-CALNAME:(.*)/) || [])[1]?.trim() || '';
+      const unfold = text.replace(/\r?\n[ \t]/g, '');
+      const evs = [];
+      for (const blk of unfold.split('BEGIN:VEVENT').slice(1)) {
+        const body = blk.split('END:VEVENT')[0];
+        const get = k => { const m = body.match(new RegExp('^' + k + '(;[^:\\n]*)?:(.*)$', 'm')); return m ? { p: m[1] || '', v: m[2].trim() } : null; };
+        const st = get('DTSTART'); if (!st) continue;
+        const en = get('DTEND'), sum = get('SUMMARY'), rr = get('RRULE'), uid = get('UID'), ex = [...body.matchAll(/^EXDATE[^:]*:(.*)$/gm)].map(m => m[1].trim());
+        evs.push({ uid: uid?.v || '', title: (sum?.v || '').replace(/\\([,;nN])/g, (_, c) => c === 'n' || c === 'N' ? ' ' : c).slice(0, 120), start: st.v, startTz: (st.p.match(/TZID=([^;]+)/) || [])[1] || '', end: en?.v || '', allDay: /VALUE=DATE/.test(st.p) || /^\d{8}$/.test(st.v), rrule: rr?.v || '', exdates: ex.slice(0, 50) });
+        if (evs.length >= 2000) break;
+      }
+      return json({ name, events: evs }, 200, h);
+    }
 
     /* ----- YouTube playlist and title (no AI needed) ----- */
     if (req.method === 'GET' && path === '/playlist') {

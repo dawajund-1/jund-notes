@@ -331,7 +331,7 @@ function widgetId() {
   return id;
 }
 async function widgetSync() {
-  if (!store.get('widgetOn') || !navigator.onLine) return;
+  if (!(store.get('widgetOn') || store.get('feedOn')) || !navigator.onLine) return;
   try {
     const base = (await (await fetch('server.json', { cache: 'no-cache' })).json()).url.replace(/\/$/, '');
     const up = [];
@@ -346,7 +346,7 @@ async function widgetSync() {
       }
     }
     const p = store.get('prayerPlace', { name: 'Makkah', lat: 21.4225, lon: 39.8262 });
-    await fetch(base + '/widget/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: widgetId(), place: { name: p.name, lat: p.lat, lon: p.lon }, upcoming: up.slice(0, 12), style: store.get('widgetStyle', 'clear') }) });
+    await fetch(base + '/widget/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: widgetId(), place: { name: p.name, lat: p.lat, lon: p.lon }, upcoming: up.slice(0, 12), style: store.get('widgetStyle', 'clear'), feed: events.filter(e => !e.ext && (e.repeat === 'weekly' || e.date >= addDays(today(), -7))).slice(0, 400).map(e => ({ t: e.title, d: e.date, tm: e.time || '', r: e.remind ?? -1, w: e.repeat === 'weekly', id: e.id, ty: e.type })) }) });
   } catch {}
 }
 async function widgetConnect() {
@@ -417,7 +417,7 @@ function upcoming(days = 7, max = 8) {
   for (let i = 0; i <= days; i++) { const d = addDays(today(), i); for (const e of on(d)) if (!isDone(e, d)) out.push({ e, d }); }
   return out.slice(0, max).map(x => ({ ...x, when: x.late ? 'Overdue' : when(x.d), time: hm(x.e.time), type: TYPES[x.e.type] || 'Task', color: colorOf(x.e.type) }));
 }
-window.JundCal = { pushSync, render, onLesson, merge, goToday, toast, upcoming, save: () => { save(); render(); }, addDays, today, open: (e, d) => openDialog(e ? events.find(x => x.id === e) : null, d || today()), events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
+window.JundCal = { pushSync, widgetSync, widgetId, render, onLesson, merge, goToday, toast, upcoming, save: () => { save(); render(); }, addDays, today, open: (e, d) => openDialog(e ? events.find(x => x.id === e) : null, d || today()), events: () => events, add: e => { events.push({ id: newId(), created: Date.now(), updated: Date.now(), repeat: 'none', remind: -1, ...e }); save(); } };
 banner();
 setTimeout(() => {
   const missed = checkReminders();

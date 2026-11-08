@@ -107,7 +107,7 @@ function dayLeft() {
   const now = new Date(), left = 1440 - (now.getHours() * 60 + now.getMinutes());
   return window.ZadLang === 'ar' ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`;
 }
-function dayClock() {
+function dayClock(todayItems = []) {
   const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
   const pct = m => (((m % 1440) + 1440) % 1440 / 1440 * 100).toFixed(2);
   const AR = window.ZadLang === 'ar';
@@ -122,15 +122,17 @@ function dayClock() {
     const mg = toM(t.Maghrib), fj = toM((tm || t).Fajr);
     if (mg != null && fj != null) { const night = fj + 1440 - mg; marks.push({ n: AR ? 'الثلث الأخير' : 'Last third', m: (fj + 1440 - night / 3) % 1440, k: 'x' }); }
   }
+  // today's own items (tasks, classes, meetings, other calendars) on the same line, in their colour
+  for (const x of todayItems) { const m = toM(x.e.time); if (m != null) marks.push({ n: x.e.title.length > 12 ? x.e.title.slice(0, 11) + '…' : x.e.title, m, k: 'e', c: x.color }); }
   marks.sort((a, b) => a.m - b.m);
-  marks.forEach((x, i) => { x.up = i % 2 === 1; x.past = x.m <= mins; });
+  let li = 0; marks.forEach(x => { x.past = x.m <= mins; if (x.k !== 'e') x.up = li++ % 2 === 1; });   // labels take turns above/below; your own items are just coloured marks (they are listed below)
   const nx = marks.find(x => x.k === 'p' && !x.past); if (nx) nx.next = true;   // passed: green · the coming prayer: yellow   // labels take turns above and below the line, so they never overlap
   const hhmm = m => { const h = Math.floor(m / 60) % 24, mm = Math.round(m % 60); const d = new Date(); d.setHours(h, mm); return d.toLocaleTimeString(AR ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' }); };
   const time = now.toLocaleTimeString(AR ? 'ar-SA' : 'en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const left = 1440 - mins;
   return `<div class="dc" role="img" aria-label="Today">
     <div class="dc-line${marks.length ? ' has-marks' : ''}"><span class="dc-fill" style="width:${pct(mins)}%"></span>
-      ${marks.map(x => `<span class="dc-mark ${x.k}${x.past ? ' past' : ''}${x.next ? ' next' : ''}${x.up ? ' up' : ''}" style="inset-inline-start:${pct(x.m)}%" title="${hhmm(x.m)}"><i></i><small>${x.n}<em>${hhmm(x.m)}</em></small></span>`).join('')}
+      ${marks.map(x => `<span class="dc-mark ${x.k}${x.past ? ' past' : ''}${x.next ? ' next' : ''}${x.up ? ' up' : ''}" style="inset-inline-start:${pct(x.m)}%${x.c ? `;--c:${x.c}` : ''}" title="${esc(x.n)} ${hhmm(x.m)}"><i></i>${x.k === 'e' ? '' : `<small>${x.n}<em>${hhmm(x.m)}</em></small>`}</span>`).join('')}
       <span class="dc-dot" style="inset-inline-start:${pct(mins)}%"></span></div>
     <div class="dc-foot muted">${nextPrayerText()}<span class="dc-now">${time}</span></div>
   </div>`;
@@ -150,7 +152,8 @@ async function renderHome() {
       <span class="tl-when${x.late ? ' late' : ''}"><span>${x.when}</span>${x.time ? `<b dir="ltr">${x.time}</b>` : ''}</span>
       <span class="tl-rail"><i style="--c:${x.color}"></i></span>
       <span class="tl-what"><b dir="auto">${esc(x.e.title)}</b><small style="color:${x.color}">${x.type}</small></span></button>`).join('')}</div>`
-    : dayClock();
+    : '';
+  { const td = window.JundCal?.today?.(); $('#hm-next').insertAdjacentHTML('afterbegin', dayClock(up.filter(x => !x.late && x.d === td && x.e.time))); }
   $('#hm-left').textContent = dayLeft();
   if (!up.length) $('#hm-brief').textContent = '· ' + (window.ZadLang === 'ar' ? 'يومك خالٍ' : 'Your day is clear');
   clearInterval(renderHome.tick); if (!up.length) renderHome.tick = setInterval(() => { const c = $('#hm-next .dc'); if (c) c.outerHTML = dayClock(); const l = $('#hm-left'); if (l) l.textContent = dayLeft(); }, 30000);

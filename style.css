@@ -1042,3 +1042,12 @@ a, .link { color: var(--accent); }
 #hm-hello.gone { opacity: 1; max-height: none; }
 .hm-card .pbar { padding-bottom: 0; }
 .hm-card .pbar .pc-row { margin-bottom: 4px; }
+
+/* the day line is always on top of Up next: prayers + today's own items; the list of what is coming sits under it */
+.hm-card:has(.dc) .pbar { display: none; }
+.hm-card .dc + .tl { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.dc-mark.e i { width: 9px; height: 9px; background: var(--c, var(--ink)); border: 0; border-radius: 3px; }
+.dc-mark.e small { color: var(--c, var(--ink-2)); }
+.ic-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .88rem; }
+.ic-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-steps { margin: 4px 0 10px; padding-inline-start: 18px; line-height: 1.6; }

@@ -59,3 +59,15 @@ window.paletteFor = function (familyKey) {
     '--tint-head': c(0, f.s, 40, 0.10),
   };
 };
+
+// This preset list belongs to students of Dar al-Hadith and Kulliyat al-Haram only. Everyone else starts with an empty
+// list, and the app builds their own subjects or projects from what they actually use (each one gets its own colour).
+(() => {
+  const get = k => { try { return JSON.parse(localStorage.getItem('jn_' + k)); } catch { return null; } };
+  const me = get('me') || {}, last = String(get('lastSubject') || '');
+  const theirs = /dar|hadith|kulliy|haram|الدار|الحديث|الكلية|الحرم/i.test(String(me.study || '')) || /^(dar|kul)-/.test(last) || get('presetSubjects') === true;
+  if (theirs) { try { localStorage.setItem('jn_presetSubjects', 'true'); } catch {} return; }
+  window.SUBJECTS = [];
+})();
+// a colour family for a subject the person created, picked so neighbours differ
+window.familyForName = name => { const keys = Object.keys(window.FAMILIES); let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return keys[h % keys.length]; };

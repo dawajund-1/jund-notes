@@ -189,11 +189,15 @@ function fillSubjects() {
 function renderPaletteSettings() {
   const box = $('#palette-list');
   const fams = window.FAMILIES;
-  box.innerHTML = window.SUBJECTS.map(s => {
+  // the preset list (if it is theirs) and the subjects / projects the person made themselves
+  const own = store.get('mySubjects', []).map(n => ({ id: 'mine:' + n, place: workMode() ? 'project' : 'mine', name: n, family: window.familyForName(n) }));
+  const all = [...window.SUBJECTS, ...own];
+  if (!all.length) { box.innerHTML = '<p class="muted">Your subjects or projects appear here after you make your first notes. Each gets its own colour.</p>'; return; }
+  box.innerHTML = all.map(s => {
     const pal = window.paletteFor(familyOf(s));
     return `<div class="pal-row">
       <span class="pal-chip" style="background:${pal['--sub-head']}"></span>
-      <span style="flex:1;min-width:0">${esc(s.name)} <small class="muted">(${esc(s.place)})</small></span>
+      <span style="flex:1;min-width:0">${esc(s.name)} ${s.place === 'mine' || s.place === 'project' ? '' : `<small class="muted">(${esc(s.place)})</small>`}</span>
       <select data-sub="${s.id}" aria-label="Colour of ${esc(s.name)}">${Object.entries(fams).map(([k, f]) => `<option value="${k}" ${k === familyOf(s) ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>
     </div>`;
   }).join('') + `<div id="pal-warn" class="muted"></div>`;
@@ -203,7 +207,7 @@ function renderPaletteSettings() {
   }));
   // warn about repeats inside one place
   const seen = {}; const dup = [];
-  for (const s of window.SUBJECTS) { const k = s.place + familyOf(s); if (seen[k]) dup.push(`${seen[k]} and ${s.name}`); else seen[k] = s.name; }
+  for (const s of all) { const k = s.place + familyOf(s); if (seen[k]) dup.push(`${seen[k]} and ${s.name}`); else seen[k] = s.name; }
   $('#pal-warn').textContent = dup.length ? '⚠ Same colour twice in one place: ' + dup.join(', ') : '';
 }
 
@@ -744,13 +748,14 @@ let controller = null;
 
 function subjectInfo() {
   const v = $('#subject').value;
-  if (v.startsWith('mine:')) { const name = v.slice(5); return { id: 'other:' + name, name, place: '', family: 'slate' }; }
+  const famOf = name => store.get('families', {})['mine:' + name] || window.familyForName(name);
+  if (v.startsWith('mine:')) { const name = v.slice(5); return { id: 'other:' + name, name, place: '', family: famOf(name) }; }
   if (v === 'other') {
     const name = $('#custom-subject').value.trim() || (workMode() ? 'General' : 'Other subject');
     // remember it, so next time it is in the list
     const mine = store.get('mySubjects', []);
     if (!mine.includes(name)) { mine.push(name); store.set('mySubjects', mine); store.set('lastSubject', 'mine:' + name); setTimeout(fillSubjects, 0); }
-    return { id: 'other:' + name, name, place: '', family: 'slate' };
+    return { id: 'other:' + name, name, place: '', family: famOf(name) };
   }
   const s = subjectById(v);
   return { ...s, family: familyOf(s) };
@@ -2007,7 +2012,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '7.4';
+const APP_VERSION = '7.5';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
