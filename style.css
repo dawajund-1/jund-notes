@@ -686,7 +686,6 @@ body.vx-open { overflow: hidden; }
 #screen-assistant:not(.talking) .home-head .screen-title { font-size: 1.6rem; margin: 4px 0 8px; }
 #screen-assistant:not(.talking) .pbar { justify-content: center; text-align: center; margin-bottom: 18px; }
 #screen-assistant:not(.talking) .as-log { flex: 0; margin: 0; }
-#screen-assistant:not(.talking) .as-input { position: static; padding: 4px 0; }
 #screen-assistant:not(.talking) .as-try { justify-content: center; margin: 8px 0 4px; order: 0; }
 /* the actions become a small row of pills under the box */
 #screen-assistant .quick { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 12px 0 22px; }
@@ -700,3 +699,45 @@ body.vx-open { overflow: hidden; }
 #screen-assistant.talking .as-log { padding-top: 6px; }
 #screen-assistant .as-try { display: none; }
 #screen-assistant .quick { gap: 6px; flex-wrap: nowrap; } #screen-assistant .q { padding: 6px 10px 6px 8px; font-size: .78rem; gap: 4px; } #screen-assistant .qi svg { width: 16px; height: 16px; } #screen-assistant .qi { width: 18px; height: 18px; }
+
+/* ================= Home v6 — Claude-like, calm, Islamic =================
+   top → bottom: today's verse · greeting + prayer · Up next (timeline) · [space] · actions · message box */
+#screen-assistant { display: flex; flex-direction: column; min-height: calc(100dvh - 150px - env(safe-area-inset-bottom)); }
+#screen-assistant .remind { order: 0; text-align: center; margin: 4px 0 18px; padding: 6px 0 16px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--gold) 22%, transparent); }
+#screen-assistant .remind .rm-verse { font-size: 1.45rem; }
+#screen-assistant:not(.talking) .home-head { text-align: start; margin: 0 0 18px; }
+#screen-assistant:not(.talking) .home-head .screen-title { font-size: 1.55rem; margin: 2px 0 6px; }
+#screen-assistant .home-head .pbar { margin: 0; justify-content: flex-start; text-align: start; font-size: .9rem; }
+#screen-assistant .sec-t { font-size: .78rem; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+#screen-assistant .hm-sec { margin-bottom: 12px; }
+/* timeline */
+.tl { position: relative; margin-top: 8px; }
+.tl::before { content: ''; position: absolute; top: 10px; bottom: 10px; inset-inline-start: 74px; width: 2px; background: var(--line); border-radius: 2px; }
+.tl-row { display: grid; grid-template-columns: 64px 22px 1fr; align-items: start; gap: 0 4px; width: 100%; padding: 7px 0; background: none; border: 0; color: var(--ink); font: inherit; text-align: start; min-height: 0; }
+.tl-when { font-size: .8rem; color: var(--ink-2); line-height: 1.3; padding-top: 1px; }
+.tl-when small { display: block; color: var(--ink); font-weight: 600; font-size: .8rem; }
+.tl-when.late { color: var(--danger); }
+.tl-dot { width: 10px; height: 10px; border-radius: 50%; margin: 4px 0 0 6px; background: var(--line); box-shadow: 0 0 0 4px var(--bg); position: relative; z-index: 1; }
+[dir="rtl"] .tl-dot { margin: 4px 6px 0 0; }
+.tl-what { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tl-what b { font-weight: 600; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-what small { font-size: .74rem; color: var(--ink-2); }
+.tl-empty .tl-dot { background: var(--gold); opacity: .6; }
+.tl-empty b { font-weight: 500; color: var(--ink-2); }
+#screen-assistant .habits { margin-top: 2px; }
+/* the dock: actions + message box, at the bottom */
+.as-dock { margin-top: auto; position: sticky; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(to bottom, transparent, var(--bg) 18px); padding-top: 14px; z-index: 5; }
+#screen-assistant .as-dock .quick { display: flex; justify-content: center; gap: 6px; margin: 0 0 10px; flex-wrap: nowrap; }
+#screen-assistant .as-input { position: static; display: flex; flex-direction: column; gap: 6px; padding: 12px 12px 8px; border: 1px solid color-mix(in srgb, var(--ink-2) 28%, transparent); border-radius: 22px; background: var(--surface); box-shadow: 0 8px 28px rgba(0, 0, 0, .28); }
+#screen-assistant .as-input:focus-within { border-color: color-mix(in srgb, var(--gold) 55%, transparent); }
+#screen-assistant .as-input textarea { width: 100%; border: 0; background: transparent; padding: 2px 4px; min-height: 30px; font-size: 1rem; line-height: 1.5; outline: none; box-shadow: none; resize: none; color: var(--ink); }
+.as-tools { display: flex; align-items: center; gap: 4px; }
+.as-sp { flex: 1; }
+.tool-btn { width: 38px; height: 38px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink-2); }
+.tool-btn:hover, .tool-btn:active { color: var(--ink); background: var(--bg); }
+.as-go { width: 38px; height: 38px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 12px; border: 0; background: var(--gold); color: #1b1405; }
+.as-go:disabled { opacity: .5; }
+#screen-assistant .as-hint:empty { display: none; }
+#screen-assistant.talking .as-dock .quick { display: none; }
+#screen-assistant.talking .tl, #screen-assistant.talking .hm-sec { display: none; }
+#screen-assistant .as-input { align-items: stretch; } .as-tools { align-self: stretch; }

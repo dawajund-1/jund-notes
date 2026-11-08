@@ -41,8 +41,8 @@ function chip(where, file, extra) {
 let homeFile = null;
 function homeSetup() {
   const box = $('.as-input'); if (!box || $('#as-att')) return;
-  const b = document.createElement('button'); b.type = 'button'; b.className = 'icon-btn'; b.id = 'as-att'; b.innerHTML = CLIP; b.setAttribute('aria-label', L('Attach a file', 'أرفق ملفًا'));
-  box.insertBefore(b, $('#as-text'));
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'tool-btn'; b.id = 'as-att'; b.innerHTML = CLIP; b.setAttribute('aria-label', L('Attach a file', 'أرفق ملفًا'));
+  const tools = box.querySelector('.as-tools'); tools ? tools.prepend(b) : box.insertBefore(b, $('#as-text'));
   const bar = document.createElement('div'); bar.className = 'att-bar'; bar.id = 'as-attbar'; bar.hidden = true; bar.setAttribute('data-noi18n', '');
   box.before(bar);
   b.onclick = () => picker(f => {

@@ -51,29 +51,29 @@ function build() {
   const s = $('#screen-assistant');
   s.innerHTML = `
     <div class="remind" id="hm-remind" hidden></div>
-    <div class="home-head"><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
+    <div class="home-head"><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1><div class="pbar" id="hm-prayer"></div></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="intro due" id="rec-banner" hidden></div>
-    <div class="pbar" id="hm-prayer"></div>
+    <div class="chips hm-study" id="hm-study" hidden></div>
+    <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><button type="button" class="link" data-go="calendar">Calendar</button></div>
+      <div class="upnext" id="hm-next"></div></div>
+    <div class="hm-sec" id="hm-habits-wrap"><div class="habits" id="hm-habits"></div></div>
     <div class="hm-sec" id="hm-recent-wrap" hidden><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
     <div class="as-try" id="as-try"></div>
-    <div class="as-input">
-      <button type="button" class="icon-btn as-mic" id="as-mic" aria-label="Talk with Mustatar"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-      <textarea id="as-text" rows="1" dir="auto" placeholder="Message Mustatar…"></textarea>
-      <button type="button" class="primary" id="as-send">Send</button>
-    </div>
-    <div class="muted as-hint" id="as-hint"></div>
+    <div class="as-dock">
     <div class="quick" id="hm-quick">
       <button type="button" class="q q-rec" id="hm-rec"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Record</button>
       <button type="button" class="q" id="hm-yt"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM10.5 9.5v5l4-2.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>YouTube</button>
       <button type="button" class="q" id="hm-task"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5l4 4 10-10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Task</button>
       <button type="button" class="q" id="hm-focus"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 1.5M10 3h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Focus</button>
     </div>
-    <div class="chips hm-study" id="hm-study" hidden></div>
-    <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><button type="button" class="link" data-go="calendar">Calendar</button></div>
-      <div class="upnext" id="hm-next"></div></div>
-    <div class="hm-sec" id="hm-habits-wrap"><div class="habits" id="hm-habits"></div></div>`;
+      <div class="as-input">
+        <textarea id="as-text" rows="1" dir="auto" placeholder="Message Mustatar…"></textarea>
+        <div class="as-tools"><button type="button" class="tool-btn as-mic" id="as-mic" aria-label="Talk with Mustatar"><svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button><span class="as-sp"></span><button type="button" class="as-go" id="as-send" aria-label="Send"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+      </div>
+      <div class="muted as-hint" id="as-hint"></div>
+    </div>`;
   $('#as-send').onclick = send;
   setTimeout(() => window.JundAttach?.homeSetup(), 0);
   $('#as-text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); send(); } });
@@ -102,10 +102,12 @@ async function renderHome() {
   const ask = $('#hm-about');
   if (ask) ask.hidden = !!J.me().name;
   const up = window.JundCal?.upcoming(7, 8) || [];
-  $('#hm-next').innerHTML = up.length ? up.map(x => `<button type="button" class="nx" data-ev="${x.e.id}" data-d="${x.d}" style="border-top-color:${x.color}">
-      <span class="nx-w" style="${x.late ? 'color:var(--danger)' : ''}">${x.when}${x.time ? ' · ' + x.time : ''}</span>
-      <b dir="auto">${esc(x.e.title)}</b><span class="nx-t" style="color:${x.color}">${x.type}</span></button>`).join('')
-    : `<div class="muted nx-empty">Nothing coming up. Tell me below, e.g. “exam on Tuesday at 9”.</div>`;
+  // a timeline: when on one side, a dot on the line, what on the other
+  $('#hm-next').innerHTML = up.length ? `<div class="tl">${up.slice(0, 5).map(x => `<button type="button" class="nx tl-row" data-ev="${x.e.id}" data-d="${x.d}">
+      <span class="tl-when${x.late ? ' late' : ''}">${x.when}${x.time ? `<small>${x.time}</small>` : ''}</span>
+      <span class="tl-dot" style="background:${x.color}"></span>
+      <span class="tl-what"><b dir="auto">${esc(x.e.title)}</b><small style="color:${x.color}">${x.type}</small></span></button>`).join('')}</div>`
+    : `<div class="tl tl-empty"><div class="tl-row"><span class="tl-when">${'Today'}</span><span class="tl-dot"></span><span class="tl-what"><b>Your day is clear</b><small>Tell me below, e.g. “exam on Tuesday at 9”</small></span></div></div>`;
   $$('.nx', $('#hm-next')).forEach(b => b.onclick = () => window.JundCal.open(b.dataset.ev, b.dataset.d));
   const ls = (await J.allLessons()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   $('#hm-recent-wrap').hidden = true;
