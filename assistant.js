@@ -11,20 +11,35 @@ const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 let log = store.get('assistantLog', []);
+let chatId = store.get('chatId') || ('c' + Date.now().toString(36));
+// past conversations, newest first: [{ id, title, t, log }]
+const chats = () => store.get('chats', []);
+function saveChat() {
+  if (!log.length) return;
+  const all = chats().filter(c => c.id !== chatId);
+  const first = log.find(m => m.who === 'me')?.text || 'Chat';
+  all.unshift({ id: chatId, title: first.replace(/^📎[^\n]*\n/, '📎 ').slice(0, 60), t: Date.now(), log: log.slice(-60) });
+  store.set('chats', all.slice(0, 50));
+}
+function newChat() { saveChat(); chatId = 'c' + Date.now().toString(36); store.set('chatId', chatId); log = []; persist(); if (built) render(); }
+function openChat(id) {
+  const c = chats().find(x => x.id === id); if (!c) return;
+  saveChat(); chatId = c.id; store.set('chatId', chatId); log = c.log || []; persist(); if (built) render();
+  setTimeout(() => $('#as-log')?.lastElementChild?.scrollIntoView({ block: 'end' }), 50);
+}
+function deleteChat(id) { store.set('chats', chats().filter(c => c.id !== id)); if (id === chatId) { chatId = 'c' + Date.now().toString(36); store.set('chatId', chatId); log = []; persist(); if (built) render(); } }
 let busy = false, built = false;
 
 function build() {
   built = true;
   const s = $('#screen-assistant');
   s.innerHTML = `
-    <div class="row-between home-head"><div><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
-      <button type="button" class="ghost small" id="as-clear">New chat</button></div>
+    <div class="home-head"><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="intro due" id="rec-banner" hidden></div>
     <div class="pbar" id="hm-prayer"></div>
     <div class="quick" id="hm-quick">
       <button type="button" class="q q-rec" id="hm-rec"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Record</button>
-      <label class="q"><input type="file" id="hm-file" multiple accept=".txt,.pdf,text/plain,application/pdf,audio/*,video/*,image/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.flac,.mp4,.mov,.3gp,.webm"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 15V4m0 0 4 4m-4-4-4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Upload</label>
       <button type="button" class="q" id="hm-yt"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM10.5 9.5v5l4-2.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>YouTube</button>
       <button type="button" class="q" id="hm-task"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 12.5l4 4 10-10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Task</button>
       <button type="button" class="q" id="hm-focus"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 1.5M10 3h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Focus</button>
@@ -47,9 +62,7 @@ function build() {
   setTimeout(() => window.JundAttach?.homeSetup(), 0);
   $('#as-text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); send(); } });
   $('#as-text').addEventListener('input', () => { const t = $('#as-text'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; });
-  $('#as-clear').onclick = () => { log = []; persist(); render(); };
   $('#as-mic').onclick = () => window.JundVoice ? window.JundVoice.general() : listen();
-  $('#hm-file').onchange = async e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) { J.show('new'); await J.addFiles(f); } };
   $('#hm-yt').onclick = () => { J.show('new'); setTimeout(() => document.querySelector('#yt').focus(), 50); };
   $('#hm-rec').onclick = () => window.JundFeatures?.record();
   $('#hm-focus').onclick = () => window.JundFeatures?.openFocus();
@@ -58,7 +71,7 @@ function build() {
 }
 
 function persist() {
-  store.set('assistantLog', log.slice(-60));
+  store.set('assistantLog', log.slice(-60)); store.set('chatId', chatId); saveChat();
   clearTimeout(persist.t);
   persist.t = setTimeout(() => J.cloud.putData('assistant', { saved: Date.now(), log: log.slice(-60) }).catch(() => {}), 3000);
 }
@@ -70,7 +83,6 @@ async function renderHome() {
   window.JundFeatures?.home(); window.JundStudy?.home(); window.JundReminder?.render();
   const nm = J.me().name ? ', ' + J.me().name : '';
   $('#hm-hello').textContent = (h < 12 ? 'Good morning' : h < 18 ? 'Salam' : 'Good evening') + nm;
-  $('#as-clear').hidden = !log.length;
   const ask = $('#hm-about');
   if (ask) ask.hidden = !!J.me().name;
   const up = window.JundCal?.upcoming(7, 8) || [];
@@ -219,7 +231,7 @@ function listen() {
   r.start();
 }
 
-window.JundAssistant = { open() { if (!built) build(); render(); }, home: () => renderHome(), context,
+window.JundAssistant = { open() { if (!built) build(); render(); }, home: () => renderHome(), context, chats, newChat, openChat, deleteChat, currentChat: () => chatId,
   addTalk(turns) { if (!turns?.length) return; turns.forEach(t => log.push({ who: t.who === 'me' ? 'me' : 'ai', text: t.text })); persist(); render(); } };
 J.cloud.getData('assistant').then(r => { if (r?.log && (r.saved || 0) > 0 && !log.length) { log = r.log; render(); } }).catch(() => {});
 })();

@@ -12,11 +12,26 @@ const hm12 = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); 
 const toast = (t, ms) => window.JundCal?.toast(t, ms);
 
 /* ---------- Hijri date (built into the phone, Umm al-Qura) ---------- */
-function hijri(d = new Date(), short = false) {
+// Some phones know the Umm al-Qura numbers but not the month names (they showed "May 28, 1448 BC"),
+// so only the numbers are taken from the phone and the names and "AH" are added here.
+const HIJRI_MONTHS = ['Muharram', 'Safar', 'Rabiʻ I', 'Rabiʻ II', 'Jumada I', 'Jumada II', 'Rajab', 'Shaʻban', 'Ramadan', 'Shawwal', 'Dhuʻl-Qiʻdah', 'Dhuʻl-Hijjah'];
+function hijriParts(d) {
   try {
-    return new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', short ? { day: 'numeric' } : { day: 'numeric', month: 'long', year: 'numeric' })
-      .format(d).replace(/ AH$/, ' AH');
-  } catch { return ''; }
+    const p = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura-nu-latn', { day: 'numeric', month: 'numeric', year: 'numeric' }).formatToParts(d);
+    const g = t => parseInt(p.find(x => x.type === t)?.value, 10);
+    const y = g('year') || g('relatedYear'), m = g('month'), dd = g('day');
+    if (y > 1300 && y < 1700 && m >= 1 && m <= 12 && dd >= 1 && dd <= 30) return { y, m, d: dd };
+  } catch {}
+  // the phone has no Hijri calendar: the standard arithmetic one (may differ by a day from Umm al-Qura)
+  const jd = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12).getTime() / 864e5 + 2440587.5);
+  let l = jd - 1948440 + 10632; const n = Math.floor((l - 1) / 10631); l = l - 10631 * n + 354;
+  const j = Math.floor((10985 - l) / 5316) * Math.floor((50 * l) / 17719) + Math.floor(l / 5670) * Math.floor((43 * l) / 15238);
+  l = l - Math.floor((30 - j) / 15) * Math.floor((17719 * j) / 50) - Math.floor(j / 16) * Math.floor((15238 * j) / 43) + 29;
+  const m = Math.floor((24 * l) / 709);
+  return { y: 30 * n + j - 30, m, d: l - Math.floor((709 * m) / 24) };
+}
+function hijri(d = new Date(), short = false) {
+  try { const h = hijriParts(d); return short ? String(h.d) : `${h.d} ${HIJRI_MONTHS[h.m - 1]} ${h.y} AH`; } catch { return ''; }
 }
 
 /* ---------- prayer times (aladhan.com, Umm al-Qura method), kept for the month ---------- */
