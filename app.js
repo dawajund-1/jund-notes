@@ -1659,15 +1659,21 @@ function renderChat() {
   $('#chat-log').innerHTML = (current.chat || []).map(m => `<div class="msg ${m.who}">${esc(m.text)}</div>`).join('');
 }
 $('#chat-send').onclick = async () => {
-  const ask = $('#chat-text').value.trim();
+  const attName = window.JundAttach?.chatFileName() || '';
+  const ask = $('#chat-text').value.trim() || (attName ? 'أضف محتوى الملف المرفق إلى الملاحظات في مكانه المناسب.' : '');
   if (!ask || !current) return;
-  current.chat.push({ who: 'me', text: ask }); renderChat();
+  current.chat.push({ who: 'me', text: (attName ? '📎 ' + attName + '\n' : '') + ask }); renderChat();
   $('#chat-text').value = '';
   $('#chat-send').disabled = true; $('#chat-progress').hidden = false;
   $('#chat-progress-text').textContent = 'Working…';
   const lock = await keepAwake();
+  let extra = '';
+  if (attName) {
+    try { extra = await window.JundAttach.chatExtract(t => { $('#chat-progress-text').textContent = t; }); }
+    catch (e) { current.chat.push({ who: 'ai', text: '✗ ' + errText(e) }); renderChat(); lock?.release?.(); $('#chat-send').disabled = false; $('#chat-progress').hidden = true; return; }
+  }
   if (engineKind() === 'phone') {
-    try { await editOnPhone(ask); }
+    try { await editOnPhone(ask + extra); }
     catch (e) { current.chat.push({ who: 'ai', text: '✗ ' + e.message }); renderChat(); }
     finally { lock?.release?.(); $('#chat-send').disabled = false; $('#chat-progress').hidden = true; }
     return;
@@ -1684,7 +1690,7 @@ ${current.transcript}
 ${JSON.stringify(current.notes)}
 الملاحظات الحالية>>>
 
-${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طلب الطالب الآن: ${ask}`;
+${history ? 'ما سبق في المحادثة:\n' + history + '\n\n' : ''}طلب الطالب الآن: ${ask}${extra}`;
     const r = await callBig({
       system: current.lang === 'en'
         ? window.JUND_METHOD_EN + '\n\n' + window.JUND_EDIT_RULES_EN
@@ -1993,7 +1999,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '5.2';
+const APP_VERSION = '5.3';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
@@ -2015,7 +2021,7 @@ $('#lib-search').addEventListener('input', () => renderLibrary());
 // start transcribing a YouTube link from anywhere (the Assistant, a share)
 function startYouTube(url) { show('new'); $('#yt').value = url; $('#yt-go').click(); }
 // shared with calendar.js, studio.js and offline.js
-window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
+window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, shrinkImage, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
   saveLesson, download, safeName, addFiles, startYouTube, me, keepAwake, engineKind, splitText, cleanHeard, current: () => current };
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };

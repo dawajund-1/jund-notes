@@ -6,12 +6,14 @@
 //   GET  /ytmeta      a YouTube link → its title
 //   POST /report      a problem, a piece of feedback or a daily usage count from the app (no note contents)
 //   POST /owner/reports, /owner/delete   the app owner's view of those reports (needs the owner code)
+//   POST /ask-file    a question about one attached file (photo, PDF, audio, video, text)
 //   POST /ask-voice   a short spoken question (+ the file being discussed) → what was heard and the answer
 
 const ALLOWED = ['https://mustatar-app.github.io', 'https://dawajund-1.github.io'];
 let G = 'https://generativelanguage.googleapis.com';  // GEMINI_BASE replaces it only in local tests
 const WRITE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash'];
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
+const FILE_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const VOICE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 const OWNER_HASH = 'acbe7ee98a566ab6ed2537fc1d67662eddda3739d19aedde6ee8f89f223fe602';   // sha-256 of the owner code (the code itself is not stored here)
 const MAX_BODY = 900_000;            // characters of text: about 150 pages
@@ -301,6 +303,20 @@ export default {
       const want = items.filter(x => x.k === 'feedback' || x.k === 'error').sort((a, z) => z.t - a.t).slice(0, 60);
       await Promise.all(want.map(async x => { try { x.full = JSON.parse(await env.PUSH.get(x.key)); } catch {} }));
       return json({ items }, 200, h);
+    }
+
+    /* ----- a question about one attached file ----- */
+    if (path === '/ask-file') {
+      const raw = await req.text();
+      if (raw.length > 22_000_000) return json({ error: 'too long', code: 'toolong' }, 413, h);
+      let b; try { b = JSON.parse(raw); } catch { return json({ error: 'bad request' }, 400, h); }
+      const mime = String(b.mime || '').split(';')[0].toLowerCase();
+      if (!b.file || !/^(image\/[\w.+-]+|application\/pdf|audio\/[\w.+-]+|video\/[\w.+-]+|text\/[\w.+-]+)$/.test(mime)) return json({ error: 'this kind of file is not supported', code: 'bad' }, 400, h);
+      const filePart = mime.startsWith('text/')
+        ? { text: 'ATTACHED FILE (' + String(b.name || '').slice(0, 80) + '):\n' + new TextDecoder().decode(Uint8Array.from(atob(b.file), c => c.charCodeAt(0))).slice(0, 400000) }
+        : { inlineData: { mimeType: mime, data: b.file } };
+      return generate(env, h, { models: FILE_MODELS, system: String(b.system || ''), maxTokens: Math.min(Number(b.maxTokens) || 8000, 30000), wantJson: !!b.json, wait: 60000,
+        variants: [{ parts: [filePart, { text: String(b.user || '').slice(0, 300000) }], temperature: 0.3 }] });
     }
 
     /* ----- a short spoken question → what was heard + the answer (basic voice) ----- */

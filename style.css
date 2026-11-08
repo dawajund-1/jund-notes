@@ -633,3 +633,12 @@ body.vx-open { overflow: hidden; }
 .ow-tops { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; }
 .ow-tops span { border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
 .update-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 80; background: var(--gold); color: #1b1405; border: 0; border-radius: 999px; padding: 10px 18px; font: inherit; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+
+/* ---------- 📎 attachments in message boxes ---------- */
+.att-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.att-bar[hidden] { display: none; }
+.att-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 6px 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13.5px; }
+.att-chip small { color: var(--ink-2); }
+.att-x { border: 0; background: transparent; color: var(--ink-2); font-size: 14px; padding: 2px 6px; }
+.att-tip { flex-basis: 100%; font-size: 12.5px; }
+#as-att, #chat-att { flex: none; }

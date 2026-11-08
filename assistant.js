@@ -44,6 +44,7 @@ function build() {
     </div>
     <div class="muted as-hint" id="as-hint"></div>`;
   $('#as-send').onclick = send;
+  setTimeout(() => window.JundAttach?.homeSetup(), 0);
   $('#as-text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); send(); } });
   $('#as-text').addEventListener('input', () => { const t = $('#as-text'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; });
   $('#as-clear').onclick = () => { log = []; persist(); render(); };
@@ -151,15 +152,18 @@ Rules:
 - Keep "reply" short. Do not repeat the whole calendar unless asked; for "what do I have", list the items briefly with day and time.`;
 
 async function send() {
-  const t = $('#as-text').value.trim();
+  const att = window.JundAttach?.homeFile();
+  const t = $('#as-text').value.trim() || (att ? (window.ZadLang === 'ar' ? 'ما في هذا الملف؟ لخّصه باختصار.' : 'What is in this file? Summarise it briefly.') : '');
   if (!t || busy) return;
   busy = true; $('#as-send').disabled = true;
-  log.push({ who: 'me', text: t }); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
+  log.push({ who: 'me', text: (att ? '📎 ' + att.name + '\n' : '') + t }); if (att) window.JundAttach.clearHome(); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
   const pend = { who: 'ai', text: '…' }; log.push(pend); render();
   try {
     const history = log.slice(-12, -2).map(m => `${m.who === 'me' ? 'Student' : 'You'}: ${m.text}`).join('\n');
     const user = `${await context(t)}\n\nRECENT CHAT:\n${history || '(start)'}\n\nThe student now says: ${t}`;
-    const r = await J.callServer({ system: SYSTEM(), user, maxTokens: 3000, onText: () => { pend.text = 'Thinking…'; } });
+    const r = att
+      ? await window.JundAttach.askFile(att, { system: SYSTEM(), user: user + '\n\n(The file above is attached to this message. Read it to answer; if it has dates, times or tasks and the student asks, add them with actions.)', json: true, maxTokens: 6000, onText: () => { pend.text = 'Reading the file…'; } })
+      : await J.callServer({ system: SYSTEM(), user, maxTokens: 3000, onText: () => { pend.text = 'Thinking…'; } });
     const out = J.parseJSON(r.text);
     pend.text = out.reply || 'Done.';
     pend.done = apply(out.actions || []);
