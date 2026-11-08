@@ -37,11 +37,13 @@ public final class WidgetData {
         int[] big = m.getAppWidgetIds(new ComponentName(ctx, DaftarWidget.class));
         int[] small = m.getAppWidgetIds(new ComponentName(ctx, PrayerWidget.class));
         int[] day = m.getAppWidgetIds(new ComponentName(ctx, DayWidget.class));
+        int[] wis = m.getAppWidgetIds(new ComponentName(ctx, WisdomWidget.class));
         new Thread(() -> {
             JSONObject data = fetch(ctx);
             for (int id : big) m.updateAppWidget(id, draw(ctx, data, false));
             for (int id : small) m.updateAppWidget(id, draw(ctx, data, true));
             for (int id : day) m.updateAppWidget(id, drawDay(ctx, data));
+            for (int id : wis) m.updateAppWidget(id, drawWisdom(ctx, data));
         }).start();
     }
 
@@ -76,6 +78,29 @@ public final class WidgetData {
     private static int minutes(String hhmm) {
         String[] t = hhmm.substring(0, 5).split(":");
         return Integer.parseInt(t[0]) * 60 + Integer.parseInt(t[1]);
+    }
+
+    /** The reminder widget: one item from the list the app sends, a new one every 3 hours. */
+    static RemoteViews drawWisdom(Context ctx, JSONObject data) {
+        String style = data == null ? "clear" : data.optString("style", "clear");
+        boolean light = "white".equals(style);
+        RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.widget_wisdom);
+        int bg = "dark".equals(style) ? R.drawable.widget_bg_dark : "black".equals(style) ? R.drawable.widget_bg_black : light ? R.drawable.widget_bg_white : R.drawable.widget_bg_clear;
+        v.setInt(R.id.w_root, "setBackgroundResource", bg);
+        v.setTextColor(R.id.w_wis, light ? 0xFF111113 : 0xFFFFFFFF);
+        v.setTextColor(R.id.w_wis_src, light ? 0xFF6B6B73 : 0xB3FFFFFF);
+        Intent open = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+        if (open != null) v.setOnClickPendingIntent(R.id.w_root, PendingIntent.getActivity(ctx, 3, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        JSONArray list = data == null ? null : data.optJSONArray("wisdom");
+        if (list == null || list.length() == 0) {
+            v.setTextViewText(R.id.w_wis, "Mustatar");
+            v.setTextViewText(R.id.w_wis_src, data == null ? "Open Mustatar \u2192 Settings \u2192 Connect widget" : "");
+            return v;
+        }
+        int i = (int) ((System.currentTimeMillis() / (3L * 3600000L)) % list.length());
+        JSONObject it = list.optJSONObject(i);
+        if (it != null) { v.setTextViewText(R.id.w_wis, it.optString("t")); v.setTextViewText(R.id.w_wis_src, it.optString("s")); }
+        return v;
     }
 
     /** The day widget: header (next prayer) + a picture of today's line. */

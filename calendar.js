@@ -346,7 +346,7 @@ async function widgetSync() {
       }
     }
     const p = store.get('prayerPlace', { name: 'Makkah', lat: 21.4225, lon: 39.8262 });
-    await fetch(base + '/widget/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: widgetId(), place: { name: p.name, lat: p.lat, lon: p.lon }, upcoming: up.slice(0, 12), style: store.get('widgetStyle', 'clear'), feed: events.filter(e => !e.ext && (e.repeat === 'weekly' || e.date >= addDays(today(), -7))).slice(0, 400).map(e => ({ t: e.title, d: e.date, tm: e.time || '', r: e.remind ?? -1, w: e.repeat === 'weekly', id: e.id, ty: e.type })) }) });
+    await fetch(base + '/widget/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: widgetId(), place: { name: p.name, lat: p.lat, lon: p.lon }, upcoming: up.slice(0, 12), style: store.get('widgetStyle', 'clear'), wisdom: await window.JundReminder?.forWidget?.().catch(() => null), feed: events.filter(e => !e.ext && (e.repeat === 'weekly' || e.date >= addDays(today(), -7))).slice(0, 400).map(e => ({ t: e.title, d: e.date, tm: e.time || '', r: e.remind ?? -1, w: e.repeat === 'weekly', id: e.id, ty: e.type })) }) });
   } catch {}
 }
 async function widgetConnect() {

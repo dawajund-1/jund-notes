@@ -193,7 +193,8 @@ async function widgetRoutes(req, env, h, path, url) {
     const p = b.place || {};
     const rec = { place: { name: String(p.name || '').slice(0, 60), lat: +p.lat || 21.4225, lon: +p.lon || 39.8262 },
       upcoming: (b.upcoming || []).slice(0, 12).map(x => ({ title: String(x.title || '').slice(0, 80), at: +x.at, end: +x.end || +x.at, timed: !!x.timed })),
-      style: ['clear', 'dark', 'black', 'white'].includes(b.style) ? b.style : 'dark' };
+      style: ['clear', 'dark', 'black', 'white'].includes(b.style) ? b.style : 'dark',
+      wisdom: (Array.isArray(b.wisdom) ? b.wisdom : []).slice(0, 60).map(x => ({ t: String(x.t || '').slice(0, 300), s: String(x.s || '').slice(0, 100) })) };
     await env.PUSH.put('w:' + b.id, JSON.stringify(rec));
     if (Array.isArray(b.feed)) await env.PUSH.put('f:' + b.id, JSON.stringify(b.feed.slice(0, 400).map(x => ({ t: String(x.t || '').slice(0, 120), d: String(x.d || ''), tm: String(x.tm || ''), r: +x.r, w: !!x.w, id: String(x.id || '').slice(0, 40), ty: String(x.ty || '') }))));
     return json({ ok: true }, 200, h);
@@ -214,7 +215,7 @@ async function widgetRoutes(req, env, h, path, url) {
       } catch { return null; }
     };
     const [today, tomorrow] = await Promise.all([times(d), times(new Date(+d + 864e5))]);
-    return json({ place: rec.place.name, today, tomorrow, upcoming: rec.upcoming, style: rec.style || 'dark' }, 200, h);
+    return json({ place: rec.place.name, today, tomorrow, upcoming: rec.upcoming, style: rec.style || 'dark', wisdom: rec.wisdom || [] }, 200, h);
   }
   return json({ error: 'not found' }, 404, h);
 }

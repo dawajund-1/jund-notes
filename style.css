@@ -1091,3 +1091,11 @@ a, .link { color: var(--accent); }
 body.net-busy .net-bar { opacity: 1; }
 @keyframes wk-bar { from { left: -35%; } to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .is-working, .is-working::before, .net-bar::after { animation-duration: 3s; } }
+
+/* ---------- today's reminder: short up front, details on tap ---------- */
+#screen-assistant .remind .rm-verse { font-size: 1.12rem; line-height: 1.75; -webkit-line-clamp: 2; }
+#screen-assistant .remind .rm-tap[aria-expanded="true"] .rm-verse { -webkit-line-clamp: unset; font-size: 1.2rem; }
+.rm-ref { color: var(--ink-2); font-size: .74rem; margin-top: 4px; }
+.rm-acts { justify-content: center; margin-top: 6px; flex-wrap: wrap; }
+.rm-form { display: grid; gap: 8px; margin-top: 10px; text-align: start; }
+.rm-form textarea, .rm-form input { width: 100%; }
