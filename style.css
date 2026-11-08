@@ -833,3 +833,19 @@ body.vx-open { overflow: hidden; }
 .as-dock { position: fixed; left: 0; right: 0; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); margin: 0 auto; width: min(100%, 760px); padding: 12px 16px 8px; background: linear-gradient(to bottom, transparent, var(--bg) 16px); }
 #screen-assistant[hidden] ~ .as-dock { display: none; }
 .hm-card .upnext { margin: 0 !important; padding: 0 !important; min-height: 0 !important; } .hm-card .pbar { text-align: start; justify-content: flex-start; } .hm-card .tl { margin-top: 2px; }
+
+/* ---------- Up next card, compact: the next prayer sits at the bottom line, small ---------- */
+.hm-card { padding: 10px 14px 10px; border-radius: 16px; }
+.hm-card .pbar { border: 0; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); font-size: .78rem; }
+.hm-card:has(.dc) .pbar { display: none; }
+.hm-card .dc { padding: 2px 0 0; }
+.hm-card .dc-top { margin-bottom: 4px; }
+.hm-card .dc-top b { font-size: .86rem; }
+.hm-card .dc-now { font-size: .86rem; }
+.hm-card .dc-line.has-marks { margin: 26px 6px 30px; }
+.hm-card .dc-line { margin: 10px 6px 14px; }
+.dc-foot { align-items: center; gap: 10px; font-size: .74rem; }
+.dc-foot .np { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); white-space: nowrap; }
+.dc-foot .np i { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+.dc-foot .np b { color: var(--gold); font-weight: 600; }
+#screen-assistant .hm-card .dc { padding: 0; border: 0; background: none; } #screen-assistant .hm-card { padding: 12px 14px; }

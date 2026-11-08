@@ -56,7 +56,7 @@ function build() {
     <div class="intro due" id="rec-banner" hidden></div>
     <div class="chips hm-study" id="hm-study" hidden></div>
     <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><button type="button" class="link" data-go="calendar">Calendar</button></div>
-      <div class="hm-card"><div class="pbar" id="hm-prayer"></div><div class="upnext" id="hm-next"></div></div></div>
+      <div class="hm-card"><div class="upnext" id="hm-next"></div><div class="pbar" id="hm-prayer"></div></div></div>
     <div class="hm-sec" id="hm-habits-wrap"><div class="habits" id="hm-habits"></div></div>
     <div class="hm-sec" id="hm-recent-wrap" hidden><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
@@ -93,6 +93,15 @@ function persist() {
 }
 
 // nothing coming: today as a 24-hour line, the five prayers marked on it, and a dot that moves with the time
+// the next prayer, small, for the bottom of the Up next card
+function nextPrayerText() {
+  const np = window.JundFeatures?.nextPrayer?.(); if (!np) return '';
+  const AR = window.ZadLang === 'ar';
+  const [h, m] = np.time.split(':').map(Number); const d = new Date(); d.setHours(h, m);
+  const tm = d.toLocaleTimeString(AR ? 'ar-SA' : 'en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const l = np.left; const lt = l == null ? '' : AR ? ` · بعد ${l >= 60 ? `${Math.floor(l / 60)} س ${l % 60} د` : `${l} د`}` : ` · in ${l >= 60 ? `${Math.floor(l / 60)}h ${l % 60}m` : `${l} min`}`;
+  return `<span class="np"><i></i><b>${np.name}</b> ${tm}${lt}</span>`;
+}
 function dayClock() {
   const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
   const pct = m => (((m % 1440) + 1440) % 1440 / 1440 * 100).toFixed(2);
@@ -118,7 +127,7 @@ function dayClock() {
     <div class="dc-line${marks.length ? ' has-marks' : ''}"><span class="dc-fill" style="width:${pct(mins)}%"></span>
       ${marks.map(x => `<span class="dc-mark ${x.k}${x.past ? ' past' : ''}${x.up ? ' up' : ''}" style="inset-inline-start:${pct(x.m)}%" title="${hhmm(x.m)}"><i></i><small>${x.n}<em>${hhmm(x.m)}</em></small></span>`).join('')}
       <span class="dc-dot" style="inset-inline-start:${pct(mins)}%"></span></div>
-    <div class="dc-foot muted"><span>${AR ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`}</span></div>
+    <div class="dc-foot muted"><span>${AR ? `بقي من اليوم ${Math.floor(left / 60)} س ${left % 60} د` : `${Math.floor(left / 60)}h ${left % 60}m left today`}</span>${nextPrayerText()}</div>
   </div>`;
 }
 async function renderHome() {
