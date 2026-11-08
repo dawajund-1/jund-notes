@@ -144,7 +144,7 @@ function build() {
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   $$('#st-size button').forEach(b => b.onclick = () => { size = b.dataset.k; store.set('studioSize', size); sync(); draw(); });
   $$('#st-bgs [data-bg]').forEach(b => b.onclick = () => { snap(); stopVideo(); bg = { kind: 'color', key: b.dataset.bg }; sync(); draw(); });
-  $('#st-media').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) loadMedia(f); };
+  $('#st-media').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) { try { loadMedia(f); } catch (err) { status('✗ ' + err.message); window.JundReport?.problem('studio media: ' + err.message); } } };
   $('#st-add').onclick = () => { addLayer({ text: 'Your text' }); $('#st-text').select(); $('#st-text').focus(); };
   $('#st-text').onfocus = snap;
   $('#st-text').oninput = () => { if (!sel) addLayer({ text: $('#st-text').value }); else { sel.text = $('#st-text').value; draw(); renderLayers(); } };
@@ -265,7 +265,7 @@ function stopVideo() { if (bg.video) { bg.video.pause(); URL.revokeObjectURL(bg.
 function loadMedia(f) {
   snap(); stopVideo();
   const url = URL.createObjectURL(f);
-  if (f.type.startsWith('video/')) {
+  if ((f.type || '').startsWith('video/') || /\.(mp4|mov|webm|3gp)$/i.test(f.name)) {
     const v = document.createElement('video');
     v.src = url; v.playsInline = true; v.preload = 'auto'; v.muted = true; v.crossOrigin = 'anonymous';
     v.onloadedmetadata = () => {
@@ -279,11 +279,32 @@ function loadMedia(f) {
     v.onseeked = () => draw();
     v.onerror = () => status('✗ This video cannot be opened here. Try an MP4 file.');
   } else {
-    const img = new Image();
-    img.onload = () => { bg = { kind: 'image', img }; sync(); draw(); };
-    img.onerror = () => status('✗ This picture cannot be opened.');
-    img.src = url;
+    // photos from phone cameras can be very big: make a copy of at most 2400 px, so every phone can draw it
+    status('Opening the picture…');
+    openPicture(f, url).then(img => {
+      bg = { kind: 'image', img }; sync(); draw(); status('');
+      $('#st-canvas')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }).catch(() => {
+      const heic = /heic|heif/i.test(f.type + f.name);
+      const msg = heic ? '✗ This photo is in HEIC format, which the browser cannot open. In your gallery, share it as JPG, or take a screenshot of it and use that.' : '✗ This picture cannot be opened. Try another photo, or a screenshot of it.';
+      status(msg); window.JundCal?.toast(msg, 6000); window.JundReport?.problem('studio photo failed: ' + (f.type || 'no type') + ' ' + Math.round(f.size / 1024) + 'KB');
+    });
   }
+}
+async function openPicture(f, url) {
+  const MAX = 2400;
+  let src = null;
+  try { src = await createImageBitmap(f); } catch {}
+  if (!src) src = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = url; });
+  const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+  if (!w || !h) throw new Error('empty');
+  const k = Math.min(1, MAX / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  try { src.close?.(); } catch {}
+  URL.revokeObjectURL(url);
+  const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.9));
+  return await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = URL.createObjectURL(blob); });
 }
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function showTrim() {
