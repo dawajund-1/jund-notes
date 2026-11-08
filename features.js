@@ -40,7 +40,18 @@ const CITIES = {
   jeddah: ['Jeddah', 21.5433, 39.1728], dammam: ['Dammam', 26.4207, 50.0888], taif: ['Taif', 21.2703, 40.4158],
 };
 const PRAYERS = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
-const place = () => store.get('prayerPlace', { key: 'makkah', name: 'Makkah', lat: 21.4225, lon: 39.8262 });
+// the name shown for "your location": the nearest known city within 60 km (the time zone is always "Riyadh" for all of Saudi Arabia, so it is not used)
+function placeName(lat, lon) {
+  const km = (a, b, c, d) => { const R = 6371, t = x => x * Math.PI / 180, dl = t(c - a), dn = t(d - b); const h = Math.sin(dl / 2) ** 2 + Math.cos(t(a)) * Math.cos(t(c)) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+  let best = null;
+  for (const [, [n, la, lo]] of Object.entries(CITIES)) { const d = km(lat, lon, la, lo); if (!best || d < best.d) best = { n, d }; }
+  return best && best.d < 60 ? best.n : 'My location';
+}
+const place = () => {
+  const p = store.get('prayerPlace', { key: 'makkah', name: 'Makkah', lat: 21.4225, lon: 39.8262 });
+  if (p.key === 'here' && !p.named) { p.name = placeName(p.lat, p.lon); p.named = true; store.set('prayerPlace', p); }
+  return p;
+};
 const monthKey = (d, p = place()) => `pt:${d.getFullYear()}-${d.getMonth() + 1}:${p.lat.toFixed(2)},${p.lon.toFixed(2)}`;
 const loading = {};
 async function loadMonth(d) {
@@ -59,7 +70,7 @@ async function loadMonth(d) {
         days[`${yy}-${mm}-${dd}`] = Object.fromEntries(PRAYERS.map(n => [n, (x.timings[n] || '').slice(0, 5)]));
       }
       // keep only this month and next month in storage
-      if (p.key === 'here' && j.data?.[0]?.meta?.timezone && !p.zone) { p.zone = j.data[0].meta.timezone; p.name = p.zone.split('/').pop().replace(/_/g, ' '); store.set('prayerPlace', p); }
+      if (p.key === 'here' && j.data?.[0]?.meta?.timezone && !p.zone) { p.zone = j.data[0].meta.timezone; p.name = placeName(p.lat, p.lon); p.named = true; store.set('prayerPlace', p); }
       const nowKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;
       for (const k of Object.keys(localStorage)) if (k.startsWith('jn_pt:') && k !== 'jn_' + key) { const ym = k.slice(6).split(':')[0]; if (ym !== nowKey && ym !== `${d.getFullYear()}-${d.getMonth() + 1}`) localStorage.removeItem(k); }
       store.set(key, days);
@@ -109,7 +120,7 @@ function askLocation(force) {
     const { latitude: lat, longitude: lon } = pos.coords, old = store.get('prayerPlace');
     const moved = !old || old.key !== 'here' || Math.hypot(old.lat - lat, old.lon - lon) > 0.2;
     if (!moved) return;
-    store.set('prayerPlace', { key: 'here', name: 'your location', lat, lon });
+    store.set('prayerPlace', { key: 'here', name: placeName(lat, lon), named: true, lat, lon });
     loadMonth(new Date()).then(() => { home(); window.JundCal?.render(); const s = $('#prayer-place'); if (s) s.value = 'here'; });
   }, () => {}, { timeout: 15000, maximumAge: 6 * 3600e3 });
 }
@@ -328,7 +339,7 @@ function placeSetting() {
   sel.onchange = () => {
     if (sel.value === 'here') {
       st.textContent = 'Finding your location…';
-      navigator.geolocation?.getCurrentPosition(p => { store.set('prayerPlace', { key: 'here', name: 'your location', lat: p.coords.latitude, lon: p.coords.longitude }); loadMonth(new Date()).then(show); window.JundCal?.render(); },
+      navigator.geolocation?.getCurrentPosition(p => { store.set('prayerPlace', { key: 'here', name: placeName(p.coords.latitude, p.coords.longitude), named: true, lat: p.coords.latitude, lon: p.coords.longitude }); loadMonth(new Date()).then(show); window.JundCal?.render(); },
         () => { st.textContent = '✗ Location not allowed. Choose a city instead.'; sel.value = place().key; });
       return;
     }
