@@ -16,8 +16,8 @@ window.FAMILIES = {
 
 window.SUBJECTS = [
   // الدار
-  { id: 'dar-mustalah', place: 'الدار', name: 'مصطلح الحديث', family: 'teal' },
-  { id: 'dar-tawhid', place: 'الدار', name: 'التوحيد', book: 'العقيدة الطحاوية', family: 'navy' },
+  { id: 'dar-mustalah', place: 'الدار', name: 'مصطلح الحديث', family: 'navy' },
+  { id: 'dar-tawhid', place: 'الدار', name: 'التوحيد', book: 'العقيدة الطحاوية', family: 'teal' },
   { id: 'dar-muslim', place: 'الدار', name: 'صحيح مسلم', family: 'forest' },
   { id: 'dar-ibnmajah', place: 'الدار', name: 'سنن ابن ماجه', family: 'olive' },
   { id: 'dar-nahw', place: 'الدار', name: 'النحو', book: 'شرح ابن عقيل على الألفية', family: 'plum' },
@@ -60,6 +60,29 @@ window.paletteFor = function (familyKey) {
   };
 };
 
+// every known subject, kept even when the list below is hidden, so a file can still be recognised by its content
+window.ALL_SUBJECTS = window.SUBJECTS.slice();
+const SUBJECT_WORDS = [
+  ['dar-tawhid', /الطحاوي|العقيدة|عقيدة|التوحيد|توحيد|الأسماء والصفات|الصفات|القدر|الإيمان|tawhid|aqeed|aqid/i],
+  ['dar-mustalah', /مصطلح|الحديث الصحيح|الحسن لغيره|الشاذ|المعلل|نخبة الفكر|الإسناد|mustalah/i],
+  ['dar-nahw', /النحو|إعراب|الفاعل|المبتدأ|ابن عقيل|الألفية|nahw/i],
+  ['dar-tafsir', /تفسير|فتح القدير|tafsir/i],
+  ['kul-mawarith', /المواريث|الفرائض|التركة|العصبة|mawarith/i],
+  ['kul-ayat', /آيات الأحكام/],
+  ['kul-ahadith', /أحاديث الأحكام|بلوغ المرام|عمدة الأحكام/],
+  ['dar-usul', /أصول الفقه|البلبل|usul/i],
+  ['kul-fiqh', /الفقه|الروض المربع|الطهارة|الصلاة|الزكاة|fiqh/i],
+  ['dar-takhrij', /التخريج|takhrij/i],
+  ['dar-muslim', /صحيح مسلم/],
+  ['dar-ibnmajah', /ابن ماجه/],
+];
+// the subject a text is about, or null
+window.guessSubject = text => {
+  const t = String(text || '');
+  let best = null, n = 0;
+  for (const [id, re] of SUBJECT_WORDS) { const c = (t.match(new RegExp(re.source, 'g' + (re.flags.includes('i') ? 'i' : ''))) || []).length; if (c > n) { n = c; best = id; } }
+  return n >= 2 ? window.ALL_SUBJECTS.find(s => s.id === best) || null : null;
+};
 // This preset list belongs to students of Dar al-Hadith and Kulliyat al-Haram only. Everyone else starts with an empty
 // list, and the app builds their own subjects or projects from what they actually use (each one gets its own colour).
 (() => {
@@ -70,4 +93,4 @@ window.paletteFor = function (familyKey) {
   window.SUBJECTS = [];
 })();
 // a colour family for a subject the person created, picked so neighbours differ
-window.familyForName = name => { const keys = Object.keys(window.FAMILIES); let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return keys[h % keys.length]; };
+window.familyForName = name => { const g = window.guessSubject?.(name + ' ' + name); if (g) return g.family; const keys = Object.keys(window.FAMILIES); let h = 0; for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return keys[h % keys.length]; };

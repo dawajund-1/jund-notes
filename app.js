@@ -159,7 +159,7 @@ function familyOf(sub) {
   const o = store.get('families', {});
   return o[sub.id] || sub.family;
 }
-function subjectById(id) { return window.SUBJECTS.find(s => s.id === id); }
+function subjectById(id) { return window.SUBJECTS.find(s => s.id === id) || (window.ALL_SUBJECTS || []).find(s => s.id === id); }
 
 const workMode = () => (store.get('me', {}).use || 'study') === 'work';
 function fillSubjects() {
@@ -473,8 +473,8 @@ async function serverFetch(path, init = {}) {
   }
   return res;
 }
-async function callServer({ system, user, maxTokens = 30000, onText, signal, json = true }) {
-  const res = await serverFetch('/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens, json }) });
+async function callServer({ system, user, maxTokens = 30000, onText, signal, json = true, deep = false }) {
+  const res = await serverFetch('/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens, json, deep }) });
   return readStream(res, onText);
 }
 async function readStream(res, onText) {
@@ -498,9 +498,9 @@ async function readStream(res, onText) {
   return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop };
 }
 // the strong AI: the free server, or Claude with the owner's own key
-async function callBig({ system, messages, onText, signal, maxTokens }) {
+async function callBig({ system, messages, onText, signal, maxTokens, deep }) {
   if (engineKind() === 'claude') return callClaude({ system, messages, onText, signal, maxTokens });
-  return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens });
+  return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens, deep });
 }
 
 async function getJSON(text, signal) {
@@ -691,6 +691,7 @@ function mergeParts(list) {
     if (a.admin) out.appendix.admin = [out.appendix.admin, a.admin].filter(Boolean).join(' · ');
     out.closing_duas.push(...(r.closing_duas || []));
     out.mawaiz.push(...(r.mawaiz || []));
+    (out.tasks ||= []).push(...(r.tasks || []));
     for (const k of Object.keys(out.report)) out.report[k].push(...(r.report?.[k] || []));
   }
   // a map with too many branches is split into several aspects of 4
@@ -818,6 +819,8 @@ function renderPending() {
 
 /* reading PDFs (text PDFs; scanned books with no text layer are detected and explained) */
 let pdfLib = null;
+// Word-made Arabic PDFs break some letters apart: "هللا" for "الله", "األ" for "الأ"
+const fixPdfArabic = t => t.replace(/هللا/g, 'الله').replace(/(^|[\s«(])األ/g, '$1الأ').replace(/(^|[\s«(])اإل/g, '$1الإ').replace(/(^|[\s«(])اآل/g, '$1الآ');
 async function readPdf(file) {
   pdfLib ??= await import('./vendor/pdfjs/pdf.min.mjs');
   pdfLib.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.mjs', location.href).href;
@@ -882,7 +885,7 @@ async function readPdf(file) {
     } else text = order(segs);
     pages.push(text.normalize('NFKC'));
   }
-  return pages;
+  return pages.map(fixPdfArabic);
 }
 
 /* audio, video and YouTube items: transcribed one after another, then they are ordinary lessons */
@@ -1173,18 +1176,53 @@ ${src.ask}
 <<<${src.name}
 ${text}
 ${src.name}>>>`;
-    const expect = Math.max(400, text.split(/\s+/).length * 0.6);
-    const r = await callBig({
-      system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
-      messages: [{ role: 'user', content: user }],
-      signal: controller.signal,
-      onText: t => {
-        const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
-        onStatus(`Writing… ${ar(w)} words${mins ? ' — ' + ar(mins) + ' min' : ''}`, Math.min(0.95, w / expect), 'write');
-      },
-    });
+    // written sources (books, summaries, question-and-answer files) must be covered completely
+    const written = ['book', 'notes', 'other'].includes(kind);
+    const qCount = (text.match(/(^|\s)س\s*[٠-٩0-9]+/g) || []).length;
+    const full = en
+      ? `\n\nCOMPLETE COVERAGE: this is ${written ? 'written material' : 'a lesson'} the student must study in full. Cover every point${qCount > 5 ? ` and every one of the questions with its answer (there are about ${qCount}; keep their numbers, grouped by topic)` : ''}. Do not drop or shorten anything that carries information. These are full notes, not a "summary": never call the file or its sections a summary, even if the source calls itself one; the title is the topic itself. Think it through and plan the sections before writing.`
+      : `\n\nالتغطية الكاملة: هذا ${written ? 'مصدر مكتوب' : 'درس'} سيذاكره الطالب كله. اشمل كل نقطة فيه${qCount > 5 ? `، وكل سؤال مع جوابه (عددها نحو ${qCount}؛ احفظ أرقامها ورتّبها في أبواب بحسب الموضوع)` : ''}. لا تحذف ولا تختصر شيئًا فيه علم. المطلوب ملاحظات كاملة لا «ملخص»: لا تسمِّ الملف ولا أقسامه «ملخصًا» ولو كان المصدر يسمّي نفسه كذلك؛ العنوان هو الموضوع نفسه (مثل: العقيدة الطحاوية). فكّر ورتّب الأقسام أولًا ثم اكتب.`;
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const parts = engineKind() === 'claude' || words <= 2200 ? [text] : splitText(text, 1600);
+    const expect = Math.max(400, words * 0.8);
+    let done = 0;
+    const one = async (part, i) => {
+      const head = parts.length > 1 ? (en ? `\n\nThis is PART ${i + 1} of ${parts.length} of one source. Write the notes for this part only, completely.` : `\n\nهذا هو الجزء ${i + 1} من ${parts.length} من مصدر واحد. اكتب ملاحظات هذا الجزء وحده كاملة.`) : '';
+      const msg = parts.length > 1 ? user.replace(text, () => part) : user;
+      const r = await callBig({
+        system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
+        messages: [{ role: 'user', content: msg + full + head }], deep: true,
+        signal: controller.signal,
+        onText: t => {
+          const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
+          if (parts.length === 1) onStatus(`Writing… ${ar(w)} words${mins ? ' — ' + ar(mins) + ' min' : ''}`, Math.min(0.95, w / expect), 'write');
+        },
+      });
+      done++; onStatus(`Writing… part ${ar(done)} of ${ar(parts.length)} done`, Math.min(0.95, done / parts.length), 'write');
+      return r;
+    };
+    if (parts.length > 1) onStatus(`Writing in ${ar(parts.length)} parts, so nothing is left out…`, 0.02, 'write');
+    // two parts at a time
+    const rs = new Array(parts.length);
+    for (let i = 0; i < parts.length; i += 2) await Promise.all([0, 1].filter(k => i + k < parts.length).map(k => one(parts[i + k], i + k).then(r => { rs[i + k] = r; })));
+    const r = rs.length === 1 ? rs[0] : { text: '', stop: rs.some(x => x.stop === 'max_tokens') ? 'max_tokens' : '', usd: rs.reduce((n, x) => n + (x.usd || 0), 0), parts: rs };
     onStatus('Laying out the pages…', 0.97, 'write');
-    notes = await getJSON(r.text, controller.signal);
+    if (r.parts) {
+      const got = [];
+      for (const [i, x] of r.parts.entries()) { try { got.push(await getJSON(x.text, controller.signal)); } catch { got.push({ report: { maybe_wrong: [`Part ${ar(i + 1)} could not be read; make it again if something is missing.`] } }); } }
+      notes = mergeParts(got);
+      notes.title = got.find(g => g.title)?.title || unit;
+    } else notes = await getJSON(r.text, controller.signal);
+    // the title is the topic, not "a summary of…"
+    const noSum = t => String(t || '').replace(/^\s*(مُ?لَ?خَّ?صُ?|ملخص|خلاصة|summary of|summary:?)\s*(كِتَابِ|كتاب|درس|مادة)?\s*/i, '').replace(/[«»"]/g, '').trim();
+    notes.title = noSum(notes.title) || unit; notes.subtitle = noSum(notes.subtitle);
+    for (const sec of notes.sections || []) sec.heading = String(sec.heading || '').replace(/^\s*(ملخص|خلاصة)\s+/, '');
+    // how many of the source's questions made it into the notes
+    if (qCount > 5) {
+      const outQ = new Set((JSON.stringify(notes).match(/س\s*[٠-٩0-9]+/g) || []).map(x => x.replace(/\s/g, ''))).size;
+      (notes.report ||= {}).inferred ||= [];
+      notes.report.inferred.unshift(`Questions covered: about ${outQ} of ${qCount}.`);
+    }
     note = (engineKind() === 'claude' ? `Ready. Cost about ${ar((r.usd * SAR).toFixed(2))} SAR.` : 'Ready. Written for free on the app server.') + (r.stop === 'max_tokens' ? '\n⚠ The text is very long, so it stopped before the end; the end may be missing. Split it in two.' : '');
   }
   if (!en) { onStatus('Checking verses against the Mushaf…', 1, 'write'); try { await window.Mushaf.check(notes); } catch {} }
@@ -1259,9 +1297,11 @@ $('#make').onclick = async () => {
     if (!sup.ok) { err.textContent = sup.why; err.hidden = false; return; }
   }
   if (hearing()) { err.textContent = 'Wait until the transcription finishes (see ⏳ above), then tap again.'; err.hidden = false; return; }
-  const sub = subjectInfo();
+  let sub = subjectInfo();
   const kind = $('#kind').value;
   const jobs = pending.length ? pending : [{ text: $('#transcript').value.trim(), unit: $('#unit').value.trim() }];
+  // no subject chosen: find it from the text itself (so the file gets that subject's own colour)
+  if (/^(General|Other subject)$/.test(sub.name)) { const g = window.guessSubject?.(($('#unit').value || '') + ' ' + jobs.map(j => (j.unit || '') + ' ' + (j.text || '').slice(0, 4000)).join(' ')); if (g) sub = { ...g, family: g.family }; }
   for (const j of jobs) j.lang = pickLang(j.text || '');
   if (engineKind() === 'phone' && jobs.some(j => j.lang === 'en')) { err.textContent = 'English notes are written on the app server only. Change “Who writes the notes?” in Settings.'; err.hidden = false; return; }
   if (jobs.length === 1 && pending.length === 1 && $('#unit').value.trim()) jobs[0].unit = $('#unit').value.trim();
@@ -1626,7 +1666,7 @@ function metaFor(lesson) {
   return {
     title: lesson.notes.title || lesson.unit, subtitle: lesson.notes.subtitle || '',
     subject: lesson.subject.name, place: lesson.subject.place, unit: lesson.unit,
-    palette: window.paletteFor(sub ? familyOf(sub) : 'slate'),
+    palette: window.paletteFor(sub ? familyOf(sub) : (store.get('families', {})['mine:' + lesson.subject.name] || window.familyForName((lesson.subject.name || '') + ' ' + (lesson.notes.title || '') + ' ' + (lesson.unit || '')))),
   };
 }
 async function openLesson(lesson) {
@@ -2086,7 +2126,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.6';
+const APP_VERSION = '8.7';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

@@ -330,6 +330,7 @@ dialog h2 { margin: 0 0 12px; font-size: 1.2rem; }
   .pages-frame.print-me .pages { transform: none !important; }
   .page { margin: 0 !important; box-shadow: none !important; break-after: page; page-break-after: always; }
   .page:last-child { break-after: auto; page-break-after: auto; }
+  .page { break-after: auto !important; page-break-after: auto !important; } .page + .page { break-before: page; page-break-before: always; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 

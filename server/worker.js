@@ -14,6 +14,8 @@ let G = 'https://generativelanguage.googleapis.com';  // GEMINI_BASE replaces it
 const WRITE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash'];
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
 const FILE_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+// notes: the stronger model first, and it may think before writing (slower, much better)
+const NOTES_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
 const VOICE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 const OWNER_HASH = 'acbe7ee98a566ab6ed2537fc1d67662eddda3739d19aedde6ee8f89f223fe602';   // sha-256 of the owner code (the code itself is not stored here)
 const MAX_BODY = 900_000;            // characters of text: about 150 pages
@@ -53,12 +55,12 @@ const errCode = s => s === 429 ? 'quota' : s === 403 ? 'key' : 'ai';
 
 // Ask the AI, trying each model in turn (a model that is missing or out of free quota today is skipped).
 // `variants` lets a request be retried once in a simpler form if the AI refuses an optional setting.
-async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait }) {
+async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait, think }) {
   let last = { status: 500, text: '' };
   for (const model of models) {
     for (let vi = 0; vi < variants.length; vi++) {
       const v = variants[vi];
-      const thinking = /2\.5-flash/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {};
+      const thinking = /2\.5-flash-lite/.test(model) || (/2\.5-flash/.test(model) && !think) ? { thinkingConfig: { thinkingBudget: 0 } } : /2\.5-flash/.test(model) ? { thinkingConfig: { thinkingBudget: 8192 } } : {};
       const payload = JSON.stringify({
         systemInstruction: system ? { parts: [{ text: system }] } : undefined,
         contents: [{ role: 'user', parts: v.parts }],
@@ -408,10 +410,10 @@ export default {
       const raw = await req.text();
       if (raw.length > MAX_BODY) return json({ error: 'text too long', code: 'toolong' }, 413, h);
       let body; try { body = JSON.parse(raw); } catch { return json({ error: 'bad request' }, 400, h); }
-      const { system = '', user = '', maxTokens = 30000, json: wantJson = true } = body;
+      const { system = '', user = '', maxTokens = 30000, json: wantJson = true, deep = false } = body;
       if (!user) return json({ error: 'empty' }, 400, h);
-      const models = (env.MODELS ? String(env.MODELS).split(',') : WRITE_MODELS).map(s => s.trim()).filter(Boolean);
-      return generate(env, h, { models, system, maxTokens, wantJson, variants: [{ parts: [{ text: user }] }] });
+      const models = deep ? NOTES_MODELS : (env.MODELS ? String(env.MODELS).split(',') : WRITE_MODELS).map(s => s.trim()).filter(Boolean);
+      return generate(env, h, { models, system, maxTokens, wantJson, think: !!deep, variants: [{ parts: [{ text: user }] }] });
     }
 
     /* ----- audio piece → transcript ----- */
