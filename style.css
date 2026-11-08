@@ -1158,3 +1158,18 @@ body.net-busy .net-bar { opacity: 1; }
 .ib-ok { color: var(--ink-2); }
 .ib-done { font-size: .85rem; color: var(--ink-2); display: flex; gap: 6px; align-items: center; }
 .ib-row > button { justify-self: start; }
+
+/* ---------- timeline: finished items faded, a small dot moving with "now" ---------- */
+.tl-row.past .tl-when, .tl-row.past .tl-what { opacity: .4; }
+.tl-row.past .tl-rail i { background: var(--bg); border: 2px solid color-mix(in srgb, var(--ink-2) 55%, transparent); width: 10px; height: 10px; box-shadow: 0 0 0 4px var(--bg); }
+.tl-row.past .tl-rail::before { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.tl-row.run .tl-rail::before { background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 45%, var(--line)) calc(15px + var(--p, 0) * (100% - 15px)), var(--line) 0); }
+.tl-row.run .tl-what b { color: var(--ink); }
+.tl-row.run .tl-rail::after, .tl-row.here .tl-rail::after { content: ''; position: absolute; left: 50%; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); transform: translate(-50%, -50%); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); animation: tlnow 2.2s ease-in-out infinite; z-index: 2; }
+.tl-row.run .tl-rail::after { top: calc(15px + var(--p, 0) * (100% - 15px)); }
+.tl-row.here .tl-rail::after { top: 0; }
+@keyframes tlnow { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 10%, transparent); } }
+/* the day line: your own items are small quiet ticks, so the line is not crowded */
+.dc-mark.e i { width: 3px; height: 9px; border-radius: 2px; border: 0; background: color-mix(in srgb, var(--ink-2) 55%, transparent); }
+.dc-mark.e.past i { background: color-mix(in srgb, var(--ink-2) 30%, transparent); }
+.dc-mark.e { z-index: 0; }

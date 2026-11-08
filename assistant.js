@@ -148,14 +148,24 @@ async function renderHome() {
   if (ask) ask.hidden = !!J.me().name;
   const up = window.JundCal?.upcoming(7, 8) || [];
   // a timeline: time on one side, a dot on the rail, the item on the other (each row draws its own piece of the rail, so they always line up)
-  $('#hm-next').innerHTML = up.length ? `<div class="tl">${up.slice(0, 5).map((x, i, arr) => `<button type="button" class="nx tl-row${i === 0 ? ' first' : ''}${i === arr.length - 1 ? ' last' : ''}" data-ev="${x.e.id}" data-d="${x.d}">
+  // where "now" is on the timeline: finished items are faded, the running one carries the moving dot
+  const nowT = Date.now(); let dotAt = -1;
+  const rows = up.slice(0, 5).map(x => {
+    if (!x.e.time) return { ...x, st: '' };
+    const a = new Date(`${x.d}T${x.e.time}`).getTime(), b = a + (x.e.type === 'class' ? 45 : 60) * 60e3;
+    return { ...x, st: nowT >= b ? 'past' : nowT >= a ? 'run' : '', p: Math.min(1, Math.max(0, (nowT - a) / (b - a))) };
+  });
+  const run = rows.findIndex(r => r.st === 'run');
+  if (run < 0) { const nxt = rows.findIndex(r => r.st !== 'past'); dotAt = nxt > 0 ? nxt : -1; }
+  $('#hm-next').innerHTML = up.length ? `<div class="tl">${rows.map((x, i, arr) => `<button type="button" class="nx tl-row${i === 0 ? ' first' : ''}${i === arr.length - 1 ? ' last' : ''}${x.st ? ' ' + x.st : ''}${i === dotAt ? ' here' : ''}" ${x.st === 'run' ? `style="--p:${x.p.toFixed(3)}"` : ''} data-ev="${x.e.id}" data-d="${x.d}">
       <span class="tl-when${x.late ? ' late' : ''}"><span>${x.when}</span>${x.time ? `<b dir="ltr">${x.time}</b>` : ''}</span>
       <span class="tl-rail"><i style="--c:${x.color}"></i></span>
-      <span class="tl-what"><b dir="auto">${esc(x.e.title)}</b><small style="color:${x.color}">${x.type}</small></span></button>`).join('')}</div>`
+      <span class="tl-what"><b dir="auto">${esc(x.e.title)}</b><small style="color:${x.color}">${x.st === 'run' ? (window.ZadLang === 'ar' ? 'الآن · ' : 'Now · ') : ''}${x.type}</small></span></button>`).join('')}</div>`
     : '';
   { const td = window.JundCal?.today?.(); $('#hm-next').insertAdjacentHTML('afterbegin', dayClock(up.filter(x => !x.late && x.d === td && x.e.time))); }
   $('#hm-left').textContent = dayLeft();
   if (!up.length) $('#hm-brief').textContent = '· ' + (window.ZadLang === 'ar' ? 'يومك خالٍ' : 'Your day is clear');
+  clearInterval(renderHome.tick2); if (up.length) renderHome.tick2 = setInterval(() => { if (!document.hidden && $('#hm-next') && !$('#screen-assistant')?.hidden && !document.activeElement?.closest?.('.as-input')) renderHome(); }, 60000);
   clearInterval(renderHome.tick); if (!up.length) renderHome.tick = setInterval(() => { const c = $('#hm-next .dc'); if (c) c.outerHTML = dayClock(); const l = $('#hm-left'); if (l) l.textContent = dayLeft(); }, 30000);
   $$('.nx', $('#hm-next')).forEach(b => b.onclick = () => window.JundCal.open(b.dataset.ev, b.dataset.d));
   const ls = (await J.allLessons()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
