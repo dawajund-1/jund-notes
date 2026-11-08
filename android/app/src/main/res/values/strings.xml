@@ -5,4 +5,5 @@
     <string name="share_target" translatable="false">{\"action\": \"https://mustatar-app.github.io/share\", \"method\": \"POST\", \"enctype\": \"multipart/form-data\", \"params\": {\"title\": \"title\", \"text\": \"text\", \"files\": [{\"name\": \"file\", \"accept\": [\"text/plain\", \"application/pdf\", \"audio/*\", \"video/*\", \"image/*\"]}]}}</string>
     <string name="widget_main_desc">Next prayer and your upcoming tasks</string>
     <string name="widget_prayer_desc">Next prayer</string>
+    <string name="widget_day_desc">Your whole day on one line: prayers and tasks</string>
 </resources>

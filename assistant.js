@@ -181,7 +181,8 @@ function render() {
   $('#screen-assistant')?.classList.toggle('talking', log.length > 0);
   renderHome();
   const box = $('#as-log'); if (!box) return;
-  box.innerHTML = log.length ? log.map(m => m.who !== 'me' && /^(…|Thinking…|Reading the file…)$/.test(m.text) ? `<div class="msg ai working">${window.MustatarMark?.(26, true) || ''}<span>${m.text === '…' ? 'Thinking…' : esc(m.text)}</span></div>` : `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto">${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${m.open ? `<button type="button" class="link" data-open="${esc(m.open)}">Open the lesson</button>` : ''}</div>`).join('')
+  box.innerHTML = log.length ? log.map((m, i) => m.who !== 'me' && m.working && busy ? `<div class="msg ai working" data-i="${i}"><details class="ws"><summary>${window.MustatarMark?.(22, true) || ''}<span class="ws-now"></span><span class="ws-chev">›</span></summary><div class="ws-body">${m.steps ? stepsHtml(m) : ''}</div></details></div>`
+    : `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto" data-i="${i}">${m.who !== 'me' && m.steps?.length ? `<details class="ws ws-done"><summary><span class="ws-now">${m.steps.length} ${AR_() ? 'خطوات' : m.steps.length > 1 ? 'steps' : 'step'} · ${((m.ms || 0) / 1000).toFixed(1)}s${m.steps.some(x => x.state === 'fail') ? ' · ✗' : ''}</span><span class="ws-chev">›</span></summary><div class="ws-body">${stepsHtml(m)}</div></details>` : ''}${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${m.open ? `<button type="button" class="link" data-open="${esc(m.open)}">Open the lesson</button>` : ''}</div>`).join('')
     : '';
   $$('[data-open]', box).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
   const tries = J.me().use === 'work'
@@ -248,26 +249,70 @@ Rules:
 - Delete only when he clearly asks. If something is unclear (for example no day was given), ask one short question instead of guessing, with actions empty.
 - Keep "reply" short. Do not repeat the whole calendar unless asked; for "what do I have", list the items briefly with day and time.`;
 
+// what the assistant is doing, step by step — shown live like "Running a command ›"; tap to see every step
+const AR_ = () => window.ZadLang === 'ar';
+function stepper(pend) {
+  pend.steps = []; pend.t0 = Date.now();
+  const paint = () => paintWork(pend);
+  return {
+    start(label, detail = '') { const st = { label, detail, state: 'run', t: Date.now() }; pend.steps.push(st); paint(); return st; },
+    ok(st, detail) { st.state = 'ok'; st.ms = Date.now() - st.t; if (detail != null) st.detail = detail; paint(); },
+    fail(st, detail) { st.state = 'fail'; st.ms = Date.now() - st.t; if (detail != null) st.detail = detail; paint(); },
+    note(st, detail) { st.detail = detail; paint(); },
+  };
+}
+function stepsHtml(m) {
+  return `<ol class="ws-list">${m.steps.map(st => `<li class="ws-${st.state}"><span class="ws-ic">${st.state === 'ok' ? '✓' : st.state === 'fail' ? '✗' : '•'}</span><span class="ws-l" dir="auto">${esc(st.label)}${st.detail ? `<small dir="auto">${esc(st.detail)}</small>` : ''}</span>${st.ms != null ? `<em>${(st.ms / 1000).toFixed(1)}s</em>` : ''}</li>`).join('')}</ol>`;
+}
+function paintWork(pend) {
+  const i = log.indexOf(pend), el = $(`#as-log [data-i="${i}"]`);
+  if (!el) return render();
+  const cur = [...pend.steps].reverse().find(st => st.state === 'run') || pend.steps[pend.steps.length - 1];
+  el.querySelector('.ws-now').textContent = cur ? cur.label + (cur.state === 'run' && cur.detail ? ' · ' + cur.detail : '') : '';
+  const list = el.querySelector('.ws-body'); if (list) list.innerHTML = stepsHtml(pend);
+}
+
 async function send() {
   const att = window.JundAttach?.homeFile();
   const t = $('#as-text').value.trim() || (att ? (window.ZadLang === 'ar' ? 'ما في هذا الملف؟ لخّصه باختصار.' : 'What is in this file? Summarise it briefly.') : '');
   if (!t || busy) return;
   busy = true; $('#as-send').disabled = true;
   log.push({ who: 'me', text: (att ? '📎 ' + att.name + '\n' : '') + t }); if (att) window.JundAttach.clearHome(); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
-  const pend = { who: 'ai', text: '…' }; log.push(pend); render();
+  const pend = { who: 'ai', text: '…', working: true }; log.push(pend);
+  const S = stepper(pend); render();
+  const ar = AR_();
+  let st;
   try {
+    st = S.start(ar ? 'قراءة تقويمك وملاحظاتك' : 'Reading your calendar and notes');
     const history = log.slice(-12, -2).map(m => `${m.who === 'me' ? 'Student' : 'You'}: ${m.text}`).join('\n');
-    const user = `${await context(t)}\n\nRECENT CHAT:\n${history || '(start)'}\n\nThe student now says: ${t}`;
-    const r = att
-      ? await window.JundAttach.askFile(att, { system: SYSTEM(), user: user + '\n\n(The file above is attached to this message. Read it to answer; if it has dates, times or tasks and the student asks, add them with actions.)', json: true, maxTokens: 6000, onText: () => { pend.text = 'Reading the file…'; } })
-      : await J.callServer({ system: SYSTEM(), user, maxTokens: 3000, onText: () => { pend.text = 'Thinking…'; } });
+    const ctx = await context(t);
+    S.ok(st, ar ? `${(window.JundCal?.events() || []).length} موعدًا، ${(await J.allLessons()).length} ملاحظات` : `${(window.JundCal?.events() || []).length} calendar items, ${(await J.allLessons()).length} notes`);
+    const user = `${ctx}\n\nRECENT CHAT:\n${history || '(start)'}\n\nThe student now says: ${t}`;
+    let r;
+    if (att) {
+      st = S.start(ar ? `قراءة الملف: ${att.name}` : `Reading the file: ${att.name}`, `${(att.size / 1048576).toFixed(1)} MB`);
+      r = await window.JundAttach.askFile(att, { system: SYSTEM(), user: user + '\n\n(The file above is attached to this message. Read it to answer; if it has dates, times or tasks and the student asks, add them with actions.)', json: true, maxTokens: 6000,
+        onText: x => S.note(st, ar ? `يكتب… ${x.length} حرفًا` : `writing… ${x.length} characters`) });
+      S.ok(st, ar ? 'تمت القراءة' : 'read');
+    } else {
+      st = S.start(ar ? 'التفكير والكتابة' : 'Thinking and writing');
+      r = await J.callServer({ system: SYSTEM(), user, maxTokens: 3000, onText: x => S.note(st, ar ? `${x.length} حرفًا` : `${x.length} characters`) });
+      S.ok(st, '');
+    }
     const out = J.parseJSON(r.text);
+    const acts = out.actions || [];
+    if (acts.length) {
+      st = S.start(ar ? 'تنفيذ على تقويمك' : 'Updating your calendar', ar ? `${acts.length} خطوة` : `${acts.length} step${acts.length > 1 ? 's' : ''}`);
+      pend.done = apply(acts);
+      if (pend.done.length) S.ok(st, pend.done.join(' · ')); else S.fail(st, ar ? 'لم يُنفَّذ شيء (تاريخ أو معرّف غير صالح)' : 'nothing could be done (missing date or unknown item)');
+    }
     pend.text = out.reply || 'Done.';
-    pend.done = apply(out.actions || []);
     if (out.open && /^L/.test(out.open)) pend.open = out.open;
   } catch (e) {
+    if (st && st.state === 'run') S.fail(st, J.errText(e));
     pend.text = '✗ ' + J.errText(e);
   }
+  pend.working = false; pend.ms = Date.now() - pend.t0;
   busy = false; $('#as-send').disabled = false;
   persist(); render();
 }

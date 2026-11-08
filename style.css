@@ -1051,3 +1051,25 @@ a, .link { color: var(--accent); }
 .ic-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .88rem; }
 .ic-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ic-steps { margin: 4px 0 10px; padding-inline-start: 18px; line-height: 1.6; }
+
+/* ---------- live work steps (like "Running a command ›") ---------- */
+.msg.working { display: block; background: none; border: 0; padding: 4px 0; max-width: 100%; }
+.ws summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--ink-2); font-size: .9rem; }
+.ws summary::-webkit-details-marker { display: none; }
+.ws-now { background: linear-gradient(90deg, var(--ink-2) 0%, var(--ink) 50%, var(--ink-2) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: wsshine 2s linear infinite; }
+.ws-done .ws-now { animation: none; background: none; color: var(--ink-2); }
+@keyframes wsshine { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.ws-chev { transition: transform .2s; color: var(--ink-2); }
+.ws[open] .ws-chev { transform: rotate(90deg); }
+.ws-done { margin: -2px 0 8px; font-size: .8rem; }
+.ws-done summary { font-size: .78rem; }
+.ws-list { list-style: none; margin: 8px 0 4px; padding: 0 0 0 4px; border-inline-start: 2px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.ws-list li { display: flex; gap: 8px; align-items: baseline; padding-inline-start: 8px; font-size: .84rem; color: var(--ink); }
+.ws-list .ws-ic { width: 14px; flex: none; color: var(--ink-2); }
+.ws-list .ws-ok .ws-ic { color: var(--ink); }
+.ws-list .ws-fail .ws-ic, .ws-list .ws-fail { color: var(--danger); }
+.ws-list .ws-run .ws-ic { color: var(--accent); animation: wsblink 1s ease-in-out infinite; }
+@keyframes wsblink { 50% { opacity: .3; } }
+.ws-list .ws-l { flex: 1; min-width: 0; }
+.ws-list small { display: block; color: var(--ink-2); font-size: .76rem; overflow-wrap: anywhere; }
+.ws-list em { font-style: normal; color: var(--ink-2); font-size: .74rem; font-variant-numeric: tabular-nums; }
