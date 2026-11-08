@@ -89,6 +89,8 @@ function build() {
     <div class="st-layers" id="st-layers"></div>
     <button type="button" class="ghost small danger" id="st-del" hidden style="display:none">Remove</button>
     <textarea id="st-text" rows="3" dir="auto" placeholder="Write in Arabic or English — then drag it on the picture"></textarea>
+    <div class="row-gap st-ai"><button type="button" class="ghost small" id="st-tr">🌐 Add translation</button><button type="button" class="ghost small" id="st-design">✨ Design ideas</button></div>
+    <div id="st-design-list"></div>
     <div class="card-h" style="margin:12px 0 6px">Look</div>
     <div class="chips" id="st-looks">${Object.entries(LOOKS).map(([k, v]) => `<button type="button" class="chip-b" data-look="${k}">${v.name}</button>`).join('')}</div>
     <div class="card-h" style="margin:12px 0 6px">Font</div>
@@ -167,6 +169,8 @@ function build() {
   $('#st-export').onclick = () => exportIt(false);
   $('#st-share').onclick = () => exportIt(true);
   $('#st-ideas').onclick = ideas;
+  $('#st-tr').onclick = translate;
+  $('#st-design').onclick = designIdeas;
   $('#st-cap-save').onclick = () => { const t = $('#st-cap-new').value.trim(); if (t) { saveCaption(t); $('#st-cap-new').value = ''; } };
   renderCaps();
   $('#st-car-go').onclick = carousel;
@@ -417,7 +421,11 @@ function move(e) {
   if (!drag) return;
   const p = pt(e), cv = $('#st-canvas');
   drag.l.x = Math.min(0.98, Math.max(0.02, (p.x - drag.dx) / cv.width));
+  const ox = drag.l.x, oy = drag.l.y;
   drag.l.y = Math.min(0.98, Math.max(0.02, (p.y - drag.dy) / cv.height));
+  drag.l.x = Math.min(0.98, Math.max(0.02, (p.x - drag.dx) / cv.width));
+  // its translation moves with it
+  for (const t of layers) if (t.of === drag.l.id) { t.x += drag.l.x - ox; t.y += drag.l.y - oy; }
   draw();
 }
 function up() { drag = null; }
@@ -551,6 +559,76 @@ async function exportVideo(share) {
   const type = (mime || 'video/webm').split(';')[0];
   await deliver(new Blob(chunks, { type }), `jund-studio-${stamp()}.${type === 'video/mp4' ? 'mp4' : 'webm'}`, share);
   draw();
+}
+
+/* ---------- translation of the text on the picture ---------- */
+// how tall a text is on the picture (0–1 of the height), so the translation sits just under it
+function hOf(l) {
+  const [W, H] = SIZES[size], font = FONTS[l.font] || FONTS.modern, px = Math.round(l.size * W);
+  const ctx = document.createElement('canvas').getContext('2d'); ctx.font = `${font.w} ${px}px ${font.css}`;
+  const lh = px * (l.font === 'naskh' || l.font === 'ruqaa' ? 1.55 : 1.3);
+  return wrap(ctx, l.text || ' ', W * 0.84).length * lh / H;
+}
+function placeTr(base) {
+  for (const t of layers.filter(x => x.of === base.id)) {
+    t.size = Math.max(0.032, base.size * 0.55); t.align = base.align; t.x = base.x; t.color = base.color;
+    t.y = Math.min(0.94, base.y + hOf(base) / 2 + hOf(t) / 2 + 0.025);
+  }
+}
+async function translate() {
+  const cur = sel || layers.at(-1), l = cur?.of ? layers.find(x => x.id === cur.of) || cur : cur, src = (l?.text || $('#st-text').value).trim();
+  if (!src || src === 'Your text' || src === 'اكتب هنا') { $('#st-text').focus(); status('Write the text first, then tap Add translation.'); return; }
+  const toEn = J.langOf(src) === 'ar', b = $('#st-tr'); b.disabled = true; status('⏳ Translating…');
+  try {
+    const r = await J.callServer({ json: false, maxTokens: 800, system: `Translate the user's text into ${toEn ? 'clear, natural English' : 'clear, eloquent Arabic'} for a social-media picture. If it is a Quran verse, give the meaning faithfully (like Saheeh International) and do not add anything. If it is a hadith or a scholar's words, translate faithfully. Keep it short. Return only the translation, no quotes, no notes, no source.`, user: src });
+    const t = r.text.trim().replace(/^["“]|["”]$/g, ''); if (!t) throw new Error('No translation came back');
+    const base = l || addLayer({ text: src });
+    snap();
+    layers = layers.filter(x => x.of !== base.id);
+    const n = { id: newId(), of: base.id, text: t, look: 'classic', font: toEn ? 'elegant' : 'naskh', color: base.color, size: 0.04, align: base.align, x: base.x, y: base.y };
+    layers.push(n); placeTr(base); sel = n; $('#st-text').value = t; sync(); draw(); status('✓ Translation added under your text — drag it where you like.');
+  } catch (e) { status('✗ ' + J.errText(e)); }
+  b.disabled = false;
+}
+
+/* ---------- design ideas for the text: tap one to apply it ---------- */
+async function designIdeas() {
+  const cur = sel || layers.at(-1), l = cur?.of ? layers.find(x => x.id === cur.of) || cur : cur, text = (l?.text || $('#st-text').value).trim();
+  const box = $('#st-design-list');
+  if (!text) { $('#st-text').focus(); status('Write the text first, then tap Design ideas.'); return; }
+  box.innerHTML = '<p class="muted fine">⏳ Thinking of designs…</p>';
+  const system = `You are a calm, tasteful Islamic social-media designer. For the user's text, suggest 4 different designs for a ${SIZES[size][2]} picture.
+Choose only from these options:
+look: ${Object.keys(LOOKS).join(', ')}
+font: ${Object.keys(FONTS).join(', ')}
+color: ${COLORS.join(', ')}
+bg: ${Object.keys(BGS).join(', ')}
+align: start, center, end
+size: a number from 0.04 to 0.12 (smaller for long text)
+y: where the text sits, 0.15 (top) to 0.8 (bottom)
+For each design write a short name, and "why": one or two simple sentences on the feeling and how to finish it (e.g. add the source small at the bottom, a photo of the sky behind, leave space). Keep it modest and halal: no faces, no music.
+Return JSON only: {"designs":[{"name":"","why":"","look":"","font":"","color":"","bg":"","align":"","size":0.07,"y":0.4}]}`;
+  try {
+    const r = await J.callServer({ system, user: text, maxTokens: 2000 });
+    const list = (J.parseJSON(r.text).designs || []).filter(d => d.name).slice(0, 4);
+    if (!list.length) throw new Error('No ideas came back — try again');
+    box.innerHTML = list.map((d, i) => `<div class="idea st-dz"><span class="st-dz-sw" style="background:linear-gradient(135deg,${(BGS[d.bg] || BGS.navy).join(',')});color:${COLORS.includes(d.color) ? d.color : '#fff'};font-family:${(FONTS[d.font] || FONTS.modern).css}">Aa</span>
+      <div style="flex:1;min-width:0"><b>${esc(d.name)}</b><div class="muted" style="font-size:.86rem">${esc(d.why || '')}</div></div>
+      <button type="button" class="ghost small" data-dz="${i}">Apply</button></div>`).join('');
+    $$('[data-dz]', box).forEach(b => b.onclick = () => {
+      const d = list[+b.dataset.dz]; snap();
+      const t = l && layers.includes(l) ? l : layers.find(x => !x.of) || addLayer({ text });
+      if (LOOKS[d.look]) t.look = d.look;
+      t.font = FONTS[d.font] ? d.font : LOOKS[t.look].font;
+      if (COLORS.includes(d.color)) t.color = d.color;
+      if (['start', 'center', 'end'].includes(d.align)) t.align = d.align;
+      if (+d.size >= 0.03 && +d.size <= 0.16) t.size = +d.size;
+      if (+d.y > 0.05 && +d.y < 0.95) t.y = +d.y;
+      if (BGS[d.bg] && bg.kind === 'color') bg = { kind: 'color', key: d.bg };
+      if (layers.some(x => x.of === t.id)) t.y = Math.min(t.y, 0.7);
+      placeTr(t); sel = t; sync(); draw(); $('#st-canvas').scrollIntoView({ block: 'center' });
+    });
+  } catch (e) { box.innerHTML = `<p class="muted fine">✗ ${esc(J.errText(e))}</p>`; }
 }
 
 /* ---------- post ideas from the week's notes ---------- */

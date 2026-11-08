@@ -120,7 +120,7 @@ function verseItem(q, [s, a, w0, w1]) {
 }
 // the order: your own, thankfulness, hadith, a verse, a word of the scholars — then round again
 function pick(q, k) {
-  const groups = [mine().map(m => ({ short: m.text, full: m.text, by: '', src: m.src || '', own: m.id })),
+  const groups = [mine().map(m => ({ short: m.text, full: m.text, en: m.en || '', by: '', src: m.src || '', own: m.id })),
     SHUKR.map(v => verseItem(q, v)),
     HADITH.map(h => ({ short: h.ar, full: h.ar, en: h.en, by: h.by, src: h.src })),
     VERSES.map(v => verseItem(q, v)),
@@ -146,6 +146,8 @@ async function render() {
       <div class="row-gap rm-acts"><button type="button" class="ghost small" id="rm-next">Another</button><button type="button" class="ghost small" id="rm-add">＋ Add your own</button><button type="button" class="ghost small" id="rm-studio">Use in Studio</button>${it.own ? '<button type="button" class="link small" id="rm-del">Remove</button>' : ''}</div>
       <form class="rm-form" id="rm-form" hidden>
         <textarea id="rm-text" dir="auto" rows="3" placeholder="A verse, hadith or wise word you want to see…"></textarea>
+        <textarea id="rm-en-in" dir="ltr" rows="2" placeholder="English translation — optional"></textarea>
+        <button type="button" class="link small" id="rm-tr" style="justify-self:start">🌐 Translate it for me</button>
         <input id="rm-src" dir="auto" placeholder="Where it is from (book, page) — optional">
         <div class="row-gap"><button type="submit" class="primary small">Save</button><button type="button" class="ghost small" id="rm-cancel">Cancel</button></div>
       </form>
@@ -154,10 +156,19 @@ async function render() {
   if (it.verse) meaning(...it.verse).then(t => { const m = $('#rm-en'); if (m && t) m.innerHTML = `“${esc(t)}” <small>(Saheeh International)</small>`; });
   $('#rm-next').onclick = () => { pos++; store.set('wisIdx', pos); render(); };
   $('#rm-add').onclick = () => { $('#rm-form').hidden = false; $('#rm-text').focus(); };
+  $('#rm-tr').onclick = async () => {
+    const text = $('#rm-text').value.trim(), b = $('#rm-tr'); if (!text) { $('#rm-text').focus(); return; }
+    b.disabled = true; b.textContent = '⏳ Translating…';
+    try {
+      const r = await J.callServer({ json: false, maxTokens: 800, system: 'Translate this Islamic text (Quran, hadith or words of the scholars) into clear English. Give the meaning faithfully and add nothing. Return only the translation.', user: text });
+      $('#rm-en-in').value = r.text.trim();
+    } catch (e) { $('#rm-en-in').placeholder = '✗ ' + J.errText(e); }
+    b.disabled = false; b.textContent = '🌐 Translate it for me';
+  };
   $('#rm-cancel').onclick = () => { $('#rm-form').hidden = true; };
   $('#rm-form').onsubmit = e => {
     e.preventDefault(); const text = $('#rm-text').value.trim(); if (!text) return;
-    const list = mine(); list.push({ id: Date.now().toString(36), text, src: $('#rm-src').value.trim() }); store.set('myWisdom', list);
+    const list = mine(); list.push({ id: Date.now().toString(36), text, en: $('#rm-en-in').value.trim(), src: $('#rm-src').value.trim() }); store.set('myWisdom', list);
     pos = Math.ceil(pos / 5) * 5; store.set('wisIdx', pos); // show it straight away
     window.JundCal?.widgetSync?.(); render();
   };
