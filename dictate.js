@@ -24,6 +24,18 @@ function setup() {
   mic.title = L('Tap to speak · hold for a spoken conversation', 'اضغط لتتكلم · اضغط مطولًا لمحادثة صوتية');
 }
 
+// words the person is likely to say, so names and Islamic terms are written correctly
+function vocab() {
+  const me = J.me() || {};
+  const subj = (J.store.get('mySubjects', []) || []).join(', ');
+  let cal = ''; try { cal = (window.JundCal?.upcoming(30, 15) || []).map(x => x.e.title).join(', '); } catch {}
+  return `Context for spelling (use only if these words are actually said): the speaker is ${me.name || 'a student'}${me.study ? ', ' + me.study : ''}. `
+    + `Their subjects: ${subj || '—'}. Their calendar: ${cal || '—'}. `
+    + 'Common words in their talk: Ayat al-Ahkam (آيات الأحكام), Kulliyat al-Haram (كلية الحرم), Dar al-Hadith (دار الحديث), Masjid al-Haram, Makkah, Madinah, '
+    + 'Usul al-Fiqh (أصول الفقه), Fiqh, Hadith, Tafsir, Aqeedah, Nahw, Sarf, Balagha, Mustalah al-Hadith, Seerah, Tajweed, hifz, juz, surah, ayah, '
+    + 'shaykh, ustadh, dars, halaqa, Ibn al-Qayyim, Ibn Rajab, Ibn Taymiyyah, al-Bukhari, Muslim, Dhuhr, Asr, Maghrib, Isha, Fajr, Duha, Mustatar. '
+    + 'English speech stays in English letters; Arabic speech in Arabic script.';
+}
 const TYPE = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
 
 async function start() {
@@ -48,6 +60,8 @@ async function start() {
   bar.querySelector('.dict-send').onclick = () => stop(true);
   R.bar = bar; R.bars = [...bar.querySelectorAll('.dict-wave i')]; R.tEl = bar.querySelector('.dict-t');
 
+  // one more recorder for the whole talk: when you stop, the whole thing is written again at once, with full context
+  try { const ty = TYPE(); const all = new MediaRecorder(stream, ty ? { mimeType: ty, audioBitsPerSecond: 32000 } : undefined); const parts = []; R.all = all; R.allParts = parts; all.ondataavailable = e => e.data.size && parts.push(e.data); all.start(500); } catch {}
   newPiece();
   R.raf = requestAnimationFrame(frame);
 }
@@ -77,7 +91,7 @@ async function writePiece(r, piece) {
     const file = new File([blob], 'voice.' + (/mp4/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm'), { type: blob.type.split(';')[0] });
     const prev = r.pieces.filter(p => p.seq < piece.seq && p.text).map(p => p.text).join(' ').slice(-300);
     const res = await window.JundAttach.askFile(file, {
-      system: 'You write down speech for a message box. Output ONLY the exact words spoken in this short audio, in the language(s) spoken (Arabic in Arabic script, English in English), with normal punctuation. No notes, no quotes. If nothing clear was said, output nothing.',
+      system: 'You write down speech for a message box. Output ONLY the exact words spoken in this short audio, in the language(s) spoken (Arabic in Arabic script, English in English), with normal punctuation. No notes, no quotes. If nothing clear was said, output nothing.\n' + vocab(),
       user: prev ? `The words just before this (for context only, do not repeat them): ${prev}\n\nWrite down what is said in this audio.` : 'Write down what is said in this audio.', maxTokens: 1500,
       onText: t => { piece.text = t.trim(); show(r); },
     });
@@ -110,7 +124,7 @@ function frame(now) {
     if (speaking) { p.spoke = true; p.lastVoice = now; }
     const len = now - p.t0, quiet = now - (p.lastVoice || p.t0);
     // cut at a short pause (so words are never split), or at the next small pause after 7 s, or at 12 s
-    if (p.spoke && ((len > 1500 && quiet > 550) || (len > 7000 && quiet > 200) || len > 12000)) cutPiece();
+    if (p.spoke && ((len > 3500 && quiet > 650) || (len > 9000 && quiet > 250) || len > 15000)) cutPiece();
     else if (!p.spoke && len > 15000) cutPiece();   // long silence: start a fresh piece
   }
   // the wave: the level glides (no jumps), and the bars glide toward it
@@ -130,6 +144,7 @@ function closeBar(r) {
 function cancel() {
   const r = R; if (!r) return; R = null; r.cancelled = true;
   try { r.cur?.rec.stop(); } catch {}
+  try { r.all?.stop(); } catch {}
   closeBar(r);
   const ta = $('#as-text'); ta.value = r.before.trim(); ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); grow(ta);
 }
@@ -137,11 +152,23 @@ function stop(andSend) {
   const r = R; if (!r) return; R = null;
   cancelAnimationFrame(r.raf);
   const last = r.cur; r.cur = null;
+  r.allDone = new Promise(ok => { if (!r.all) return ok(null); r.all.onstop = () => ok(new Blob(r.allParts, { type: r.all.mimeType || 'audio/webm' })); try { r.all.stop(); } catch { ok(null); } });
   const ta = $('#as-text');
   ta.placeholder = L('Writing what you said…', 'أكتب ما قلته…');
-  r.finishing = () => {
+  r.finishing = async () => {
     r.finishing = null;
     show(r); ta.value = ta.value.replace(/ …$/, '');
+    // the careful pass over the whole recording
+    const allBlob = await r.allDone;
+    if (allBlob && allBlob.size > 4000 && r.pieces.some(p => p.text)) {
+      ta.placeholder = L('Checking the words…', 'أراجع الكلمات…');
+      try {
+        const file = new File([allBlob], 'voice.' + (/mp4/.test(allBlob.type) ? 'm4a' : /ogg/.test(allBlob.type) ? 'ogg' : 'webm'), { type: allBlob.type.split(';')[0] });
+        const res = await window.JundAttach.askFile(file, { system: 'You write down speech for a message box. Output ONLY the exact words spoken, in the language(s) spoken (Arabic in Arabic script, English in English), with normal punctuation. No notes, no quotes.\n' + vocab(), user: 'Write down everything said in this audio.', maxTokens: 6000 });
+        const t = res.text.trim().replace(/^["“]|["”]$/g, '');
+        if (t) ta.value = (r.before + t).trim();
+      } catch {}
+    }
     ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); grow(ta);
     if (r.err && !r.pieces.some(p => p.text)) hint('✗ ' + J.errText(r.err));
     if (andSend && ta.value.trim()) $('#as-send')?.click(); else ta.focus();
