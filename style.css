@@ -885,3 +885,41 @@ body[data-screen="library"] #top-search { display: none; }
 .dc-left { font-size: .74rem; margin: 6px 4px 0; }
 .dc-left:empty { display: none; }
 #hm-brief { text-transform: none; letter-spacing: 0; font-weight: 500; }
+
+/* =================== Mustatar palette — "Midnight & Gold" (default) and "Parchment" (light) ===================
+   One accent only: gold. Everything else is a calm midnight scale. Status colours are muted, earthy tones that sit
+   well next to gold (sage for done, terracotta for urgent) instead of bright green / red / blue. */
+:root, :root[data-theme="navy"] {
+  --bg: #0A0F1D; --surface: #111829; --surface-2: #172036; --line: #232D45;
+  --ink: #ECEEF3; --ink-2: #8F98AD;
+  --gold: #D6B26E; --gold-2: #B8934F; --gold-soft: color-mix(in srgb, #D6B26E 16%, transparent);
+  --accent: #D6B26E; --accent-2: #B8934F; --on-accent: #17120A;
+  --ok: #93B89A; --done: #93B89A; --warn: #E2B866; --danger: #E08576;
+  --t-task: #8FA9DA; --t-homework: #E2B866; --t-exam: #E08576; --t-class: #93B89A; --t-meeting: #B3A2DB; --t-study: #86C1BC;
+  --shadow: 0 10px 30px rgb(0 0 0 / .38);
+}
+:root[data-theme="light"] {
+  --bg: #F6F2E9; --surface: #FFFDF8; --surface-2: #F1EBDD; --line: #E3D9C4;
+  --ink: #1A2032; --ink-2: #6A6F7D;
+  --gold: #9A7631; --gold-2: #7E5F24; --gold-soft: color-mix(in srgb, #9A7631 14%, transparent);
+  --accent: #9A7631; --accent-2: #7E5F24; --on-accent: #FFFDF8;
+  --ok: #5E8B68; --done: #5E8B68; --warn: #B07D1E; --danger: #B5543F;
+  --t-task: #4F6FA8; --t-homework: #B07D1E; --t-exam: #B5543F; --t-class: #5E8B68; --t-meeting: #7A62B0; --t-study: #3F8A84;
+  --shadow: 0 8px 24px rgb(60 45 20 / .10);
+}
+/* user messages: a quiet raised bubble (like Claude), not a loud colour */
+.msg.me { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); }
+a, .link { color: var(--gold); }
+.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.primary:hover { background: var(--accent-2); }
+.fb-k.on { border-color: var(--gold); background: var(--gold-soft); }
+.vx-orb { box-shadow: 0 10px 30px color-mix(in srgb, var(--gold) 30%, transparent); }
+.dr-new { color: var(--on-accent); }
+/* prayer line: passed = sage, coming = gold with a glow, later = empty */
+.dc-mark.p.next i { background: var(--gold); border-color: var(--gold); box-shadow: 0 0 0 4px var(--gold-soft); }
+.dc-mark.p.next small { color: var(--gold); }
+.dc-foot .np i { background: var(--gold); }
+.dc-foot .np b { color: var(--gold); }
+.dc-dot { background: var(--ink); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ink) 14%, transparent); width: 10px; height: 10px; }
+.dc-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 15%, transparent), color-mix(in srgb, var(--gold) 45%, transparent)) !important; }
+.server-dot[data-ok="1"] { background: var(--ok); }
