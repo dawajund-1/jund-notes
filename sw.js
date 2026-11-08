@@ -1,6 +1,6 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v28';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js', 'assistant.js', 'features.js', 'study.js', 'reminders.js', 'recorder.js', 'rec-worker.js', 'vendor/lame.min.js', 'i18n.js', 'voice.js'];
+const CACHE = 'jn-app-v29';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js', 'assistant.js', 'features.js', 'study.js', 'reminders.js', 'recorder.js', 'rec-worker.js', 'vendor/lame.min.js', 'i18n.js', 'voice.js', 'report.js', 'welcome.js', 'icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -63,7 +63,7 @@ self.addEventListener('push', e => {
     } catch {}
     const shown = await self.registration.getNotifications();
     const fresh = due.filter(d => !shown.some(n => n.tag === d.tag));
-    if (!fresh.length && !due.length) return self.registration.showNotification('Zad', { body: 'You have a reminder.', icon: 'icon-192.png', tag: 'daftar' });
+    if (!fresh.length && !due.length) return self.registration.showNotification('Mustatar', { body: 'You have a reminder.', icon: 'icon-192.png', tag: 'daftar' });
     for (const d of fresh) await self.registration.showNotification(d.title, { body: d.body, tag: d.tag, icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [200, 100, 200] });
   })());
 });

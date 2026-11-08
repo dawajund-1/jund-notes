@@ -585,3 +585,51 @@ body.vx-open { overflow: hidden; }
 .vx-row select { flex: 1; min-width: 0; font-size: 13px; padding: 5px 8px; }
 .vx-row input[type=range] { flex: 1; }
 .vx-tip { font-size: 12.5px; margin: 10px 0 0; line-height: 1.6; }
+
+/* ---------- first-open welcome ---------- */
+.wl { position: fixed; inset: 0; z-index: 95; background: radial-gradient(circle at 30% 0%, #15275A, var(--bg) 70%); overflow-y: auto; display: flex; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
+.wl-card { width: min(520px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.wl-top { display: flex; align-items: center; gap: 12px; }
+.wl-top img { border-radius: 12px; }
+.wl-dots { flex: 1; display: flex; gap: 6px; }
+.wl-dots i { width: 22px; height: 4px; border-radius: 4px; background: var(--line); }
+.wl-dots i.on { background: var(--gold); }
+.wl-h { font-family: var(--head); font-size: 26px; margin: 6px 0 0; }
+.wl-verse { font-family: 'Noto Naskh Arabic', 'Amiri', serif; font-size: 22px; color: var(--gold); margin: 0; text-align: center; }
+.wl-verse small { font-size: 13px; color: var(--ink-2); }
+.wl-q { font-weight: 600; margin: 6px 0 0; }
+.wl-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wl-opt { padding: 18px; font-size: 18px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.wl-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wl-role { display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 14.5px; text-align: start; }
+.wl-role span { font-size: 18px; }
+.wl-role.on { border-color: var(--gold); background: rgba(217, 179, 108, .12); }
+.wl-ai { display: flex; flex-direction: column; gap: 12px; }
+.wl-box { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: start; }
+.wl-best { border-color: var(--gold); }
+.wl-box p { margin: 0; font-size: 14px; }
+.wl-steps { margin: 0; padding-inline-start: 20px; font-size: 14px; line-height: 1.7; }
+.wl-go { text-align: center; text-decoration: none; padding: 13px; border-radius: 12px; display: block; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.wl-box input { font-size: 15px; }
+.wl-msg { font-size: 14px; min-height: 20px; }
+.wl-try { margin: 0; padding-inline-start: 4px; list-style: none; display: flex; flex-direction: column; gap: 10px; line-height: 1.6; }
+.wl-card > .primary { padding: 14px; font-size: 16px; }
+
+/* ---------- feedback + owner view ---------- */
+.fb-kinds { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.fb-k { border: 1px solid var(--line); background: transparent; color: var(--ink-2); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13.5px; }
+.fb-k.on { border-color: var(--accent); color: var(--ink); background: rgba(74, 134, 255, .14); }
+#fb-text { width: 100%; margin-bottom: 8px; }
+#fb-card .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+#fb-owner { margin-top: 10px; }
+.ow-card { max-height: 96vh; }
+.ow-body { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.ow-body h3 { font-size: 15px; margin: 14px 0 2px; font-family: var(--head); }
+.ow-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ow-stats div { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 4px; text-align: center; font-size: 11.5px; color: var(--ink-2); }
+.ow-stats b { display: block; font-size: 20px; color: var(--ink); }
+.ow-item { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+.ow-meta { font-size: 12px; color: var(--ink-2); margin-bottom: 4px; }
+.ow-tops { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12.5px; }
+.ow-tops span { border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
+.update-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 80; background: var(--gold); color: #1b1405; border: 0; border-radius: 999px; padding: 10px 18px; font: inherit; font-weight: 600; box-shadow: 0 6px 20px rgba(0,0,0,.35); }

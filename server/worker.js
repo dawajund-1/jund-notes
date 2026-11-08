@@ -4,6 +4,8 @@
 //   POST /youtube     a YouTube link + time range → transcript of that range (streams)
 //   GET  /playlist    a YouTube playlist → its videos (from YouTube's public feed)
 //   GET  /ytmeta      a YouTube link → its title
+//   POST /report      a problem, a piece of feedback or a daily usage count from the app (no note contents)
+//   POST /owner/reports, /owner/delete   the app owner's view of those reports (needs the owner code)
 //   POST /ask-voice   a short spoken question (+ the file being discussed) → what was heard and the answer
 
 const ALLOWED = ['https://dawajund-1.github.io'];
@@ -11,6 +13,7 @@ let G = 'https://generativelanguage.googleapis.com';  // GEMINI_BASE replaces it
 const WRITE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash'];
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
 const VOICE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
+const OWNER_HASH = 'acbe7ee98a566ab6ed2537fc1d67662eddda3739d19aedde6ee8f89f223fe602';   // sha-256 of the owner code (the code itself is not stored here)
 const MAX_BODY = 900_000;            // characters of text: about 150 pages
 const MAX_AUDIO = 95 * 1024 * 1024;  // bytes per audio piece
 
@@ -172,7 +175,7 @@ async function pushRoutes(req, env, h, path, url) {
     const b = await req.json().catch(() => ({}));
     const rec = await env.PUSH.get('s:' + b.id, 'json');
     if (!rec) return json({ error: 'not found' }, 404, h);
-    rec.reminders.push({ at: Date.now(), title: 'Test reminder', body: 'Reminders work even when Zad is closed.', tag: 'test-' + Date.now(), sent: false });
+    rec.reminders.push({ at: Date.now(), title: 'Test reminder', body: 'Reminders work even when Mustatar is closed.', tag: 'test-' + Date.now(), sent: false });
     await env.PUSH.put('s:' + b.id, JSON.stringify(rec));
     const r = await sendPush(env, rec.sub);
     return json({ ok: r.ok, status: r.status }, 200, h);
@@ -269,6 +272,36 @@ export default {
 
     if (req.method !== 'POST') return json({ error: 'not found' }, 404, h);
     if (!env.GEMINI_API_KEY) return json({ error: 'server has no key', code: 'nokey' }, 500, h);
+
+    /* ----- reports from the app: problems, feedback, usage counts ----- */
+    if (path === '/report') {
+      const raw = await req.text();
+      if (raw.length > 12000) return json({ error: 'too long' }, 413, h);
+      let b; try { b = JSON.parse(raw); } catch { return json({ error: 'bad request' }, 400, h); }
+      const kind = ['error', 'feedback', 'usage', 'event'].includes(b.kind) ? b.kind : 'event';
+      const cut = (v, n) => String(v ?? '').slice(0, n);
+      const meta = { k: kind, t: Date.now(), n: cut(b.name, 40), a: cut(b.anon, 16), m: cut(b.msg || b.text, 300), p: cut(b.page, 40), v: cut(b.app, 12), l: cut(b.lang, 4), r: cut(b.roles, 60), u: cut(b.ua, 60) };
+      if (kind === 'usage') meta.c = JSON.stringify(b.counts || {}).slice(0, 500);
+      const key = `r:${kind}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+      await env.PUSH.put(key, raw.slice(0, 12000), { metadata: meta, expirationTtl: (kind === 'feedback' ? 365 : 120) * 86400 });
+      return json({ ok: true }, 200, h);
+    }
+    if (path === '/owner/reports' || path === '/owner/delete') {
+      let b; try { b = await req.json(); } catch { return json({ error: 'bad request' }, 400, h); }
+      const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(b.code || '').trim().toUpperCase())))].map(x => x.toString(16).padStart(2, '0')).join('');
+      if (hash !== OWNER_HASH) return json({ error: 'wrong code', code: 'owner' }, 403, h);
+      if (path === '/owner/delete') { for (const k of (b.keys || []).slice(0, 200)) if (String(k).startsWith('r:')) await env.PUSH.delete(k); return json({ ok: true }, 200, h); }
+      const items = []; let cursor;
+      for (let i = 0; i < 5; i++) {
+        const l = await env.PUSH.list({ prefix: 'r:', cursor, limit: 1000 });
+        for (const k of l.keys) items.push({ key: k.name, ...(k.metadata || {}) });
+        if (l.list_complete) break; cursor = l.cursor;
+      }
+      // full text for feedback and the newest problems
+      const want = items.filter(x => x.k === 'feedback' || x.k === 'error').sort((a, z) => z.t - a.t).slice(0, 60);
+      await Promise.all(want.map(async x => { try { x.full = JSON.parse(await env.PUSH.get(x.key)); } catch {} }));
+      return json({ items }, 200, h);
+    }
 
     /* ----- a short spoken question → what was heard + the answer (basic voice) ----- */
     if (path === '/ask-voice') {

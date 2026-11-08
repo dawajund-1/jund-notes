@@ -1,4 +1,4 @@
-/* Zad — Arabic interface. Every label the app shows is looked up here and shown in Arabic, right to left.
+/* Mustatar — Arabic interface. Every label the app shows is looked up here and shown in Arabic, right to left.
    Notes, lesson names and anything the person writes are never touched. */
 (() => {
 'use strict';
@@ -38,7 +38,7 @@ const T = {
 'Keep the app open and the screen on until it finishes.': 'أبقِ التطبيق مفتوحًا والشاشة مضاءة حتى ينتهي.', 'Kufi': 'كوفي', 'Lesson or meeting recording': 'تسجيل درس أو اجتماع', 'Lesson or unit': 'الدرس أو الوحدة',
 'Light': 'فاتح', 'Light — about 1.5 GB, weaker': 'خفيف — نحو ١٫٥ غ.ب، أضعف', 'Loading prayer times…': 'تحميل أوقات الصلاة…', 'Long-press an empty spot on your home screen →': 'اضغط مطولًا على مكان فارغ في الشاشة الرئيسية ←',
 'Look': 'الشكل', 'Madinah': 'المدينة المنورة', 'Main': 'الرئيسية', 'Make my year book': 'اصنع كتاب سنتي', 'Make notes': 'اصنع الملاحظات', 'Make the carousel': 'اصنع الكاروسيل', 'Making the video…': 'يصنع الفيديو…',
-'Makkah': 'مكة المكرمة', 'Meeting': 'اجتماع', 'Meeting recording → minutes': 'تسجيل اجتماع ← محضر', 'Meeting minutes': 'محضر الاجتماع', 'Memorisation': 'الحفظ', 'Message Zad…': 'اكتب إلى زاد…', 'Mind map': 'خريطة ذهنية',
+'Makkah': 'مكة المكرمة', 'Meeting': 'اجتماع', 'Meeting recording → minutes': 'تسجيل اجتماع ← محضر', 'Meeting minutes': 'محضر الاجتماع', 'Memorisation': 'الحفظ', 'Message Mustatar…': 'اكتب إلى مستطر…', 'Mind map': 'خريطة ذهنية',
 'Model': 'النموذج', 'Modern': 'حديث', 'Month': 'شهر', 'Naskh': 'نسخ', 'Neon': 'نيون', 'New': 'جديد', 'New chat': 'محادثة جديدة', 'New item': 'عنصر جديد', 'Edit item': 'تعديل العنصر', 'New notes': 'ملاحظات جديدة',
 'Next month': 'الشهر التالي', 'Previous month': 'الشهر السابق', 'No lessons yet.': 'لا توجد دروس بعد.', 'No reminder': 'بلا تنبيه', 'No text yet. Tap “+ Add text”.': 'لا نص بعد. اضغط «+ إضافة نص».', 'None': 'لا شيء',
 'Not downloaded yet. Best on Wi-Fi. After that, transcription works with no internet.': 'لم يُنزَّل بعد. الأفضل على الواي فاي. بعدها يعمل التفريغ بلا إنترنت.',
@@ -72,7 +72,7 @@ const T = {
 'With this key every lesson is saved in jund-notes-data, so it comes back on any phone.': 'بهذا المفتاح يُحفظ كل درس في مخزنك الخاص، فيعود على أي جوال.', 'Work — meetings, projects, tasks': 'العمل — اجتماعات ومشاريع ومهام',
 'Write a caption or hashtags to keep': 'اكتب تعليقًا أو وسومًا لحفظها', 'Write in Arabic or English — then drag it on the picture': 'اكتب بالعربية أو الإنجليزية — ثم اسحبه على الصورة', 'Write my weekly report': 'اكتب تقريري الأسبوعي',
 'Write slides from my last note': 'اكتب الشرائح من آخر ملاحظة', 'Writing…': 'يكتب…', 'You can close this; the timer keeps running.': 'يمكنك الإغلاق؛ المؤقت يستمر.', 'YouTube': 'يوتيوب', 'YouTube link': 'رابط يوتيوب',
-'Your first name': 'اسمك الأول', 'Your name': 'اسمك', 'Your own AI key (optional)': 'مفتاح الذكاء الخاص بك (اختياري)', 'Zad': 'زاد', 'add your key in': 'أضف مفتاحك في', 'done': 'تم', 'lessons made': 'دروس صُنعت', 'next 7 days': 'الأيام السبعة القادمة',
+'Your first name': 'اسمك الأول', 'Your name': 'اسمك', 'Your own AI key (optional)': 'مفتاح الذكاء الخاص بك (اختياري)', 'Mustatar': 'مستطر', 'add your key in': 'أضف مفتاحك في', 'done': 'تم', 'lessons made': 'دروس صُنعت', 'next 7 days': 'الأيام السبعة القادمة',
 'e.g. Ahmed': 'مثل: أحمد', 'e.g. Fiqh homework': 'مثل: واجب الفقه', 'e.g. Lesson 3': 'مثل: الدرس ٣', 'e.g. Sales': 'مثل: المبيعات', "e.g. Make the table clearer, or add the teacher's example about…": 'مثل: وضّح الجدول، أو أضف مثال الشيخ عن…',
 'e.g. Dar al-Hadith al-Khayriyyah and Kulliyat al-Masjid al-Haram, Makkah': 'مثل: دار الحديث الخيرية وكلية المسجد الحرام، مكة', '“Save PDF” opens the print window: choose “Save as PDF”, then tap save.': '«حفظ PDF» يفتح نافذة الطباعة: اختر «حفظ كـ PDF» ثم اضغط حفظ.',
 '↶ Undo': '↶ تراجع', '▶ Play the part': '▶ شغّل المقطع', '☆ Save this text': '☆ احفظ هذا النص', 'Language': 'اللغة', 'Interface language': 'لغة الواجهة', 'Monday': 'الاثنين', 'Saturday': 'السبت', 'Sunday': 'الأحد',
@@ -86,7 +86,7 @@ const T = {
 'Reading and writing…': 'يقرأ ويكتب…', 'Preparing your year book…': 'يجهّز كتاب سنتك…', 'Reading your week…': 'يقرأ أسبوعك…', 'Finding your location…': 'يحدد موقعك…', '✓ Saved': '✓ حُفظ', '✓ Copied': '✓ نُسخ', '✓ Copied.': '✓ نُسخ.',
 '✓ Ready': '✓ جاهز', '✓ Ready.': '✓ جاهز.', '✓ Transcribed': '✓ فُرّغ', '⏳ Waiting': '⏳ ينتظر', '☁ Waiting for internet': '☁ ينتظر الإنترنت', '✓ Revision plan added': '✓ أُضيفت خطة المراجعة', '✓ Caption copied': '✓ نُسخ التعليق',
 'Nothing was recorded.': 'لم يُسجَّل شيء.', 'The recording was too short.': 'التسجيل قصير جدًا.', '✓ Recording saved. Transcribing now…': '✓ حُفظ التسجيل. يفرّغه الآن…', 'Paste a YouTube link first.': 'الصق رابط يوتيوب أولًا.',
-'Recording. Keep Zad open; the screen stays on (you can turn the brightness down). The sound is saved every 15 seconds.': 'جارٍ التسجيل. أبقِ زاد مفتوحًا؛ تبقى الشاشة مضاءة (يمكنك خفض السطوع). يُحفظ الصوت كل ١٥ ثانية.',
+'Recording. Keep Mustatar open; the screen stays on (you can turn the brightness down). The sound is saved every 15 seconds.': 'جارٍ التسجيل. أبقِ مستطر مفتوحًا؛ تبقى الشاشة مضاءة (يمكنك خفض السطوع). يُحفظ الصوت كل ١٥ ثانية.',
 '✗ The microphone is not allowed. Allow it for this app in your phone settings, then try again.': '✗ الميكروفون غير مسموح. اسمح به لهذا التطبيق من إعدادات الجوال ثم حاول.',
 '✗ No speech was heard in this file.': '✗ لم يُسمع كلام في هذا الملف.', '✗ YouTube needs the internet. Connect, then add it again.': '✗ يوتيوب يحتاج الإنترنت. اتصل ثم أضفه مرة أخرى.',
 'Wait until the transcription finishes (see ⏳ above), then tap again.': 'انتظر حتى ينتهي التفريغ (انظر ⏳ بالأعلى)، ثم اضغط مرة أخرى.', 'The text is too short. Paste all of it or choose more pages.': 'النص قصير جدًا. الصقه كاملًا أو اختر صفحات أكثر.',
@@ -101,9 +101,9 @@ const T = {
 'Good week so far. Keep going.': 'أسبوع جيد حتى الآن. واصل.', 'Nothing planned today.': 'لا شيء مخطط اليوم.', 'Revision': 'المراجعة', 'Quiz': 'اختبار قصير',
 'Reminders pop up while the app is open. Allow notifications to get them on the phone too.': 'تظهر التنبيهات والتطبيق مفتوح. اسمح بالإشعارات لتصلك على الجوال أيضًا.',
 'Allow notifications to get reminders on the phone, even when the app is closed.': 'اسمح بالإشعارات لتصلك التنبيهات حتى والتطبيق مغلق.',
-'✓ Reminders reach this phone even when Zad is closed.': '✓ تصل التنبيهات إلى هذا الجوال حتى وزاد مغلق.',
+'✓ Reminders reach this phone even when Mustatar is closed.': '✓ تصل التنبيهات إلى هذا الجوال حتى ومستطر مغلق.',
 'Reminders pop up while the app is open, and missed ones show when you open it.': 'تظهر التنبيهات والتطبيق مفتوح، وتظهر الفائتة عند فتحه.', 'Nothing else today': 'لا شيء آخر اليوم', 'your location': 'موقعك', 'Prayer and tasks': 'الصلاة والمهام', 'Waiting': 'ينتظر',
-'Make flashcards': 'اصنع بطاقات', 'Review cards': 'راجع البطاقات', 'Follow-up email': 'بريد متابعة', 'Talk with Zad': 'تحدّث مع زاد',
+'Make flashcards': 'اصنع بطاقات', 'Review cards': 'راجع البطاقات', 'Follow-up email': 'بريد متابعة', 'Talk with Mustatar': 'تحدّث مع مستطر',
 'Your weekly review is ready': 'مراجعتك الأسبوعية جاهزة', 'See what you did and what is coming this week.': 'اطّلع على ما أنجزته وما ينتظرك هذا الأسبوع.',
 'Your weekly review is ready — See what you did and what is coming this week.': 'مراجعتك الأسبوعية جاهزة — اطّلع على ما أنجزته وما ينتظرك هذا الأسبوع.',
 };

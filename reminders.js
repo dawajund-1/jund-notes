@@ -1,4 +1,4 @@
-/* Zad — the daily reminder: a verse of the Quran (exact Mushaf text from the app's own copy, with the
+/* Mustatar — the daily reminder: a verse of the Quran (exact Mushaf text from the app's own copy, with the
    Saheeh International meaning from quranenc.com) and words of Ibn al-Qayyim and Ibn Rajab, each with its book. */
 (() => {
 'use strict';

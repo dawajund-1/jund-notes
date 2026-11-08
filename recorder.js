@@ -1,4 +1,4 @@
-/* Zad — long recordings (a class or a meeting of 1, 2, 3 hours or more).
+/* Mustatar — long recordings (a class or a meeting of 1, 2, 3 hours or more).
    The sound is saved to the phone every 15 seconds, so nothing is lost if the app closes.
    Every 10 minutes a new part starts; finished parts are turned into small MP3 files in the background
    (about 14 MB an hour), and at the end everything is joined and transcribed. */
@@ -78,7 +78,7 @@ async function start() {
   const ac = new AudioContext(), an = ac.createAnalyser(); an.fftSize = 512; ac.createMediaStreamSource(stream).connect(an);
   R = { sid, name, stream, ac, an, part: 0, n: 0, secs: 0, last: Date.now(), paused: false, wake: await J.keepAwake(), mime: MIMES.find(m => window.MediaRecorder?.isTypeSupported(m)) || '' };
   newPart();
-  $('#rec-status').textContent = 'Recording. Keep Zad open; the screen stays on (you can turn the brightness down). The sound is saved every 15 seconds.';
+  $('#rec-status').textContent = 'Recording. Keep Mustatar open; the screen stays on (you can turn the brightness down). The sound is saved every 15 seconds.';
   tick(); draw();
 }
 function newPart() {

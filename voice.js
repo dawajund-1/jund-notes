@@ -1,4 +1,4 @@
-/* Zad — talk with the assistant by voice, in Arabic or English. Free.
+/* Mustatar — talk with the assistant by voice, in Arabic or English. Free.
    You speak; when you stop, the short recording goes to the app's server, the answer streams back as text,
    and the phone reads it aloud sentence by sentence while the rest is still arriving.
    "Talk about this file" gives the assistant the open lesson, so it explains from that file. */
@@ -14,7 +14,7 @@ let sheet, S = null;            // S = the open talk
 
 /* ---------------- what the assistant is told ---------------- */
 const LANG_RULE = '\n\nREMEMBER: answer in the language of the latest audio (English → English, Arabic → Arabic), whatever the language of the material above.';
-const RULES = `You are Zad, a warm and clear personal assistant and tutor. The person talks to you by VOICE and your answer is read aloud.
+const RULES = `You are Mustatar, a warm and clear personal assistant and tutor. The person talks to you by VOICE and your answer is read aloud.
 - LANGUAGE: reply in the language the person SPEAKS in the latest audio — English speech gets an English answer, Arabic speech gets an Arabic answer — even when the file, the notes, the person's name or earlier turns are in the other language. When explaining Arabic material in English, keep key Arabic terms and give their meaning. Arabic answers: simple, clear Modern Standard Arabic, with no diacritics except where needed to avoid confusion.
 - Spoken style: short (2–5 sentences) unless they ask for more. No markdown, no lists, no symbols, no emojis, no links. Write numbers as words when short.
 - Be accurate. If you are not sure, say so.
@@ -55,7 +55,7 @@ function build() {
   sheet = document.createElement('div');
   sheet.className = 'vx'; sheet.hidden = true; sheet.setAttribute('data-noi18n', '');
   sheet.innerHTML = `
-    <div class="vx-card" role="dialog" aria-modal="true" aria-label="${L('Talk with Zad', 'تحدّث مع زاد')}">
+    <div class="vx-card" role="dialog" aria-modal="true" aria-label="${L('Talk with Mustatar', 'تحدّث مع مستطر')}">
       <div class="vx-head"><div><b class="vx-title"></b><div class="muted vx-sub"></div></div>
         <button type="button" class="icon-btn vx-x" aria-label="${L('Close', 'إغلاق')}">✕</button></div>
       <div class="vx-log" aria-live="polite"></div>
@@ -79,7 +79,7 @@ function build() {
   const auto = $('.vx-auto', sheet); auto.checked = !!store.get('voiceAuto', true); auto.onchange = () => store.set('voiceAuto', auto.checked);
   const r = $('.vx-rate', sheet); r.value = rate(); $('.vx-rv', sheet).textContent = rate() + '×';
   r.oninput = () => { store.set('voiceRate', Number(r.value)); $('.vx-rv', sheet).textContent = r.value + '×'; };
-  $('.vx-try', sheet).onclick = () => { stopSpeaking(); const ar = !!pickVoice('ar'); say(L('Hello, I am Zad. How can I help you today?', 'السلام عليكم، أنا زاد. كيف أستطيع مساعدتك اليوم؟'), AR && ar ? 'ar' : AR ? 'ar' : 'en', () => {}); };
+  $('.vx-try', sheet).onclick = () => { stopSpeaking(); const ar = !!pickVoice('ar'); say(L('Hello, I am Mustatar. How can I help you today?', 'السلام عليكم، أنا مستطر. كيف أستطيع مساعدتك اليوم؟'), AR && ar ? 'ar' : AR ? 'ar' : 'en', () => {}); };
   fillVoices();
   try { speechSynthesis.addEventListener('voiceschanged', fillVoices); } catch {}
 }
@@ -110,7 +110,7 @@ function open(o) {
   if (!sheet) build();
   stopAll();
   S = { o, turns: [] };
-  $('.vx-title', sheet).textContent = o.lesson ? L('Talk about this file', 'تحدّث عن هذا الملف') : L('Talk with Zad', 'تحدّث مع زاد');
+  $('.vx-title', sheet).textContent = o.lesson ? L('Talk about this file', 'تحدّث عن هذا الملف') : L('Talk with Mustatar', 'تحدّث مع مستطر');
   $('.vx-sub', sheet).textContent = o.lesson ? (o.lesson.notes?.title || o.lesson.unit) : L('Arabic or English — it answers in your language', 'بالعربية أو الإنجليزية — يرد بلغتك');
   $('.vx-log', sheet).innerHTML = '';
   sheet.hidden = false; document.body.classList.add('vx-open');
@@ -142,7 +142,7 @@ async function listen() {
   stopSpeaking();
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }); }
-  catch { state('idle'); status(L('Allow the microphone for Zad (in the browser’s site settings), then try again.', 'اسمح لزاد باستخدام المايك (من إعدادات الموقع في المتصفح) ثم حاول مرة أخرى.')); return; }
+  catch { state('idle'); status(L('Allow the microphone for Mustatar (in the browser’s site settings), then try again.', 'اسمح لمستطر باستخدام المايك (من إعدادات الموقع في المتصفح) ثم حاول مرة أخرى.')); return; }
   if (S !== T || T.gen !== gen) { stream.getTracks().forEach(t => t.stop()); return; }
   const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
   const rec = T.rec = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 24000 } : undefined);

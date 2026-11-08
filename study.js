@@ -1,4 +1,4 @@
-/* Zad — revision tools: flashcards with revision days, quizzes, the exam planner, the memorisation
+/* Mustatar — revision tools: flashcards with revision days, quizzes, the exam planner, the memorisation
    tracker, and "waiting on others" (tasks given to people, with a follow-up message). */
 (() => {
 'use strict';

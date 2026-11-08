@@ -455,6 +455,7 @@ async function serverFetch(path, init = {}) {
     if (j.code === 'toolong') throw Object.assign(new Error('Too big for one go. Choose fewer pages or a shorter file.'), { code: 'toolong' });
     if ((j.code === 'key' || j.code === 'nokey') && store.get('userKey')) throw Object.assign(new Error('Your own AI key is not working. Check it in Settings → AI key, or remove it.'), { code: 'key' });
     if (j.code === 'key' || j.code === 'nokey') throw Object.assign(new Error('The server key is wrong or not added yet. Finish the server setup steps.'), { code: 'key' });
+    if (j.code === 'owner') throw Object.assign(new Error('wrong code'), { code: 'owner', status: 403 });
     if (j.code === 'bad') throw Object.assign(new Error('The AI refused this request.'), { code: 'bad', status: 400, detail: j.error || '' });
     throw Object.assign(new Error('The server could not write right now (' + (res.status) + '). Try again in a few minutes.'), { code: 'server', status: res.status });
   }
@@ -1789,7 +1790,7 @@ async function makeYearBook() {
   if (!ls.length) return;
   $('#book-progress').hidden = false; $('#book-progress-text').textContent = 'Preparing your year book…';
   await fontsReady();
-  const meta = { title: String(y), subtitle: '', subject: 'Zad ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
+  const meta = { title: String(y), subtitle: '', subject: 'Mustatar ' + y, place: '', unit: '', palette: window.paletteFor('slate') };
   const cover = coverPage(meta, `<div class="c-sub">${y}</div><div class="c-rule"></div>
     <div class="c-book">ملاحظات العام · Notes of the year</div><div class="c-place">${arD(ls.length)} درسًا · ${new Set(ls.map(l => l.subject.id)).size} subjects</div>
     <div class="c-place">${esc(me().nameAr || me().name || '')}</div>`);
@@ -1863,7 +1864,7 @@ $('#backup').onclick = async () => {
   const lessons = await allLessons();
   const data = { app: 'jund-notes', version: 2, saved: new Date().toISOString(), families: store.get('families', {}), lessons,
     events: store.get('events', []), studio: store.get('studioSaved', []) };
-  const name = `Zad backup ${new Date().toISOString().slice(0, 10)}.json`;
+  const name = `Mustatar backup ${new Date().toISOString().slice(0, 10)}.json`;
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   try {
     if (navigator.canShare?.({ files: [file] })) {
@@ -1992,13 +1993,20 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '4.9';
+const APP_VERSION = '5.0';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
   // when a new version takes over, reload once so every file is the new one
   let reloaded = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded && !controller) { reloaded = true; location.reload(); } });
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return;
+    const busy = controller || window.JundRecorder?.active?.() || document.querySelector('.vx:not([hidden]), .wl');
+    if (!busy) { reloaded = true; location.reload(); return; }
+    // busy (recording, making notes, talking): offer the update instead of interrupting
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'update-bar'; b.textContent = window.ZadLang === 'ar' ? 'نسخة جديدة جاهزة — اضغط للتحديث' : 'A new version is ready — tap to update';
+    b.onclick = () => { reloaded = true; location.reload(); }; document.body.appendChild(b);
+  });
 }
 $('#app-version').textContent = 'version ' + APP_VERSION;
 setTimeout(checkServer, 1200);

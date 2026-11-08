@@ -361,14 +361,14 @@ function notifStatus() {
   const p = Notification.permission;
   $('#notif-allow').hidden = p === 'granted';
   $('#notif-test').hidden = p !== 'granted';
-  s.textContent = p === 'granted' ? (store.get('pushOk') ? '✓ Reminders reach this phone even when Zad is closed.' : '✓ Reminders pop up while the app is open. Connecting closed-app reminders…')
+  s.textContent = p === 'granted' ? (store.get('pushOk') ? '✓ Reminders reach this phone even when Mustatar is closed.' : '✓ Reminders pop up while the app is open. Connecting closed-app reminders…')
     : p === 'denied' ? 'Notifications are blocked. Allow them for this app in your phone settings.' : 'Allow notifications to get reminders on the phone, even when the app is closed.';
 }
 $('#notif-allow').onclick = async () => { try { await Notification.requestPermission(); } catch {} notifStatus(); await pushSync(); notifStatus(); };
 $('#notif-test').onclick = async () => {
   $('#notif-status').textContent = 'Sending a test… you can close the app now.';
   const ok = await pushSync();
-  if (!ok) { $('#notif-status').textContent = '✗ Could not connect closed-app reminders on this browser. In-app reminders still work. (On Android, open Zad with Chrome.)'; return; }
+  if (!ok) { $('#notif-status').textContent = '✗ Could not connect closed-app reminders on this browser. In-app reminders still work. (On Android, open Mustatar with Chrome.)'; return; }
   const r = await fetch(ok.base + '/push/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: ok.id }) }).then(x => x.json()).catch(() => ({}));
   $('#notif-status').textContent = r.ok ? '✓ Test sent. A notification should appear in a few seconds.' : '✗ The test did not go through (' + (r.status || 'no answer') + ').';
 };
