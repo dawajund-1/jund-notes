@@ -1092,9 +1092,9 @@ async function addFiles(files) {
       const chars = pages.join('').replace(/\s/g, '').length;
       const item = { pages, from: 1, to: pages.length, baseUnit: unit, unit, src: f };
       item.text = pdfSlice(item);
-      if (chars < pages.length * 40) {
-        item.bad = true; item.text = '';
-        item.status = '✗ This is a scanned file (pictures with no text), so I cannot read it yet. Use a text PDF, or copy the text and paste it.';
+      // Allow scanned/image-based PDFs through for Gemini Vision OCR processing
+      if (chars < pages.length * 40 && pages.length > 0) {
+        item.status = '⏳ Scanned PDF detected — will use Gemini Vision OCR';
       }
       pending.push(item);
     } catch {
