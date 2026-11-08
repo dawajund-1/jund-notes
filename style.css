@@ -814,3 +814,22 @@ body.vx-open { overflow: hidden; }
 /* smooth wave */
 .dict-wave { gap: 3px; height: 30px; }
 .dict-wave i { max-width: 3px; transition: none; background: var(--ink); will-change: transform; }
+
+/* ---------- Home v8: fits one screen; the prayer lives inside the Up next card ---------- */
+#screen-assistant .remind { margin: 0 0 12px; padding: 0 0 10px; }
+#screen-assistant .remind .rm-verse { font-size: 1.2rem; }
+#screen-assistant:not(.talking) .home-head { margin: 0 0 16px; }
+#screen-assistant:not(.talking) .home-head .screen-title { margin: 4px 0 0; }
+#screen-assistant .hm-sec { margin-bottom: 12px; }
+.hm-card { margin-top: 8px; border: 1px solid var(--line); border-radius: 18px; background: color-mix(in srgb, var(--surface) 70%, transparent); padding: 12px 14px 10px; }
+.hm-card .pbar { margin: 0 0 4px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.hm-card .dc { border: 0; background: none; padding: 8px 0 0; margin: 0; border-radius: 0; }
+.hm-card .tl { margin-top: 4px; }
+.hm-card .dc-line.has-marks { margin: 30px 6px 34px; }
+#hm-habits-wrap[hidden] { display: none !important; }
+.dr-foot { display: flex; flex-direction: column; align-items: flex-start; }
+/* the message box stays fixed at the bottom, the page above fits without scrolling on most phones */
+#screen-assistant { min-height: 0; padding-bottom: 170px; }
+.as-dock { position: fixed; left: 0; right: 0; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); margin: 0 auto; width: min(100%, 760px); padding: 12px 16px 8px; background: linear-gradient(to bottom, transparent, var(--bg) 16px); }
+#screen-assistant[hidden] ~ .as-dock { display: none; }
+.hm-card .upnext { margin: 0 !important; padding: 0 !important; min-height: 0 !important; } .hm-card .pbar { text-align: start; justify-content: flex-start; } .hm-card .tl { margin-top: 2px; }

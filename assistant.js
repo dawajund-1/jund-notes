@@ -51,12 +51,12 @@ function build() {
   const s = $('#screen-assistant');
   s.innerHTML = `
     <div class="remind" id="hm-remind" hidden></div>
-    <div class="home-head"><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1><div class="pbar" id="hm-prayer"></div></div>
+    <div class="home-head"><div class="muted" id="hm-date"></div><h1 class="screen-title" id="hm-hello">Salam</h1></div>
     <div class="intro" id="hm-about" hidden><b>Welcome!</b> Tell the app your name, and whether you use it for study or work, so everything fits you. <button type="button" class="link" data-go="settings">Open Settings → About you</button></div>
     <div class="intro due" id="rec-banner" hidden></div>
     <div class="chips hm-study" id="hm-study" hidden></div>
     <div class="hm-sec"><div class="row-between"><div class="sec-t">Up next <span class="muted" id="hm-brief"></span></div><button type="button" class="link" data-go="calendar">Calendar</button></div>
-      <div class="upnext" id="hm-next"></div></div>
+      <div class="hm-card"><div class="pbar" id="hm-prayer"></div><div class="upnext" id="hm-next"></div></div></div>
     <div class="hm-sec" id="hm-habits-wrap"><div class="habits" id="hm-habits"></div></div>
     <div class="hm-sec" id="hm-recent-wrap" hidden><div id="hm-recent"></div></div>
     <div class="as-log" id="as-log"></div>
@@ -111,7 +111,7 @@ function dayClock() {
   marks.sort((a, b) => a.m - b.m);
   marks.forEach((x, i) => { x.up = i % 2 === 1; x.past = x.m <= mins; });   // labels take turns above and below the line, so they never overlap
   const hhmm = m => { const h = Math.floor(m / 60) % 24, mm = Math.round(m % 60); const d = new Date(); d.setHours(h, mm); return d.toLocaleTimeString(AR ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' }); };
-  const time = now.toLocaleTimeString(AR ? 'ar-SA' : 'en-GB', { hour: 'numeric', minute: '2-digit' });
+  const time = now.toLocaleTimeString(AR ? 'ar-SA' : 'en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const left = 1440 - mins;
   return `<div class="dc" role="img" aria-label="Your day is clear">
     <div class="dc-top"><b>Your day is clear</b><span class="dc-now">${time}</span></div>

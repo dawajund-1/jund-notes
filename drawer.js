@@ -29,13 +29,14 @@ function build() {
         <div class="dr-h">${L('Recent notes', 'آخر الملاحظات')}</div><div class="dr-list" id="dr-recent"></div>
         <div class="dr-h">${L('Chats', 'المحادثات')}</div><div class="dr-list" id="dr-chats"></div>
       </div>
-      <div class="dr-foot"><button type="button" class="dr-link" data-to="settings">⚙ ${L('Settings', 'الإعدادات')}</button></div>
+      <div class="dr-foot"><button type="button" class="dr-link" data-to="habit">✓ ${L('Add a habit', 'أضف عادة')}</button><button type="button" class="dr-link" data-to="settings">⚙ ${L('Settings', 'الإعدادات')}</button></div>
     </aside>`;
   document.body.appendChild(el);
   el.addEventListener('click', e => { if (e.target === el) close(); });
   $('.dr-x', el).onclick = close;
   $('.dr-new', el).onclick = () => { A()?.newChat(); J.show('assistant'); close(); setTimeout(() => $('#as-text')?.focus(), 200); };
   $('[data-to="settings"]', el).onclick = () => { J.show('settings'); close(); };
+  $('[data-to="habit"]', el).onclick = () => { close(); window.JundFeatures?.addHabit(); };
   // swipe in from the edge to open, swipe back to close
   let x0 = null;
   document.addEventListener('touchstart', e => { const x = e.touches[0].clientX, w = innerWidth; x0 = (AR ? x > w - 24 : x < 24) ? x : null; }, { passive: true });
