@@ -161,12 +161,16 @@ async function renderHome() {
   $$('[data-open]', $('#hm-recent')).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
 }
 let helloTimer = null;
-function foldHello() { const h = $('#hm-hello'); if (h && !h.classList.contains('gone')) h.classList.add('gone'); }
+// once you start doing something (typing, talking, recording, a task…) — or after 2½ minutes — the verse, the mark and the
+// greeting fold away, and only Up next (timeline + prayers) stays
+function foldHello() { $('#screen-assistant')?.classList.add('folded'); }
 function armHello() {
   if (helloTimer || !$('#hm-hello')) return;
   helloTimer = setTimeout(foldHello, 150000);
   $('#as-text')?.addEventListener('focus', foldHello, { once: true });
   $('#as-mic')?.addEventListener('pointerdown', foldHello, { once: true });
+  $('#as-att')?.addEventListener('pointerdown', foldHello, { once: true });
+  $('#hm-quick')?.addEventListener('click', foldHello, { once: true });
 }
 function render() {
   armHello();

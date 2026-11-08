@@ -1033,3 +1033,12 @@ a, .link { color: var(--accent); }
 .mk.busy .mk-d { animation: mkbeat 2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes mkdraw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 @keyframes mkpen { 0% { stroke-dashoffset: 100; } 55%, 75% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -100; } }
+
+/* ---------- Home head centred; it folds away once you start working ---------- */
+#screen-assistant:not(.talking) .home-head { text-align: center; }
+.hm-mark { display: flex; justify-content: center; margin: 4px 0 8px; }
+#screen-assistant .remind, #screen-assistant .home-head { transition: opacity .45s ease, max-height .6s ease, margin .6s ease, padding .6s ease; max-height: 340px; overflow: hidden; }
+#screen-assistant.folded .remind, #screen-assistant.folded .home-head { opacity: 0; max-height: 0; margin: 0 !important; padding: 0 !important; border: 0; }
+#hm-hello.gone { opacity: 1; max-height: none; }
+.hm-card .pbar { padding-bottom: 0; }
+.hm-card .pbar .pc-row { margin-bottom: 4px; }
