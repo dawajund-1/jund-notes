@@ -346,7 +346,7 @@ async function widgetSync() {
       }
     }
     const p = store.get('prayerPlace', { name: 'Makkah', lat: 21.4225, lon: 39.8262 });
-    await fetch(base + '/widget/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: widgetId(), place: { name: p.name, lat: p.lat, lon: p.lon }, upcoming: up.slice(0, 12) }) });
+    await fetch(base + '/widget/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: widgetId(), place: { name: p.name, lat: p.lat, lon: p.lon }, upcoming: up.slice(0, 12), style: store.get('widgetStyle', 'clear') }) });
   } catch {}
 }
 async function widgetConnect() {
@@ -356,6 +356,7 @@ async function widgetConnect() {
   location.href = `intent://widget?id=${widgetId()}&server=${encodeURIComponent(base)}#Intent;scheme=daftar;package=sa.jund.notes;end`;
 }
 if ($('#widget-connect')) $('#widget-connect').onclick = widgetConnect;
+if ($('#widget-style')) { $('#widget-style').value = store.get('widgetStyle', 'clear'); $('#widget-style').onchange = () => { store.set('widgetStyle', $('#widget-style').value); widgetSync(); toast('Widget style saved. It changes on your home screen within a few minutes, or tap the widget once.'); }; }
 function notifStatus() {
   const s = $('#notif-status'); if (!('Notification' in window)) { s.textContent = 'This browser cannot show notifications; reminders show inside the app.'; return; }
   const p = Notification.permission;

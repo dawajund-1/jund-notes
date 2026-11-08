@@ -72,12 +72,18 @@ public final class WidgetData {
     }
 
     static RemoteViews draw(Context ctx, JSONObject data, boolean small) {
-        RemoteViews v = new RemoteViews(ctx.getPackageName(), small ? R.layout.widget_prayer : R.layout.widget_main);
+        // the style chosen in the app: transparent, dark, black or white
+        String style = data == null ? "clear" : data.optString("style", "clear");
+        boolean light = "white".equals(style);
+        int layout = small ? (light ? R.layout.widget_prayer_light : R.layout.widget_prayer) : (light ? R.layout.widget_main_light : R.layout.widget_main);
+        RemoteViews v = new RemoteViews(ctx.getPackageName(), layout);
+        int bg = "dark".equals(style) ? R.drawable.widget_bg_dark : "black".equals(style) ? R.drawable.widget_bg_black : light ? R.drawable.widget_bg_white : R.drawable.widget_bg_clear;
+        v.setInt(R.id.w_root, "setBackgroundResource", bg);
         Intent open = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
         if (open != null) v.setOnClickPendingIntent(R.id.w_root, PendingIntent.getActivity(ctx, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         if (data == null) {
-            v.setTextViewText(R.id.w_prayer, "Zad");
-            v.setTextViewText(R.id.w_prayer_time, "Open Zad → Settings → Connect widget");
+            v.setTextViewText(R.id.w_prayer, "Mustatar");
+            v.setTextViewText(R.id.w_prayer_time, "Open Mustatar → Settings → Connect widget");
             if (!small) { v.setViewVisibility(R.id.w_item1, View.GONE); v.setViewVisibility(R.id.w_item2, View.GONE); v.setViewVisibility(R.id.w_item3, View.GONE); }
             return v;
         }
@@ -92,7 +98,18 @@ public final class WidgetData {
             if (name != null) {
                 v.setTextViewText(R.id.w_prayer, name + "  " + twelve(time));
                 String in = left < 0 ? "tomorrow" : left >= 60 ? "in " + (left / 60) + "h " + (left % 60) + "m" : "in " + left + " min";
-                v.setTextViewText(R.id.w_prayer_time, in + " · " + data.optString("place", ""));
+                v.setTextViewText(R.id.w_prayer_time, in);
+            }
+            // the five prayers in one row, like a clean prayer widget
+            if (!small && today != null) {
+                int[] cells = {R.id.w_p1, R.id.w_p2, R.id.w_p3, R.id.w_p4, R.id.w_p5};
+                String[] shortN = {"FJR", "DHR", "ASR", "MGRB", "ISH"};
+                for (int i = 0; i < 5; i++) {
+                    String t = today.optString(PRAYERS[i], "");
+                    v.setTextViewText(cells[i], shortN[i] + "\n" + (t.length() >= 5 ? twelve(t).replace(" am", "").replace(" pm", "") : "–"));
+                    boolean next = PRAYERS[i].equals(name);
+                    v.setTextColor(cells[i], next ? (light ? 0xFF1A6FD8 : 0xFF8CCBFF) : (light ? 0xFF111113 : 0xFFFFFFFF));
+                }
             }
         } catch (Exception ignored) {}
         if (small) return v;

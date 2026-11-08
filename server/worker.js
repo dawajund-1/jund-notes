@@ -192,7 +192,8 @@ async function widgetRoutes(req, env, h, path, url) {
     if (!/^[a-f0-9]{16,64}$/.test(b.id || '')) return json({ error: 'bad' }, 400, h);
     const p = b.place || {};
     const rec = { place: { name: String(p.name || '').slice(0, 60), lat: +p.lat || 21.4225, lon: +p.lon || 39.8262 },
-      upcoming: (b.upcoming || []).slice(0, 12).map(x => ({ title: String(x.title || '').slice(0, 80), at: +x.at, end: +x.end || +x.at, timed: !!x.timed })) };
+      upcoming: (b.upcoming || []).slice(0, 12).map(x => ({ title: String(x.title || '').slice(0, 80), at: +x.at, end: +x.end || +x.at, timed: !!x.timed })),
+      style: ['clear', 'dark', 'black', 'white'].includes(b.style) ? b.style : 'dark' };
     await env.PUSH.put('w:' + b.id, JSON.stringify(rec));
     return json({ ok: true }, 200, h);
   }
@@ -212,7 +213,7 @@ async function widgetRoutes(req, env, h, path, url) {
       } catch { return null; }
     };
     const [today, tomorrow] = await Promise.all([times(d), times(new Date(+d + 864e5))]);
-    return json({ place: rec.place.name, today, tomorrow, upcoming: rec.upcoming }, 200, h);
+    return json({ place: rec.place.name, today, tomorrow, upcoming: rec.upcoming, style: rec.style || 'dark' }, 200, h);
   }
   return json({ error: 'not found' }, 404, h);
 }

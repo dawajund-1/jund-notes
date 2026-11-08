@@ -34,8 +34,39 @@ function vocab() {
     + 'Common words in their talk: Ayat al-Ahkam (آيات الأحكام), Kulliyat al-Haram (كلية الحرم), Dar al-Hadith (دار الحديث), Masjid al-Haram, Makkah, Madinah, '
     + 'Usul al-Fiqh (أصول الفقه), Fiqh, Hadith, Tafsir, Aqeedah, Nahw, Sarf, Balagha, Mustalah al-Hadith, Seerah, Tajweed, hifz, juz, surah, ayah, '
     + 'shaykh, ustadh, dars, halaqa, Ibn al-Qayyim, Ibn Rajab, Ibn Taymiyyah, al-Bukhari, Muslim, Dhuhr, Asr, Maghrib, Isha, Fajr, Duha, Mustatar. '
-    + 'English speech stays in English letters; Arabic speech in Arabic script.';
+    + 'English speech stays in English letters; Arabic speech in Arabic script.'
+    + (myWords().length ? ` Words this person uses (spell exactly like this): ${myWords().join(', ')}.` : '')
+    + (fixes().length ? ` This person corrected these mistakes before — never repeat them: ${fixes().slice(0, 40).map(f => `"${f.wrong}" → "${f.right}"`).join('; ')}.` : '');
 }
+
+/* ---------- learning from you: every time you correct the written words before sending, the app remembers it ---------- */
+const fixes = () => J.store.get('voiceFixes', []);
+const myWords = () => [...new Set([...(J.store.get('voiceWordsMine', []) || []), ...fixes().map(f => f.right)])].slice(0, 80);
+function learn(said, sent) {
+  const a = said.split(/\s+/).filter(Boolean), b = sent.split(/\s+/).filter(Boolean);
+  if (!a.length || !b.length || a.join(' ') === b.join(' ')) return;
+  // line the two up word by word (longest common part), then each changed stretch is one correction
+  const n = a.length, m = b.length, L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = norm(a[i]) === norm(b[j]) ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const pairs = []; let i = 0, j = 0, wa = [], wb = [];
+  const flush = () => { if (wa.length && wb.length && wa.length <= 4 && wb.length <= 4) pairs.push({ wrong: wa.join(' '), right: wb.join(' ') }); wa = []; wb = []; };
+  while (i < n && j < m) {
+    if (norm(a[i]) === norm(b[j])) { flush(); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) wa.push(a[i++]); else wb.push(b[j++]);
+  }
+  while (i < n) wa.push(a[i++]); while (j < m) wb.push(b[j++]); flush();
+  if (!pairs.length) return;
+  const all = fixes();
+  for (const p of pairs) { const old = all.find(x => x.wrong === p.wrong); if (old) { old.right = p.right; old.n = (old.n || 1) + 1; old.t = Date.now(); } else all.unshift({ ...p, n: 1, t: Date.now() }); }
+  J.store.set('voiceFixes', all.sort((x, y) => (y.n || 1) - (x.n || 1) || y.t - x.t).slice(0, 120));
+}
+const norm = w => w.replace(/[.,!?؟،:;"“”()]/g, '').replace(/[\u064B-\u0652]/g, '').toLowerCase();
+// when the message is sent, compare it with what was written from the voice
+document.addEventListener('click', e => {
+  if (!e.target.closest('#as-send')) return;
+  const d = J.store.get('lastDictation'); const ta = $('#as-text');
+  if (d && ta && Date.now() - d.t < 15 * 60e3) { learn(d.text, ta.value.trim()); J.store.set('lastDictation', null); }
+}, true);
 const TYPE = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
 
 async function start() {
@@ -171,7 +202,8 @@ function stop(andSend) {
     }
     ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); grow(ta);
     if (r.err && !r.pieces.some(p => p.text)) hint('✗ ' + J.errText(r.err));
-    if (andSend && ta.value.trim()) $('#as-send')?.click(); else ta.focus();
+    J.store.set('lastDictation', { text: ta.value.trim().slice(r.before.trim().length).trim(), t: Date.now() });
+    if (andSend && ta.value.trim()) { J.store.set('lastDictation', null); $('#as-send')?.click(); } else ta.focus();
   };
   if (last) { last.rec.onstop = () => { closeBar(r); writePiece(r, last); }; try { last.rec.stop(); } catch { closeBar(r); r.finishing?.(); } }
   else { closeBar(r); }
@@ -180,7 +212,26 @@ function stop(andSend) {
 function grow(t) { t.style.height = 'auto'; t.style.height = Math.min(180, t.scrollHeight) + 'px'; }
 function hint(t) { const h = $('#as-hint'); if (h) { h.textContent = t; setTimeout(() => { if (h.textContent === t) h.textContent = ''; }, 6000); } }
 
-window.JundDictate = { setup, start };
+function settingsCard() {
+  const fine = document.querySelector('#screen-settings > p.fine'); if (!fine || $('#vw-card')) return;
+  const c = document.createElement('div'); c.className = 'card'; c.id = 'vw-card'; c.setAttribute('data-noi18n', '');
+  c.innerHTML = `<div class="card-h">${L('Voice typing — your words', 'الكتابة بالصوت — كلماتك')}</div>
+    <p class="muted fine">${L('Mustatar learns from you: when you fix a wrong word before sending, it remembers. You can also add names and terms you use (one per line).', 'مستطر يتعلم منك: عندما تصحح كلمة قبل الإرسال يتذكرها. ويمكنك إضافة الأسماء والمصطلحات التي تستعملها (كل واحدة في سطر).')}</p>
+    <textarea id="vw-words" rows="4" dir="auto" placeholder="${L('e.g. Ayat al-Ahkam', 'مثل: آيات الأحكام')}"></textarea>
+    <div class="row-gap"><button type="button" class="primary" id="vw-save">${L('Save', 'حفظ')}</button><span class="muted" id="vw-st"></span></div>
+    <div class="muted fine" id="vw-learned"></div>`;
+  fine.before(c);
+  const show = () => {
+    $('#vw-words').value = (J.store.get('voiceWordsMine', []) || []).join('\n');
+    const f = fixes();
+    $('#vw-learned').innerHTML = f.length ? L('Learned so far: ', 'ما تعلّمه حتى الآن: ') + f.slice(0, 12).map(x => `<span dir="auto">${J.esc(x.wrong)} → <b>${J.esc(x.right)}</b></span>`).join(' · ') + ` <button type="button" class="link" id="vw-clear">${L('Forget these', 'انسَ هذه')}</button>` : '';
+    const cl = $('#vw-clear'); if (cl) cl.onclick = () => { J.store.set('voiceFixes', []); show(); };
+  };
+  $('#vw-save').onclick = () => { J.store.set('voiceWordsMine', $('#vw-words').value.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 80)); $('#vw-st').textContent = L('✓ Saved', '✓ حُفظ'); };
+  show();
+}
+settingsCard();
+window.JundDictate = { setup, start, learn };
 const tryIt = () => { setup(); if (!$('#as-mic')?.dataset.dict) setTimeout(tryIt, 300); };
 tryIt();
 })();

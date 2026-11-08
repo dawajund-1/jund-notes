@@ -986,3 +986,50 @@ body[data-screen="calendar"] #go-today { display: inline-flex; }
 .msg.working { display: inline-flex; align-items: center; gap: 10px; color: var(--ink-2); background: none; border: 0; padding-inline-start: 0; }
 @media (prefers-reduced-motion: reduce) { .mk .mk-l, .mk .mk-d { animation: none !important; } }
 #dr-open { background: transparent; border: 0; box-shadow: none; } .topbar { min-height: 52px; }
+
+/* =================== Mustatar v4 — "Clean" (like a good phone widget) ===================
+   Black & white first; one small accent (ice blue). The phone's own font (Roboto / One UI), light weights. */
+:root, :root[data-theme="navy"] {
+  --bg: #0C0C0E; --surface: #151517; --surface-2: #1C1C1F; --line: #2A2A2E;
+  --ink: #F3F3F4; --ink-2: #9B9BA3;
+  --accent: #8CCBFF; --accent-2: #6BB6F5; --on-accent: #06131F;
+  --gold: #8CCBFF; --gold-2: #6BB6F5; --gold-soft: color-mix(in srgb, #8CCBFF 16%, transparent);
+  --ok: #F3F3F4; --done: #6E6E76; --warn: #E9C46A; --danger: #F08A7A;
+  --t-task: #8CCBFF; --t-homework: #E9C46A; --t-exam: #F08A7A; --t-class: #B9B9C2; --t-meeting: #C3A8F0; --t-study: #8CCBFF;
+  --mk-ink: #F3F3F4; --mk-dot: #8CCBFF;
+  --shadow: 0 10px 30px rgb(0 0 0 / .45);
+}
+:root[data-theme="light"] {
+  --bg: #FFFFFF; --surface: #F5F5F7; --surface-2: #EDEDF0; --line: #E2E2E6;
+  --ink: #111113; --ink-2: #6B6B73;
+  --accent: #1A6FD8; --accent-2: #1458AD; --on-accent: #FFFFFF;
+  --gold: #1A6FD8; --gold-2: #1458AD; --gold-soft: color-mix(in srgb, #1A6FD8 10%, transparent);
+  --ok: #111113; --done: #A3A3AA; --warn: #B7841F; --danger: #C9483A;
+  --t-task: #1A6FD8; --t-homework: #B7841F; --t-exam: #C9483A; --t-class: #55555D; --t-meeting: #7357B5; --t-study: #1A6FD8;
+  --mk-ink: #111113; --mk-dot: #1A6FD8;
+  --shadow: 0 8px 24px rgb(0 0 0 / .07);
+}
+:root { --ui: system-ui, -apple-system, 'Roboto', 'Segoe UI', 'Noto Sans Arabic', sans-serif; --head: system-ui, -apple-system, 'Roboto', 'Segoe UI', 'Noto Sans Arabic', sans-serif; }
+body { font-family: var(--ui); font-weight: 400; letter-spacing: 0; }
+.screen-title, h1, h2, h3, .sec-t, .card-h, .vx-title, .wl-h, .dr-top { font-family: var(--head); font-weight: 500; letter-spacing: -.01em; }
+#screen-assistant:not(.talking) .home-head .screen-title { font-weight: 400; font-size: 1.5rem; }
+.tl-what b, .dc-top b, .dr-item, .q { font-weight: 400; }
+.dc-mark.p.past i { background: var(--done); border-color: var(--done); }
+.dc-mark.p.next i { background: var(--accent); border-color: var(--accent); }
+.dc-mark small { font-weight: 400; }
+.dc-dot { background: var(--ink); }
+.dc-fill { background: linear-gradient(90deg, color-mix(in srgb, var(--ink) 6%, transparent), color-mix(in srgb, var(--ink) 30%, transparent)) !important; }
+.as-go { background: var(--ink); color: var(--bg); }
+.primary { background: var(--ink); color: var(--bg); }
+.primary:hover { background: color-mix(in srgb, var(--ink) 85%, var(--bg)); }
+a, .link { color: var(--accent); }
+.q-rec .qi { color: var(--danger) !important; }
+/* the mark */
+.mk .mk-p { stroke: var(--mk-ink); stroke-dasharray: 100; stroke-dashoffset: 0; }
+.mk .mk-d { fill: var(--mk-dot); }
+.hm-mark .mk .mk-p { animation: mkdraw 1.4s cubic-bezier(.45, 0, .2, 1) both; }
+.hm-mark .mk .mk-d { animation: mkpop .4s ease 1.3s both; transform-box: fill-box; transform-origin: center; }
+.mk.busy .mk-p { animation: mkpen 2s cubic-bezier(.45, 0, .25, 1) infinite; }
+.mk.busy .mk-d { animation: mkbeat 2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes mkdraw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes mkpen { 0% { stroke-dashoffset: 100; } 55%, 75% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -100; } }

@@ -1,15 +1,11 @@
-/* Mustatar — the living mark: three lines being written, a small dot and a big dot ("every small and big thing, written").
-   Calm when idle; while the app is working (thinking, writing notes, reading a file) the lines write themselves again and again. */
+/* Mustatar — the living mark: the letter mīm (م), the first letter of مستطر, drawn in one line, with a small ink dot.
+   Calm when idle (it writes itself once); while the app is working, the pen keeps writing it. */
 (() => {
 'use strict';
-let n = 0;
 function mark(size = 32, busy = false) {
-  const id = 'mk' + (++n);
   return `<svg class="mk${busy ? ' busy' : ''}" width="${size}" height="${size}" viewBox="0 0 512 512" aria-hidden="true">
-    <defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="100" y1="0" x2="420" y2="0"><stop offset="0" stop-color="var(--mk-a)"/><stop offset="1" stop-color="var(--mk-b)"/></linearGradient></defs>
-    <g fill="none" stroke="url(#${id})" stroke-linecap="round" stroke-width="40">
-      <path class="mk-l mk-1" d="M380 170H150"/><path class="mk-l mk-2" d="M380 256H210"/><path class="mk-l mk-3" d="M380 342H270"/></g>
-    <circle class="mk-d mk-s" cx="150" cy="256" r="18"/><circle class="mk-d mk-b" cx="196" cy="342" r="30"/></svg>`;
+    <g transform="translate(6 -38)"><path class="mk-p" pathLength="100" d="M380 300 H 330 C 290 300 268 276 268 246 C 268 214 292 192 322 192 C 352 192 374 214 374 246 C 374 276 352 300 322 300 H 150 C 128 300 118 318 120 344 L 126 392" fill="none" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle class="mk-d" cx="426" cy="300" r="20"/></g></svg>`;
 }
 window.MustatarMark = mark;
 })();
