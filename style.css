@@ -679,3 +679,24 @@ body.vx-open { overflow: hidden; }
 .dr-empty { color: var(--ink-2); font-size: .82rem; padding: 4px 8px; }
 .dr-foot { border-top: 1px solid var(--line); padding-top: 8px; }
 .dr-link { border: 0; background: none; color: var(--ink-2); font: inherit; font-size: .9rem; padding: 8px; }
+
+/* ---------- Home like Claude (v5.6): verse on top, greeting, then the message box; the rest below ---------- */
+#screen-assistant .remind { margin: 0 0 22px; padding: 0 0 14px; border-top: 0; border-bottom: 1px solid var(--line); }
+#screen-assistant:not(.talking) .home-head { text-align: center; margin-top: 8vh; }
+#screen-assistant:not(.talking) .home-head .screen-title { font-size: 1.6rem; margin: 4px 0 8px; }
+#screen-assistant:not(.talking) .pbar { justify-content: center; text-align: center; margin-bottom: 18px; }
+#screen-assistant:not(.talking) .as-log { flex: 0; margin: 0; }
+#screen-assistant:not(.talking) .as-input { position: static; padding: 4px 0; }
+#screen-assistant:not(.talking) .as-try { justify-content: center; margin: 8px 0 4px; order: 0; }
+/* the actions become a small row of pills under the box */
+#screen-assistant .quick { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 12px 0 22px; }
+#screen-assistant .q { flex-direction: row; gap: 6px; padding: 7px 12px 7px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: .82rem; color: var(--ink); }
+#screen-assistant .qi { width: 22px; height: 22px; border-radius: 0; background: none; }
+#screen-assistant .qi svg { width: 18px; height: 18px; }
+#screen-assistant .q-rec .qi { background: none; }
+/* while talking: only the conversation and the box */
+#screen-assistant.talking .home-head, #screen-assistant.talking .pbar, #screen-assistant.talking .remind,
+#screen-assistant.talking .quick, #screen-assistant.talking .hm-study, #screen-assistant.talking .hm-sec, #screen-assistant.talking #hm-about { display: none !important; }
+#screen-assistant.talking .as-log { padding-top: 6px; }
+#screen-assistant .as-try { display: none; }
+#screen-assistant .quick { gap: 6px; flex-wrap: nowrap; } #screen-assistant .q { padding: 6px 10px 6px 8px; font-size: .78rem; gap: 4px; } #screen-assistant .qi svg { width: 16px; height: 16px; } #screen-assistant .qi { width: 18px; height: 18px; }
