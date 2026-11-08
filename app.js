@@ -785,14 +785,14 @@ function renderPending() {
       ${p.audio ? `<button type="button" class="ghost small" data-act="audio" data-i="${i}">Export audio</button>` : ''}
     </div>` : '';
   box.innerHTML = pending.length ? `<b>${pending.length > 1 ? ar(pending.length) + ' lessons will be made, one per file:' : 'Chosen file:'}</b>
-    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' pages, ' : ''}${p.media && !p.text ? (p.yt ? 'YouTube' : 'audio or video') : ar(p.text.split(/\s+/).filter(Boolean).length) + ' words'})</small>${p.status ? ' — <span class="st">' + p.status + '</span>' : ''}${tools(p, i)}</li>`).join('')}</ol>
+    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' pages, ' : ''}${p.media && !p.text ? (p.yt ? 'YouTube' : 'audio or video') : ar(p.text.split(/\s+/).filter(Boolean).length) + ' words'})</small>${p.status ? ' — <span class="st">' + p.status + '</span>' : ''}${canListen(p) ? ` <button type="button" class="link small listen-btn" data-act="listen" data-i="${i}">▶ Listen</button>` : ''}${tools(p, i)}</li>`).join('')}</ol>
     ${hearNote ? `<small class="muted">${hearNote}</small>` : ''}
     ${one?.pages && !one.bad ? `<div class="row-gap" style="align-items:center">
       <span>Pages: from</span><input id="pg-from" type="number" min="1" max="${one.pages.length}" value="${one.from}" style="width:5.5em">
       <span>to</span><input id="pg-to" type="number" min="1" max="${one.pages.length}" value="${one.to}" style="width:5.5em">
     </div><small class="muted" id="pg-warn" ${one.to - one.from + 1 > 20 ? '' : 'hidden'}>⚠ Many pages take a long time on the phone; 10–20 pages at a time is best.</small>` : ''}
     <button type="button" class="ghost" id="clear-pending">Clear files</button>` : '';
-  const c = $('#clear-pending'); if (c) c.onclick = () => { hearCtl?.abort(); pending = []; hearNote = ''; renderPending(); };
+  const c = $('#clear-pending'); if (c) c.onclick = () => { hearCtl?.abort(); pending = []; hearNote = ''; $('#pp-x')?.click(); renderPending(); };
   $$('[data-act]', box).forEach(b => b.onclick = () => mediaAction(b.dataset.act, pending[+b.dataset.i]));
   const f = $('#pg-from'), t = $('#pg-to');
   if (f && t) {
@@ -920,8 +920,23 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 const safeName = s => String(s || 'file').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80);
+// listen to an audio or video file before / while it is transcribed (one player under the list, so it keeps playing)
+const canListen = p => p.media && !p.yt && !p.images && (p.audio || p.file);
+function listen(p) {
+  let w = $('#pending-player');
+  if (!w) { w = document.createElement('div'); w.id = 'pending-player'; w.className = 'listen-box'; $('#pending').after(w); }
+  const src = p.file || p.audio, video = /^video\//.test(src.type || '');
+  w.innerHTML = `<div class="row-between"><small class="muted" dir="auto">▶ ${esc(p.unit)}</small><button type="button" class="link small" id="pp-x">Close</button></div>`;
+  const m = document.createElement(video ? 'video' : 'audio');
+  m.controls = true; m.playsInline = true; m.preload = 'metadata'; m.src = URL.createObjectURL(src); m.style.width = '100%';
+  if (video) m.style.maxHeight = '40vh';
+  w.appendChild(m); w.hidden = false; m.play().catch(() => {});
+  $('#pp-x').onclick = () => { m.pause(); URL.revokeObjectURL(m.src); w.hidden = true; w.innerHTML = ''; };
+  w.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
 async function mediaAction(act, p) {
   if (!p) return;
+  if (act === 'listen') return listen(p);
   if (act === 'savetxt') return download(new Blob([p.text], { type: 'text/plain;charset=utf-8' }), safeName(p.unit) + '.txt');
   if (act === 'audio' && p.audio) return download(p.audio, safeName(p.unit) + (p.audio.type === 'audio/aac' ? '.aac' : (p.file?.name.match(/\.[^.]+$/)?.[0] || '.m4a')));
   if (act === 'script') return makeScript(p);
@@ -2015,7 +2030,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.1';
+const APP_VERSION = '8.2';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

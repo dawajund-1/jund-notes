@@ -177,9 +177,10 @@ async function list() {
   const rows = ss.filter(s => s.id !== live);
   box.parentElement.hidden = !rows.length;
   box.innerHTML = rows.map(s => `<div class="rec-row"><div class="body"><b dir="auto">${esc(s.name)}</b><small>${dur(s.secs || 0)}${s.status === 'recording' ? ' · <span style="color:var(--warn)">not finished</span>' : ''}</small></div>
-    <span class="row-gap" style="margin:0">${s.status === 'recording' ? `<button type="button" class="primary small" data-fin="${s.id}">Finish</button>` : `<button type="button" class="ghost small" data-tr="${s.id}">Transcribe</button><button type="button" class="ghost small" data-dl="${s.id}">Save</button>`}<button type="button" class="ghost small danger" data-rm="${s.id}">×</button></span></div>`).join('');
+    <span class="row-gap" style="margin:0">${s.status === 'recording' ? `<button type="button" class="primary small" data-fin="${s.id}">Finish</button>` : `<button type="button" class="ghost small" data-play="${s.id}">▶ Listen</button><button type="button" class="ghost small" data-tr="${s.id}">Transcribe</button><button type="button" class="ghost small" data-dl="${s.id}">Save</button>`}<button type="button" class="ghost small danger" data-rm="${s.id}">×</button></span></div>`).join('');
   $$('[data-fin]', box).forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = 'Working…'; await finish(b.dataset.fin); });
   $$('[data-tr]', box).forEach(b => b.onclick = async () => { const s = ss.find(x => x.id === b.dataset.tr); if (s?.file) { s.file._sid = s.id; J.show('new'); await J.addFiles([s.file]); if (!$('#unit').value) $('#unit').value = s.name; } });
+  $$('[data-play]', box).forEach(b => b.onclick = () => { const s = ss.find(x => x.id === b.dataset.play); if (!s?.file) return; const a = document.createElement('audio'); a.controls = true; a.src = URL.createObjectURL(s.file); a.style.width = '100%'; b.closest('.rec-row').after(a); b.remove(); a.play().catch(() => {}); });
   $$('[data-dl]', box).forEach(b => b.onclick = () => { const s = ss.find(x => x.id === b.dataset.dl); if (s?.file) J.download(s.file, s.file.name); });
   $$('[data-rm]', box).forEach(b => b.onclick = () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Delete?'; return; } remove(b.dataset.rm); });
   // a recording cut off when the app closed: offer to finish it

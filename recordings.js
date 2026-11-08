@@ -108,12 +108,12 @@ function card(r) {
     ${open ? `<div class="rx-body">
       ${r.status === 'done' ? `<div class="rx-text" dir="auto">${esc(r.text.slice(0, 1500))}${r.text.length > 1500 ? '…' : ''}</div>
         <div class="row-gap"><button type="button" class="ghost small" data-act="txt" data-id="${esc(r.id)}">⤓ Save text (.txt)</button><button type="button" class="ghost small" data-act="copy" data-id="${esc(r.id)}">Copy text</button>
-        <button type="button" class="ghost small" data-act="notes" data-id="${esc(r.id)}">Make notes / minutes</button>${r.audio || r.sid ? `<button type="button" class="ghost small" data-act="play" data-id="${esc(r.id)}">▶ Audio</button>` : ''}</div>
+        <button type="button" class="ghost small" data-act="notes" data-id="${esc(r.id)}">Make notes / minutes</button>${r.audio || r.sid ? `<button type="button" class="ghost small" data-act="play" data-id="${esc(r.id)}">▶ Listen</button>` : ''}</div>
         ${r.audio || r.sid || r.keep ? `<label class="rx-keep"><input type="checkbox" data-keep="${esc(r.id)}" ${r.keep ? 'checked' : ''}> Keep the audio (don't delete after ${DAYS} days)</label>` : ''}
         <p class="muted fine">${audioNote}</p>`
       : r.status === 'working' ? `<p class="muted fine">It is being transcribed now. You can leave this screen; it carries on.</p><div class="row-gap"><button type="button" class="ghost small" data-go="new">See progress</button></div>`
       : r.status === 'cut' ? `<p class="muted fine">The app closed while recording. The sound is saved — finish it to transcribe.</p><div class="row-gap"><button type="button" class="primary small" data-act="finish" data-id="${esc(r.id)}">Finish and transcribe</button></div>`
-      : `<p class="muted fine">${r.err ? esc(r.err) + ' — ' : ''}This one still needs to be transcribed.</p><div class="row-gap"><button type="button" class="primary small" data-act="again" data-id="${esc(r.id)}">Transcribe now</button></div>`}
+      : `<p class="muted fine">${r.err ? esc(r.err) + ' — ' : ''}This one still needs to be transcribed.</p><div class="row-gap"><button type="button" class="primary small" data-act="again" data-id="${esc(r.id)}">Transcribe now</button>${r.audio || r.sid || r.file ? `<button type="button" class="ghost small" data-act="play" data-id="${esc(r.id)}">▶ Listen</button>` : ''}</div>`}
       <div class="row-gap" style="margin-top:6px"><button type="button" class="link small danger" data-act="del" data-id="${esc(r.id)}">Delete</button></div>
     </div>` : ''}
   </div>`;
@@ -128,10 +128,10 @@ function wire(sc, list) {
     if (a === 'copy') { try { await navigator.clipboard.writeText(r.text); b.textContent = '✓ Copied'; } catch {} }
     if (a === 'notes') { J.show('new'); const t = $('#transcript'); if (t) { t.value = r.text; t.dispatchEvent(new Event('input')); } const u = $('#unit'); if (u && !u.value) u.value = r.name; }
     if (a === 'play') {
-      let blob = r.audio;
+      let blob = r.audio || r.file;
       if (!blob && r.sid) blob = ((await window.JundRecorder?.sessions?.()) || []).find(s => s.id === r.sid)?.file;
       if (!blob) { toast('The audio is no longer on this phone.'); return; }
-      const au = document.createElement('audio'); au.controls = true; au.src = URL.createObjectURL(blob); au.style.width = '100%';
+      const au = document.createElement(/^video\//.test(blob.type || '') ? 'video' : 'audio'); au.playsInline = true; au.controls = true; au.src = URL.createObjectURL(blob); au.style.width = '100%';
       b.replaceWith(au); au.play().catch(() => {});
     }
     if (a === 'finish') { b.disabled = true; b.textContent = 'Working…'; await window.JundRecorder?.finish?.(r.sid); }

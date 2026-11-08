@@ -1127,3 +1127,6 @@ body.net-busy .net-bar { opacity: 1; }
 .pick-panel [data-src] span { grid-row: 1 / span 2; font-size: 1.4rem; align-self: center; }
 .pick-panel [data-src] small { color: var(--ink-2); }
 .pick-x { margin-top: 4px; }
+.listen-box { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface); }
+.listen-box audio, .listen-box video { margin-top: 6px; border-radius: 10px; }
+.listen-btn { margin-inline-start: 6px; }
