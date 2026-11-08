@@ -42,10 +42,19 @@ async function finished(p, err) {
   try {
     if (!p.txid) await started(p);
     const it = await get(p.txid); if (!it) return;
-    if (p.text) { it.status = 'done'; it.text = p.text; it.at = Date.now(); it.err = ''; it.words = p.text.split(/\s+/).filter(Boolean).length;
+    if (p.text) { it.status = 'done'; it.text = p.text; it.raw = p.raw || ''; it.at = Date.now(); it.err = ''; it.words = p.text.split(/\s+/).filter(Boolean).length;
       if (!it.sid && p.audio && p.audio.size < (it.audio?.size || Infinity)) it.audio = p.audio; }
     else { it.status = 'failed'; it.err = err || 'Not finished'; }
     await put(it); paint();
+  } catch {}
+}
+
+// a clean script or meeting minutes made from a transcript, kept with it in the app
+async function keepText(p, text, type) {
+  try {
+    if (!p.txid) { await started(p); await finished(p, ''); }
+    const it = await get(p.txid); if (!it) return;
+    it[type === 'minutes' ? 'minutes' : 'script'] = text; await put(it); paint();
   } catch {}
 }
 
@@ -62,7 +71,7 @@ async function cleanup() {
 
 /* ---------- the screen ---------- */
 const screen = () => $('#screen-recordings');
-let filter = 'all', openId = null;
+let filter = 'all', openId = null; const views = {};
 const fmtD = t => new Date(t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const fmtT = t => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 const isoD = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -106,7 +115,8 @@ function card(r) {
       <small class="muted">${fmtD(r.created)} · ${fmtT(r.created)}${r.words ? ` · ${r.words} words` : ''}</small>
       <span class="rx-st ${cls}">${label}</span></button>
     ${open ? `<div class="rx-body">
-      ${r.status === 'done' ? `<div class="rx-text" dir="auto">${esc(r.text.slice(0, 1500))}${r.text.length > 1500 ? '…' : ''}</div>
+      ${r.status === 'done' ? `${r.raw || r.script || r.minutes ? `<div class="seg rx-view">${[['text', r.raw ? 'Corrected' : 'Transcript'], ...(r.raw ? [['raw', 'Original']] : []), ...(r.script ? [['script', 'Clean script']] : []), ...(r.minutes ? [['minutes', 'Minutes']] : [])].map(([k, t]) => `<button type="button" data-view="${k}" data-id="${esc(r.id)}" class="${(views[r.id] || 'text') === k ? 'on' : ''}">${t}</button>`).join('')}</div>` : ''}
+        <div class="rx-text" dir="auto">${esc(r[views[r.id] || 'text'] || r.text)}</div>
         <div class="row-gap"><button type="button" class="ghost small" data-act="txt" data-id="${esc(r.id)}">⤓ Save text (.txt)</button><button type="button" class="ghost small" data-act="copy" data-id="${esc(r.id)}">Copy text</button>
         <button type="button" class="ghost small" data-act="notes" data-id="${esc(r.id)}">Make notes / minutes</button>${r.audio || r.sid ? `<button type="button" class="ghost small" data-act="play" data-id="${esc(r.id)}">▶ Listen</button>` : ''}</div>
         ${r.audio || r.sid || r.keep ? `<label class="rx-keep"><input type="checkbox" data-keep="${esc(r.id)}" ${r.keep ? 'checked' : ''}> Keep the audio (don't delete after ${DAYS} days)</label>` : ''}
@@ -120,12 +130,13 @@ function card(r) {
 }
 function wire(sc, list) {
   const find = id => list.find(r => r.id === id);
+  $$('[data-view]', sc).forEach(b => b.onclick = () => { views[b.dataset.id] = b.dataset.view; paint(); });
   $$('[data-keep]', sc).forEach(c => c.onchange = async () => { const it = await get(c.dataset.keep); if (!it) return; it.keep = c.checked; await put(it); toast(c.checked ? '✓ The audio will be kept' : `The audio will be deleted ${DAYS} days after transcription`); paint(); });
   $$('[data-act]', sc).forEach(b => b.onclick = async () => {
     const r = find(b.dataset.id); if (!r) return;
     const a = b.dataset.act;
     if (a === 'txt') J.download(new Blob([`${r.name}\n${fmtD(r.created)} ${fmtT(r.created)}\n\n${r.text}`], { type: 'text/plain;charset=utf-8' }), fileName(r));
-    if (a === 'copy') { try { await navigator.clipboard.writeText(r.text); b.textContent = '✓ Copied'; } catch {} }
+    if (a === 'copy') { try { await navigator.clipboard.writeText(r[views[r.id] || 'text'] || r.text); b.textContent = '✓ Copied'; } catch {} }
     if (a === 'notes') { J.show('new'); const t = $('#transcript'); if (t) { t.value = r.text; t.dispatchEvent(new Event('input')); } const u = $('#unit'); if (u && !u.value) u.value = r.name; }
     if (a === 'play') {
       let blob = r.audio || r.file;
@@ -158,6 +169,6 @@ async function summary() {
   const list = await rows().catch(() => []);
   return { left: list.filter(r => r.status !== 'done'), done: list.filter(r => r.status === 'done') };
 }
-window.JundRecs = { started, finished, open: () => { cleanup().finally(paint); }, summary, paint };
+window.JundRecs = { started, finished, keepText, open: () => { cleanup().finally(paint); }, summary, paint };
 setTimeout(() => cleanup().catch(() => {}), 5000);
 })();

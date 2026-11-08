@@ -100,7 +100,12 @@
             <option value="meeting">Meeting recording → minutes</option>
             <option value="notes">Notes I wrote myself</option>
             <option value="book">A book passage or topic</option>
+            <option value="other">Other — I'll describe it…</option>
           </select>
+        </label>
+        <label class="field" id="kind-other-wrap" hidden>
+          <span>What is it? Describe it in a few words</span>
+          <input id="kind-other" dir="auto" placeholder="e.g. A Friday khutbah · Photos of my friend's notes · A podcast interview">
         </label>
         <label class="field">
           <span>Notes language</span>
@@ -113,6 +118,10 @@
       </div>
     </div>
 
+    <div class="auto-opts">
+      <label class="check"><input type="checkbox" id="auto-correct"> Correct the transcript first (fixes mishearings — better notes)</label>
+      <label class="check"><input type="checkbox" id="auto-make"> Make the notes by itself when the transcription is ready</label>
+    </div>
     <button type="button" class="primary big" id="make">Make notes</button>
 
     <div class="progress" id="progress" hidden>

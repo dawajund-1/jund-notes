@@ -781,7 +781,7 @@ function renderPending() {
   const tools = (p, i) => p.media && p.text && !p.busy ? `<div class="row-gap media-tools">
       <button type="button" class="ghost small" data-act="script" data-i="${i}">Clean script</button>
       <button type="button" class="ghost small" data-act="minutes" data-i="${i}">Meeting minutes</button>
-      <button type="button" class="ghost small" data-act="savetxt" data-i="${i}">Save transcript</button>
+      <button type="button" class="ghost small" data-act="savetxt" data-i="${i}">✓ Saved in Recordings</button>
       ${p.audio ? `<button type="button" class="ghost small" data-act="audio" data-i="${i}">Export audio</button>` : ''}
     </div>` : '';
   box.innerHTML = pending.length ? `<b>${pending.length > 1 ? ar(pending.length) + ' lessons will be made, one per file:' : 'Chosen file:'}</b>
@@ -900,7 +900,16 @@ async function hearAll() {
           : offline ? await window.JundOffline.transcribe(p, hearCtl.signal, st)
           : await hearFile(p, hearCtl.signal, st);
         if (!text) { p.bad = true; p.status = '✗ No speech was heard in this file.'; }
-        else { p.text = text; p.status = '✓ Transcribed'; }
+        else {
+          p.text = text; p.status = '✓ Transcribed';
+          if (store.get('autoCorrect', true) && !offline && navigator.onLine && text.split(/\s+/).length > 30) {
+            try {
+              p.raw = text;
+              const fixed = await cleanText(text, hearCtl.signal, (i, n) => st(n > 1 ? `Correcting the text… part ${i} of ${n}` : 'Correcting the text…'));
+              if (fixed) { p.text = fixed; p.status = '✓ Transcribed and corrected'; }
+            } catch (e) { if (hearCtl.signal.aborted) throw e; p.status = '✓ Transcribed (correction skipped)'; }
+          }
+        }
       } catch (e) {
         if (hearCtl.signal.aborted) { window.JundRecs?.finished(p, 'Stopped'); break; }
         p.bad = true; p.status = '✗ ' + errText(e);
@@ -911,6 +920,11 @@ async function hearAll() {
   } finally {
     lock?.release?.(); hearCtl = null;
     if (pending.length) renderPending();
+    // everything heard → make the notes by itself
+    if (store.get('autoMake', true) && pending.length && !hearing() && pending.every(p => p.text && !p.bad) && !$('#make').disabled) {
+      window.JundCal?.toast('✓ Transcription ready — making the notes now');
+      setTimeout(() => $('#make').click(), 400);
+    }
   }
 }
 function download(blob, name) {
@@ -937,7 +951,7 @@ function listen(p) {
 async function mediaAction(act, p) {
   if (!p) return;
   if (act === 'listen') return listen(p);
-  if (act === 'savetxt') return download(new Blob([p.text], { type: 'text/plain;charset=utf-8' }), safeName(p.unit) + '.txt');
+  if (act === 'savetxt') return show('recordings');
   if (act === 'audio' && p.audio) return download(p.audio, safeName(p.unit) + (p.audio.type === 'audio/aac' ? '.aac' : (p.file?.name.match(/\.[^.]+$/)?.[0] || '.m4a')));
   if (act === 'script') return makeScript(p);
   if (act === 'minutes') return makeScript(p, true);
@@ -980,7 +994,21 @@ Use this order, each heading on a line starting with "## ":
 ## Next meeting (if mentioned)
 Add nothing that was not said. If who or when is unknown, write "not set".`,
 };
+// the corrected transcript: same words, mishearings fixed, fillers removed (nothing added)
+async function cleanText(text, signal, onPart) {
+  const lang = langOf(text), parts = splitText(text, 2500), done = [];
+  for (let i = 0; i < parts.length; i++) {
+    onPart?.(i + 1, parts.length);
+    const r = await callServer({ system: SCRIPT_RULES[lang === 'en' ? 'en' : 'ar'], user: parts[i], json: false, maxTokens: 30000, signal });
+    const t = r.text.trim();
+    // a part that came back far too short was cut: keep the original words for it
+    done.push(t.split(/\s+/).length > parts[i].split(/\s+/).length * 0.5 ? t : parts[i]);
+  }
+  return done.join('\n\n');
+}
+let scriptOf = null;
 async function makeScript(p, minutes = false) {
+  scriptOf = { p, minutes };
   const box = $('#script-box'), out = $('#script-text');
   box.hidden = false; $('#script-title').textContent = (minutes ? 'Meeting minutes: ' : 'Clean script: ') + p.unit;
   out.value = ''; $('#script-status').textContent = 'Working…';
@@ -1003,9 +1031,17 @@ $('#script-copy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#script-text').value); $('#script-status').textContent = '✓ Copied.'; }
   catch { $('#script-text').select(); $('#script-status').textContent = 'Text selected; copy it from the menu.'; }
 };
-$('#script-save').onclick = () => download(new Blob([$('#script-text').value], { type: 'text/plain;charset=utf-8' }), safeName($('#script-title').textContent.replace(/:.*/, '') + ' - ' + $('#script-title').textContent.replace(/^[^:]*:\s*/, '')) + '.txt');
+$('#script-save').onclick = async () => {
+  const t = $('#script-text').value.trim(); if (!t || !scriptOf) return;
+  await window.JundRecs?.keepText(scriptOf.p, t, scriptOf.minutes ? 'minutes' : 'clean');
+  $('#script-status').textContent = '✓ Saved in the app — Recordings & meetings.';
+};
 $('#script-close').onclick = () => { $('#script-box').hidden = true; };
 
+$('#yt').addEventListener('input', () => {
+  clearTimeout($('#yt')._t);
+  $('#yt')._t = setTimeout(() => { if (/youtu\.?be/.test($('#yt').value) && !$('#yt-go').disabled) $('#yt-go').click(); }, 500);
+});
 $('#yt-go').onclick = async () => {
   const err = $('#new-error'); err.hidden = true;
   const lines = $('#yt').value.split(/\s+/).filter(s => /youtu/.test(s));
@@ -1019,7 +1055,7 @@ $('#yt-go').onclick = async () => {
     pending = pending.filter(p => p.media || p.text).concat(vids.map(v => ({ media: true, yt: v.yt, unit: v.unit, text: '', status: '⏳ Waiting' })));
     hearNote = notes[0] || '';
     $('#yt').value = '';
-    $('#kind').value = 'transcript';
+    if ($('#kind').value !== 'other') $('#kind').value = 'transcript';
     renderPending();
     hearAll();
   } catch (e) { err.textContent = errText(e); err.hidden = false; }
@@ -1056,10 +1092,20 @@ async function addFiles(files) {
   }
   if (pending.length === 1 && $('#unit').value) pending[0].unit = pending[0].baseUnit = $('#unit').value;
   if (sawPdf && $('#kind').value === 'transcript') $('#kind').value = 'book';
-  if (sawMedia) $('#kind').value = 'transcript';
+  if (sawMedia && $('#kind').value !== 'other') $('#kind').value = 'transcript';
   renderPending();
   if (sawMedia) hearAll();
 }
+// "Other" kind and the two automatic switches
+(() => {
+  const k = $('#kind'), w = $('#kind-other-wrap'), o = $('#kind-other');
+  const sync = () => { w.hidden = k.value !== 'other'; };
+  k.addEventListener('change', sync); sync();
+  o.value = store.get('kindOther', ''); o.oninput = () => store.set('kindOther', o.value);
+  for (const [id, key] of [['auto-correct', 'autoCorrect'], ['auto-make', 'autoMake']]) {
+    const c = $('#' + id); c.checked = store.get(key, true) !== false; c.onchange = () => store.set(key, c.checked);
+  }
+})();
 $('#file').addEventListener('change', async e => {
   const files = Array.from(e.target.files || []);
   e.target.value = '';
@@ -1088,7 +1134,11 @@ const SOURCE_TEXT_EN = {
 async function makeOne({ text, unit, sub, kind, lang, id }, onStatus) {
   lang ||= langOf(text);
   const en = lang === 'en';
-  const src = (en ? SOURCE_TEXT_EN : SOURCE_TEXT)[kind] || (en ? SOURCE_TEXT_EN : SOURCE_TEXT).transcript;
+  const desc = String(store.get('kindOther', '') || '').trim();
+  const src = kind === 'other' ? (en
+      ? { name: 'SOURCE', ask: `The user describes this input as: "${desc || 'other material'}". Understand it in that light (if it is a speech transcript, expect mishearings; if it is written, do not). Write the study file, the mind map and the check report from it. Stay with what is in it and add nothing:` }
+      : { name: 'المصدر', ask: `وصف المستخدم هذا المصدر بأنه: «${desc || 'مادة أخرى'}». افهمه على هذا الأساس (إن كان تفريغًا صوتيًا فتوقّع أخطاء سماع، وإن كان مكتوبًا فلا). اكتب منه الملف الدراسي والخريطة الذهنية وتقرير التحقق. التزم بما فيه ولا تضف:` })
+    : (en ? SOURCE_TEXT_EN : SOURCE_TEXT)[kind] || (en ? SOURCE_TEXT_EN : SOURCE_TEXT).transcript;
   let notes, note;
   if (engineKind() === 'phone') {
     const r = await writeOnPhone({ text, unit, sub, src }, onStatus);
@@ -2030,7 +2080,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.2';
+const APP_VERSION = '8.3';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

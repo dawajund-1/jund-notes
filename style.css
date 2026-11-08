@@ -1130,3 +1130,7 @@ body.net-busy .net-bar { opacity: 1; }
 .listen-box { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface); }
 .listen-box audio, .listen-box video { margin-top: 6px; border-radius: 10px; }
 .listen-btn { margin-inline-start: 6px; }
+.auto-opts { display: grid; gap: 6px; margin: 4px 0 12px; font-size: .9rem; }
+.auto-opts .check { display: flex; gap: 8px; align-items: flex-start; }
+.auto-opts input { margin-top: 3px; }
+.rx-view { margin-bottom: 8px; flex-wrap: wrap; }
