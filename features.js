@@ -105,7 +105,7 @@ function prayerCard(np) {
   if (!t) { box.innerHTML = `<div class="muted" style="font-size:.9rem">Prayer times will show here. ${store.get('prayerPlace') ? '' : '<button type="button" class="link" id="pc-loc">Use my location</button>'}</div>`; const l = $('#pc-loc'); if (l) l.onclick = () => askLocation(true); return; }
   const left = np?.left, lt = left == null ? '' : left >= 60 ? `in ${Math.floor(left / 60)}h ${left % 60}m` : `in ${left} min`;
   const open = store.get('pbarOpen', false);
-  box.innerHTML = `<button type="button" class="pbar-top" id="pbar-t" aria-expanded="${open}"><span class="pbar-dot"></span><b>${np ? np.name : ''}</b> ${np ? hm12(np.time) : ''}<span class="muted">${lt ? ' · ' + lt : ''}</span><span class="pbar-place muted">${esc(place().name)} ${open ? '▴' : '▾'}</span></button>
+  box.innerHTML = `<button type="button" class="pbar-top" id="pbar-t" aria-expanded="${open}"><span class="pbar-dot"></span><b>${np ? np.name : ''}</b> ${np ? hm12(np.time) : ''}<span class="muted">${lt ? ' · ' + lt : ''}</span><span class="pbar-place muted">${open ? '▴' : '▾'}</span></button>
     ${open ? `<div class="pc-row">${PRAYERS.filter(n => n !== 'Sunrise').map(n => `<div class="${np?.name === n ? 'on' : ''}"><small>${n}</small><b>${hm12(t[n]).replace(/ (am|pm)/, '')}</b></div>`).join('')}</div>` : ''}`;
   $('#pbar-t').onclick = () => { store.set('pbarOpen', !open); prayerCard(nextPrayer()); };
 }
