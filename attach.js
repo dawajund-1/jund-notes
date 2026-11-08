@@ -64,8 +64,9 @@ function picker(onPick) { chooseFrom(fs => onPick(fs[0]), false); }
 const big = document.querySelector('.big-pick');
 if (big) big.addEventListener('click', e => { e.preventDefault(); chooseFrom(fs => J.addFiles(fs), true); }, true);
 function chip(where, file, extra) {
-  where.innerHTML = `<span class="att-chip" dir="auto">${icon(mimeOf(file))} ${J.esc(file.name)} <small>${(file.size / 1048576).toFixed(1)} MB</small><button type="button" class="att-x" aria-label="${L('Remove', 'إزالة')}">✕</button></span>${extra || ''}`;
+  where.innerHTML = `<div class="att-prev"></div><span class="att-chip" dir="auto">${icon(mimeOf(file))} ${J.esc(file.name)} <small>${(file.size / 1048576).toFixed(1)} MB</small><button type="button" class="att-x" aria-label="${L('Remove', 'إزالة')}">✕</button></span>${extra || ''}`;
   where.hidden = false;
+  window.JundThumbs?.strip(where.querySelector('.att-prev'), file, 4);
 }
 
 /* ---------- Home message box ---------- */

@@ -212,7 +212,7 @@ function renderPaletteSettings() {
 }
 
 /* ---------- navigation ---------- */
-const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings', 'assistant', 'recordings', 'pending'];
+const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings', 'assistant', 'recordings', 'pending', 'inbox'];
 function show(name) {
   for (const s of SCREENS) { const el = $('#screen-' + s); if (el) el.hidden = s !== name; }
   const tab = name === 'result' || name === 'new' ? 'library' : name;
@@ -223,6 +223,7 @@ function show(name) {
   if (name === 'studio') window.JundStudio?.open();
   if (name === 'recordings') window.JundRecs?.open();
   if (name === 'pending') window.JundPending?.open();
+  if (name === 'inbox') window.JundInbox?.open();
   if (name === 'assistant') window.JundAssistant?.open();
   if (name === 'settings') { renderPaletteSettings(); renderSpend(); window.__syncEngine?.(); }
   if (name === 'new') $('#key-missing').hidden = engineKind() !== 'claude' || !!store.get('key');
@@ -596,13 +597,17 @@ async function ytList(lines) {
   for (const raw of lines) {
     let u; try { u = new URL(raw.trim()); } catch { continue; }
     const list = u.searchParams.get('list'), v = u.searchParams.get('v') || (/youtu\.be$/.test(u.hostname) ? u.pathname.slice(1) : '');
-    if (list && !v) {
-      const r = await serverFetch('/playlist?list=' + encodeURIComponent(list), { method: 'GET' });
-      const j = await r.json();
-      j.items.forEach((it, i) => items.push({ yt: 'https://www.youtube.com/watch?v=' + it.id, unit: it.title || `${j.title} ${ar(i + 1)}` }));
-      if (j.items.length >= 15) items.push({ note: 'YouTube gives only the latest 15 videos of a playlist; paste the links of the others.' });
-      continue;
-    }
+    // a playlist link (also "watch?v=…&list=…" — the whole playlist is wanted)
+    if (list && !/^(RD|UL|LL|WL)/.test(list)) {
+      let j = null;
+      try { j = await (await serverFetch('/playlist?list=' + encodeURIComponent(list), { method: 'GET' })).json(); } catch {}
+      if (j?.items?.length) {
+        j.items.forEach((it, i) => items.push({ yt: 'https://www.youtube.com/watch?v=' + it.id, unit: it.title || `${j.title || 'Playlist'} ${ar(i + 1)}` }));
+        if (j.items.length === 15) items.push({ note: 'YouTube showed only 15 videos of this playlist; paste the links of the others if some are missing.' });
+        continue;
+      }
+      if (!v) throw Object.assign(new Error('I could not open this playlist. It may be private. Make it Public or Unlisted on YouTube, or paste the video links one by one.'), { code: 'yt' });
+    } else if (list && !v) throw Object.assign(new Error('This is a YouTube Mix or a personal list (Liked, Watch later), which YouTube does not share. Paste the video links instead.'), { code: 'yt' });
     let title = '';
     try { title = (await (await serverFetch('/ytmeta?url=' + encodeURIComponent(u.href), { method: 'GET' })).json()).title; } catch {}
     items.push({ yt: u.href, unit: title || 'YouTube video' });
@@ -785,7 +790,7 @@ function renderPending() {
       ${p.audio ? `<button type="button" class="ghost small" data-act="audio" data-i="${i}">Export audio</button>` : ''}
     </div>` : '';
   box.innerHTML = pending.length ? `<b>${pending.length > 1 ? ar(pending.length) + ' lessons will be made, one per file:' : 'Chosen file:'}</b>
-    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' pages, ' : ''}${p.media && !p.text ? (p.yt ? 'YouTube' : 'audio or video') : ar(p.text.split(/\s+/).filter(Boolean).length) + ' words'})</small>${p.status ? ' — <span class="st">' + p.status + '</span>' : ''}${canListen(p) ? ` <button type="button" class="link small listen-btn" data-act="listen" data-i="${i}">▶ Listen</button>` : ''}${tools(p, i)}</li>`).join('')}</ol>
+    <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' pages, ' : ''}${p.media && !p.text ? (p.yt ? 'YouTube' : 'audio or video') : ar(p.text.split(/\s+/).filter(Boolean).length) + ' words'})</small>${p.status ? ' — <span class="st">' + p.status + '</span>' : ''}${canListen(p) ? ` <button type="button" class="link small listen-btn" data-act="listen" data-i="${i}">▶ Listen</button>` : ''}${tools(p, i)}${p.images || p.src || (p.file && /^video\//.test(p.file.type)) ? `<div class="pend-th" data-th="${i}" hidden></div>` : ''}</li>`).join('')}</ol>
     ${hearNote ? `<small class="muted">${hearNote}</small>` : ''}
     ${one?.pages && !one.bad ? `<div class="row-gap" style="align-items:center">
       <span>Pages: from</span><input id="pg-from" type="number" min="1" max="${one.pages.length}" value="${one.from}" style="width:5.5em">
@@ -794,6 +799,7 @@ function renderPending() {
     <button type="button" class="ghost" id="clear-pending">Clear files</button>` : '';
   const c = $('#clear-pending'); if (c) c.onclick = () => { hearCtl?.abort(); pending = []; hearNote = ''; $('#pp-x')?.click(); renderPending(); };
   $$('[data-act]', box).forEach(b => b.onclick = () => mediaAction(b.dataset.act, pending[+b.dataset.i]));
+  $$('[data-th]', box).forEach(el => { const p = pending[+el.dataset.th]; window.JundThumbs?.strip(el, p.images || p.src || p.file, 8); });
   const f = $('#pg-from'), t = $('#pg-to');
   if (f && t) {
     const upd = () => {
@@ -1079,7 +1085,7 @@ async function addFiles(files) {
     try {
       const pages = await readPdf(f);
       const chars = pages.join('').replace(/\s/g, '').length;
-      const item = { pages, from: 1, to: pages.length, baseUnit: unit, unit };
+      const item = { pages, from: 1, to: pages.length, baseUnit: unit, unit, src: f };
       item.text = pdfSlice(item);
       if (chars < pages.length * 40) {
         item.bad = true; item.text = '';
@@ -2080,7 +2086,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.3';
+const APP_VERSION = '8.5';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

@@ -309,12 +309,32 @@ export default {
     if (req.method === 'GET' && path === '/playlist') {
       const list = url.searchParams.get('list') || '';
       if (!/^[\w-]{10,64}$/.test(list)) return json({ error: 'bad list' }, 400, h);
-      const r = await fetch(`https://www.youtube.com/feeds/videos.xml?playlist_id=${list}`);
-      if (!r.ok) return json({ error: 'playlist not found', code: 'noplaylist' }, 404, h);
-      const xml = await r.text();
-      const items = [...xml.matchAll(/<entry>[\s\S]*?<yt:videoId>([\w-]{11})<\/yt:videoId>[\s\S]*?<title>([^<]*)<\/title>/g)].map(m => ({ id: m[1], title: unxml(m[2]) }));
-      const title = unxml((xml.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
-      return json({ title, items }, 200, h);
+      if (/^(RD|UL|LL|WL)/.test(list)) return json({ error: 'mix', code: 'mixlist' }, 404, h);   // Mixes / Liked / Watch later are personal: YouTube does not share them
+      // 1) the playlist page itself (up to ~100 videos), 2) the RSS feed (latest 15)
+      let items = [], title = '';
+      try {
+        const r = await fetch(`https://www.youtube.com/playlist?list=${list}&hl=en`, { headers: { 'accept-language': 'en', 'user-agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36' } });
+        if (r.ok) {
+          const html = await r.text(), seen = new Set();
+          for (const m of html.matchAll(/"playlistVideoRenderer":\{"videoId":"([\w-]{11})"[\s\S]{0,1500}?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/g)) {
+            if (seen.has(m[1])) continue; seen.add(m[1]);
+            let t = m[2]; try { t = JSON.parse('"' + t + '"'); } catch {}
+            items.push({ id: m[1], title: t });
+          }
+          if (!items.length) for (const m of html.matchAll(/"videoId":"([\w-]{11})"/g)) if (!seen.has(m[1])) { seen.add(m[1]); items.push({ id: m[1], title: '' }); }
+          title = unxml((html.match(/<meta property="og:title" content="([^"]*)"/) || [])[1] || '');
+        }
+      } catch {}
+      if (!items.length) {
+        const r = await fetch(`https://www.youtube.com/feeds/videos.xml?playlist_id=${list}`);
+        if (r.ok) {
+          const xml = await r.text();
+          items = [...xml.matchAll(/<entry>[\s\S]*?<yt:videoId>([\w-]{11})<\/yt:videoId>[\s\S]*?<title>([^<]*)<\/title>/g)].map(m => ({ id: m[1], title: unxml(m[2]) }));
+          title ||= unxml((xml.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
+        }
+      }
+      if (!items.length) return json({ error: 'playlist not found', code: 'noplaylist' }, 404, h);
+      return json({ title, items: items.slice(0, 200) }, 200, h);
     }
     if (req.method === 'GET' && path === '/ytmeta') {
       const id = ytId(url.searchParams.get('url') || '');
