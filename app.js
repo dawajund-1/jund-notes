@@ -2082,29 +2082,33 @@ applyFont();
 async function receiveShared() {
   const u = new URL(location.href);
   let text = u.searchParams.get('text') || '';
-  const title = u.searchParams.get('title') || '';
+  const files = [];
   if (u.searchParams.has('shared') && 'caches' in window) {
     try {
       const c = await caches.open('jn-share');
-      const r = await c.match('shared-text');
-      if (r) { text = await r.text(); await c.delete('shared-text'); }
-      const fr = await c.match('shared-file');
-      if (fr) {
-        const name = decodeURIComponent(fr.headers.get('x-name') || 'file.pdf');
-        const type = fr.headers.get('content-type') || '';
-        const blob = await fr.blob(); await c.delete('shared-file');
-        if (/^image\//.test(type)) { show('studio'); window.JundStudio?.load(new File([blob], name, { type })); }
-        else { show('new'); await addFiles([new File([blob], name, { type: type === 'application/octet-stream' ? '' : (type || blob.type || 'application/pdf') })]); }
+      const token = u.searchParams.get('shared');
+      const prefix = /^[a-f0-9-]{36}$/.test(token) ? 'share-' + token : null;
+      const meta = prefix && await c.match(prefix + '-meta');
+      const keys = [];
+      if (meta) {
+        const payload = await meta.json(); text = payload.text || '';
+        for (let i = 0; i < payload.count; i++) keys.push(prefix + '-' + i);
+      } else {
+        const r = await c.match('shared-text'); if (r) text = await r.text();
+        keys.push('shared-file');
       }
-      const t = await c.match('shared-title');
-      if (t) { if (!$('#unit').value) $('#unit').value = await t.text(); await c.delete('shared-title'); }
-    } catch {}
+      for (const key of keys) {
+        const r = await c.match(key); if (!r) continue;
+        files.push(new File([await r.blob()], decodeURIComponent(r.headers.get('x-name') || 'file'), {type:r.headers.get('content-type') || ''}));
+      }
+      if (document.readyState === 'loading') await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, {once:true}));
+      show('assistant'); window.JundAttach.homeSetup(); window.JundAttach.addHome(files);
+      for (const key of [...keys, ...(prefix ? [prefix + '-meta'] : ['shared-text','shared-title'])]) await c.delete(key);
+    } catch { window.JundCal?.toast('Could not open the shared files. Please add them using +.'); }
   }
-  if (text && /youtu\.?be/.test(text) && text.trim().split(/\s+/).length < 4) { startYouTube(text.trim()); text = ''; }
   if (text) {
-    show('new'); $('#paste-box').open = true;
-    $('#transcript').value = text; countWords();
-    if (title && !$('#unit').value) $('#unit').value = title;
+    if (document.readyState === 'loading') await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, {once:true}));
+    show('assistant'); $('#as-text').value = text; $('#as-text').dispatchEvent(new Event('input')); $('#as-text').focus();
   }
   const view = u.searchParams.get('view');
   if (view === 'calendar' || view === 'studio' || view === 'assistant') setTimeout(() => show(view), 0);
@@ -2155,3 +2159,4 @@ window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, 
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };
 })();
+

@@ -1,5 +1,5 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v67';
+const CACHE = 'jn-app-v68';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js', 'assistant.js', 'features.js', 'study.js', 'reminders.js', 'recorder.js', 'rec-worker.js', 'vendor/lame.min.js', 'i18n.js', 'voice.js', 'report.js', 'welcome.js', 'attach.js', 'drawer.js', 'dictate.js', 'mark.js', 'ical.js', 'busy.js', 'inbox.js', 'thumbs.js', 'recordings.js', 'pending.js', 'icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
@@ -15,20 +15,19 @@ self.addEventListener('fetch', e => {
   if (e.request.method === 'POST' && url.pathname.endsWith('/share')) {
     e.respondWith((async () => {
       const form = await e.request.formData();
-      let text = form.get('text') || '';
-      const file = form.get('file');
-      const c0 = await caches.open('jn-share');
-      const isText = file && (file.type === 'text/plain' || /\.txt$/i.test(file.name || ''));
-      if (file && file.size && !isText) {
-        // PDF, audio or video: keep the file itself; the app opens it
-        const type = file.type || (/\.pdf$/i.test(file.name || '') ? 'application/pdf' : 'application/octet-stream');
-        await c0.put('shared-file', new Response(file, { headers: { 'content-type': type, 'x-name': encodeURIComponent(file.name || 'file') } }));
-      } else if (file && typeof file.text === 'function') text = (await file.text()) || text;
-      const title = form.get('title') || (file && file.name ? file.name.replace(/\.[^.]+$/, '') : '');
+      const files = form.getAll('file').filter(f => typeof f !== 'string' && f.size);
+      const token = crypto.randomUUID();
+      const prefix = 'share-' + token;
       const c = await caches.open('jn-share');
-      await c.put('shared-text', new Response(text));
-      if (title) await c.put('shared-title', new Response(title));
-      return Response.redirect('./?shared=1', 303);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const type = file.type || (/\.pdf$/i.test(file.name) ? 'application/pdf' : 'application/octet-stream');
+        await c.put(prefix + '-' + i, new Response(file, { headers: { 'content-type': type, 'x-name': encodeURIComponent(file.name || 'file') } }));
+      }
+      await c.put(prefix + '-meta', new Response(JSON.stringify({
+        text: String(form.get('text') || ''), title: String(form.get('title') || ''), count: files.length
+      })));
+      return Response.redirect(new URL('./?shared=' + token, e.request.url).href, 303);
     })());
     return;
   }
@@ -67,3 +66,4 @@ self.addEventListener('push', e => {
     for (const d of fresh) await self.registration.showNotification(d.title, { body: d.body, tag: d.tag, icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [200, 100, 200] });
   })());
 });
+

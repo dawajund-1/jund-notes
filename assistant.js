@@ -252,7 +252,7 @@ Rules:
 - Timetable classes repeat weekly.
 - IMPORTANT: whenever he MENTIONS something with a day — an exam, class, deadline, meeting, appointment, homework ("tomorrow I have an exam", "عندي اختبار يوم الأحد") — ADD it to the calendar right away with an "add" action, even if he did not say "add" or "remind me". Do not ask first. Give it a clear title with the subject (e.g. "Exam: Ayat al-Ahkam — Kulliyat al-Haram"). If no time was given, leave time empty and set remind 0. Then say in the reply that you added it.
 - If he has an exam or test coming and the exam is later than today, also add one "study" item for today (or the day before the exam) titled "Revise for <subject> exam", unless one already exists in the calendar.
-- If he says he will send files to turn into notes, tell him to tap 📎 next to the message box and choose "Make notes from it" for each file.
+- If he says he will send files to turn into notes, tell him to tap + next to the message box, attach his files, describe what he needs, then tap Send.
 - Only use ids that appear in the calendar or lessons below. Never invent calendar items or lesson content.
 - Questions about his studies or work notes: answer only from the notes given, and end the reply with the source on its own line, like "📖 Lesson title › section heading". Put that lesson's id in "open". If the answer is not in the notes, say so and suggest which lesson might have it.
 - When he gives a YouTube link and wants it transcribed or made into notes, use the "youtube" action and say you started it.
@@ -283,11 +283,12 @@ function paintWork(pend) {
 }
 
 async function send() {
-  const att = window.JundAttach?.homeFile();
+  const files = window.JundAttach?.homeFiles() || [];
+  const att = files[0];
   const t = $('#as-text').value.trim() || (att ? (window.ZadLang === 'ar' ? 'ما في هذا الملف؟ لخّصه باختصار.' : 'What is in this file? Summarise it briefly.') : '');
   if (!t || busy) return;
   busy = true; $('#as-send').disabled = true;
-  log.push({ who: 'me', text: (att ? '📎 ' + att.name + '\n' : '') + t }); if (att) window.JundAttach.clearHome(); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
+  log.push({ who: 'me', text: (att ? files.map(f => '📎 ' + f.name).join('\n') + '\n' : '') + t }); if (att) window.JundAttach.clearHome(); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
   const pend = { who: 'ai', text: '…', working: true }; log.push(pend);
   const S = stepper(pend); render();
   const ar = AR_();
@@ -301,7 +302,7 @@ async function send() {
     let r;
     if (att) {
       st = S.start(ar ? `قراءة الملف: ${att.name}` : `Reading the file: ${att.name}`, `${(att.size / 1048576).toFixed(1)} MB`);
-      r = await window.JundAttach.askFile(att, { system: SYSTEM(), user: user + '\n\n(The file above is attached to this message. Read it to answer; if it has dates, times or tasks and the student asks, add them with actions.)', json: true, maxTokens: 6000,
+      r = await window.JundAttach.askFiles(files, { system: SYSTEM(), user: user + '\n\n(The file above is attached to this message. Read it to answer; if it has dates, times or tasks and the student asks, add them with actions.)', json: true, maxTokens: 6000,
         onText: x => S.note(st, ar ? `يكتب… ${x.length} حرفًا` : `writing… ${x.length} characters`) });
       S.ok(st, ar ? 'تمت القراءة' : 'read');
     } else {
@@ -323,6 +324,8 @@ async function send() {
   } catch (e) {
     if (st && st.state === 'run') S.fail(st, J.errText(e));
     pend.text = '✗ ' + J.errText(e);
+    if (files.length) window.JundAttach.addHome(files);
+    if (!$('#as-text').value) $('#as-text').value = t;
   }
   pend.working = false; pend.ms = Date.now() - pend.t0;
   busy = false; $('#as-send').disabled = false;
@@ -382,3 +385,4 @@ J.cloud.getData('assistant').then(r => { if (r?.log && (r.saved || 0) > 0 && !lo
 })();
 // the app opens on Home before this file loads, so draw it now
 if (!document.querySelector('#screen-assistant').hidden) window.JundAssistant.open();
+
