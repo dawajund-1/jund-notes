@@ -13,14 +13,15 @@ const $ = (s, r = document) => r.querySelector(s);
 let sheet, S = null;            // S = the open talk
 
 /* ---------------- what the assistant is told ---------------- */
+const LANG_RULE = '\n\nREMEMBER: answer in the language of the latest audio (English → English, Arabic → Arabic), whatever the language of the material above.';
 const RULES = `You are Zad, a warm and clear personal assistant and tutor. The person talks to you by VOICE and your answer is read aloud.
-- They may speak Arabic or English, or mix them. Answer in the language they just used. Arabic answers: simple, clear Modern Standard Arabic, with no diacritics except where needed to avoid confusion.
+- LANGUAGE: reply in the language the person SPEAKS in the latest audio — English speech gets an English answer, Arabic speech gets an Arabic answer — even when the file, the notes, the person's name or earlier turns are in the other language. When explaining Arabic material in English, keep key Arabic terms and give their meaning. Arabic answers: simple, clear Modern Standard Arabic, with no diacritics except where needed to avoid confusion.
 - Spoken style: short (2–5 sentences) unless they ask for more. No markdown, no lists, no symbols, no emojis, no links. Write numbers as words when short.
 - Be accurate. If you are not sure, say so.
 - Quran verses and hadith: quote only when they appear word for word in the material given; otherwise refer to them (surah and verse, or the book) without quoting from memory.
 - Do not give firm fatwas; for exact rulings, suggest asking a scholar.
 - If they ask you to test them, ask one question at a time and wait for the answer.
-FORMAT (always): the first line is "Q: " followed by the person's words exactly as spoken, in their language. Then a new line, then your spoken answer only.`;
+FORMAT (always): the first line is "Q (en): " or "Q (ar): " — the language they spoke — followed by their words exactly as spoken. Then a new line, then your spoken answer only, in that same language.`;
 
 function fileText(l) {
   const notes = (window.JundFeatures?.lessonText(l) || '').slice(0, 20000);
@@ -32,9 +33,9 @@ function who() {
   return `The person: ${me.name || 'unknown name'}${me.study ? ', ' + (me.use === 'work' ? 'works at/as ' : 'studies at ') + me.study : ''}.`;
 }
 async function systemFor(o) {
-  if (o.lesson) return `${RULES}\n${who()}\nYou are talking about ONE file the person has open. Explain from it. When the answer is in the file, mention which part (section heading) it comes from. If it is not in the file, say so in a few words, then answer briefly from general knowledge.\n\n${fileText(o.lesson)}`;
+  if (o.lesson) return `${RULES}\n${who()}\nYou are talking about ONE file the person has open. Explain from it. When the answer is in the file, mention which part (section heading) it comes from. If it is not in the file, say so in a few words, then answer briefly from general knowledge.\n\n${fileText(o.lesson)}${LANG_RULE}`;
   if (!o.ctx) { try { o.ctx = (await window.JundAssistant?.context?.('') || '').slice(0, 12000); } catch { o.ctx = ''; } }
-  return `${RULES}\n${who()}\nYou help with everything in their day: study, work, plans, ideas, writing. Below is what the app knows (calendar, notes list). Use it when relevant; never invent calendar items.\n\n${o.ctx}`;
+  return `${RULES}\n${who()}\nYou help with everything in their day: study, work, plans, ideas, writing. Below is what the app knows (calendar, notes list). Use it when relevant; never invent calendar items.\n\n${o.ctx}${LANG_RULE}`;
 }
 
 /* ---------------- the phone's reading voice ---------------- */
@@ -177,7 +178,10 @@ async function ask(T, blob) {
   const speakQ = [];
   const feed = full => {
     const nl = full.indexOf('\n');
-    const first = (nl < 0 ? full : full.slice(0, nl)).replace(/^\s*(Q|س)\s*[:：]\s*/i, '').trim();
+    const head = nl < 0 ? full : full.slice(0, nl);
+    const said = head.match(/^\s*(?:Q|س)\s*\(?\s*(en|ar)?\s*\)?\s*[:：]/i);
+    if (said?.[1]) lang = said[1].toLowerCase();
+    const first = head.replace(/^\s*(?:Q|س)\s*(?:\(\s*\w*\s*\))?\s*[:：]\s*/i, '').trim();
     if (first) setText(me, first);
     if (nl < 0) return;
     const ans = full.slice(nl + 1).replace(/[*#_`>]/g, '').trim();
@@ -198,7 +202,7 @@ async function ask(T, blob) {
     const s = speakQ.shift();
     if (!s) { if (finished) done(); return; }
     speaking = true; state('speak'); status(L('Reading the answer… tap to stop', 'يقرأ الإجابة… اضغط للإيقاف'));
-    say(s, lang || 'ar', () => { speaking = false; pump(); });
+    say(s, sentLang(s, lang), () => { speaking = false; pump(); });
   };
   const done = () => {
     if (T.gen !== gen || S !== T) return;
@@ -209,12 +213,12 @@ async function ask(T, blob) {
     T.abort = new AbortController();
     const history = T.turns.slice(0, -1).slice(-8).map(t => `${t.who === 'me' ? 'Person' : 'You'}: ${t.text}`).join('\n');
     const res = await J.serverFetch('/ask-voice', { method: 'POST', signal: T.abort.signal, headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ audio: b64(await blob.arrayBuffer()), mime: blob.type, system: await systemFor(T.o), user: history ? 'EARLIER IN THIS TALK:\n' + history : '(first question)' }) });
+      body: JSON.stringify({ audio: b64(await blob.arrayBuffer()), mime: blob.type, system: await systemFor(T.o), user: (history ? 'EARLIER IN THIS TALK:\n' + history + '\n\n' : '') + 'Now answer the new audio below, in the language it is spoken in.' }) });
     const r = await J.readStream(res, t => { if (T.gen === gen) feed(t); });
     if (T.gen !== gen) return;
     feed(r.text);
     const rest = lastAns.slice(spoken).trim(); if (rest) { speakQ.push(rest); spoken = lastAns.length; }   // the last sentence, even without a full stop
-    if (!ai) { const t = r.text.replace(/^\s*(Q|س)\s*[:：].*\n?/i, '').trim(); if (t) { ai = bubble('ai', t); speakQ.push(t); } }
+    if (!ai) { const t = r.text.replace(/^\s*(?:Q|س)\s*(?:\(\s*\w*\s*\))?\s*[:：].*\n?/i, '').trim(); if (t) { ai = bubble('ai', t); speakQ.push(t); } }
     if (me.text === '…') setText(me, '🎤');
     finished = true; pump();
   } catch (e) {
@@ -222,6 +226,11 @@ async function ask(T, blob) {
     drop(me); if (ai) drop(ai);
     state('idle'); status(J.errText(e));
   }
+}
+// which reader to use for one sentence: mostly Arabic letters → Arabic voice, mostly Latin → English voice
+function sentLang(t, fallback) {
+  const a = (t.match(/[\u0600-\u06FF]/g) || []).length, e = (t.match(/[A-Za-z]/g) || []).length;
+  return a > e ? 'ar' : e > a ? 'en' : (fallback || 'ar');
 }
 function say(text, lang, after) {
   const synth = window.speechSynthesis;
