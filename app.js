@@ -212,7 +212,7 @@ const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings', '
 function show(name) {
   for (const s of SCREENS) { const el = $('#screen-' + s); if (el) el.hidden = s !== name; }
   const tab = name === 'result' || name === 'new' ? 'library' : name;
-  document.body.classList.toggle('on-home', name === 'assistant');   // Home: no bottom bar, only the message box (the ☰ menu has everything)
+  document.body.classList.toggle('on-home', name === 'assistant'); document.body.dataset.screen = name;   // Home: no bottom bar, only the message box (the ☰ menu has everything)
   $$('.tabbar [data-nav]').forEach(b => b.classList.toggle('on', b.dataset.nav === tab));
   if (name === 'library') { renderLibrary(); window.JundRecorder?.list(); }
   if (name === 'calendar') window.JundCal?.render();
@@ -225,6 +225,10 @@ function show(name) {
 }
 $('#go-home').onclick = () => show('assistant');
 $('#go-today').onclick = () => { window.JundCal?.goToday(); show('calendar'); };
+// top bar, like Claude: search your notes, start a new chat
+$('#top-search').onclick = () => { show('library'); setTimeout(() => { const i = $('#lib-search'); i?.focus(); i?.scrollIntoView({ block: 'center' }); }, 60); };
+$('#top-new').onclick = () => { window.JundAssistant?.newChat(); show('assistant'); setTimeout(() => $('#as-text')?.focus(), 150); };
+document.body.dataset.screen = 'assistant';
 $$('.tabbar [data-nav]').forEach(b => b.onclick = () => show(b.dataset.nav));
 document.addEventListener('click', e => { const g = e.target.closest('[data-go]'); if (g) show(g.dataset.go); });
 
@@ -2000,7 +2004,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '6.5';
+const APP_VERSION = '6.6';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

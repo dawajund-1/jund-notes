@@ -856,3 +856,16 @@ body.on-home .as-dock { bottom: env(safe-area-inset-bottom, 0px); padding-bottom
 body.on-home main { padding-bottom: 0; }
 body.on-home #screen-assistant { padding-bottom: 160px; }
 .dr-nav { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+
+/* ---------- like Claude everywhere: no bottom bar; ☰ menu + top-bar search and new chat ---------- */
+.tabbar { display: none !important; }
+main { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+.as-dock { bottom: env(safe-area-inset-bottom, 0px) !important; padding-bottom: 12px; }
+.toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+body.on-home .toast { bottom: calc(170px + env(safe-area-inset-bottom, 0px)); }
+.update-bar { bottom: calc(24px + env(safe-area-inset-bottom)); }
+.top-ic { width: 40px; height: 40px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 12px; }
+#go-today { display: none; }
+body[data-screen="calendar"] #go-today { display: inline-flex; }
+body[data-screen="library"] #top-search { display: none; }
+.bar-right { gap: 6px; }
