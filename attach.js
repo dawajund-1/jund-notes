@@ -26,12 +26,43 @@ async function askFile(file, { system, user, json = false, maxTokens = 8000, onT
   return J.readStream(res, onText);
 }
 
-function picker(onPick) {
-  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = ACCEPT; inp.hidden = true;
-  document.body.appendChild(inp);
-  inp.onchange = () => { const f = inp.files[0]; inp.remove(); if (f) onPick(f); };
-  inp.click();
+/* where the file comes from: the phone's gallery, Files / Google Drive, or the camera.
+   (One mixed "accept" list makes Android show only Camera / Camcorder / Files, so each choice asks for its own kind.) */
+const OK = /^(image|audio|video)\/|^application\/pdf$|^text\/plain$/;
+const okFile = f => OK.test(mimeOf(f)) || /\.(pdf|txt|m4a|mp3|aac|wav|ogg|opus|flac|mp4|mov|3gp|webm|heic|heif)$/i.test(f.name);
+function chooseFrom(onFiles, multiple) {
+  document.querySelector('.pick-sheet')?.remove();
+  const sh = document.createElement('div'); sh.className = 'pick-sheet'; sh.setAttribute('data-noi18n', '');
+  sh.innerHTML = `<div class="pick-panel" role="dialog" aria-label="${L('Add a file', 'أضف ملفًا')}">
+      <div class="pick-h">${L('Add from', 'أضف من')}</div>
+      <button type="button" data-src="gallery"><span>🖼</span><b>${L('Gallery', 'المعرض')}</b><small>${L('Photos and videos', 'الصور والفيديو')}</small></button>
+      <button type="button" data-src="files"><span>📁</span><b>${L('Files & Google Drive', 'الملفات و Google Drive')}</b><small>${L('Recordings, PDFs, Drive, downloads', 'التسجيلات وPDF وDrive والتنزيلات')}</small></button>
+      <button type="button" data-src="camera"><span>📷</span><b>${L('Camera', 'الكاميرا')}</b><small>${L('Take a photo of a page or the board', 'صوّر صفحة أو السبورة')}</small></button>
+      <button type="button" class="pick-x">${L('Cancel', 'إلغاء')}</button></div>`;
+  document.body.appendChild(sh);
+  const close = () => sh.remove();
+  sh.onclick = e => { if (e.target === sh) close(); };
+  sh.querySelector('.pick-x').onclick = close;
+  sh.querySelectorAll('[data-src]').forEach(b => b.onclick = () => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.hidden = true; inp.multiple = !!multiple;
+    if (b.dataset.src === 'gallery') inp.accept = 'image/*,video/*';
+    else if (b.dataset.src === 'camera') { inp.accept = 'image/*'; inp.setAttribute('capture', 'environment'); }
+    // Files & Drive: no filter, so Android opens its full file picker (Drive, Downloads, recordings…)
+    document.body.appendChild(inp);
+    inp.onchange = () => {
+      const all = Array.from(inp.files || []); inp.remove();
+      const good = all.filter(okFile);
+      if (all.length && !good.length) { window.JundCal?.toast(L('This kind of file can’t be read. Choose audio, video, a photo, a PDF or a text file.', 'لا يمكن قراءة هذا النوع. اختر صوتًا أو فيديو أو صورة أو PDF أو ملفًا نصيًا.')); return; }
+      if (good.length) onFiles(good);
+    };
+    close(); inp.click();
+  });
 }
+window.JundPick = chooseFrom;
+function picker(onPick) { chooseFrom(fs => onPick(fs[0]), false); }
+// the big "Choose files" button on New notes uses the same choice
+const big = document.querySelector('.big-pick');
+if (big) big.addEventListener('click', e => { e.preventDefault(); chooseFrom(fs => J.addFiles(fs), true); }, true);
 function chip(where, file, extra) {
   where.innerHTML = `<span class="att-chip" dir="auto">${icon(mimeOf(file))} ${J.esc(file.name)} <small>${(file.size / 1048576).toFixed(1)} MB</small><button type="button" class="att-x" aria-label="${L('Remove', 'إزالة')}">✕</button></span>${extra || ''}`;
   where.hidden = false;

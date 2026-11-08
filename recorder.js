@@ -156,6 +156,7 @@ async function finish(sid, secs) {
   await putSession(done);
   await tx('chunks', 'readwrite', o => o.delete(IDBKeyRange.bound(sid + ':', sid + ':￿')));
   if (done.secs < 2) { toast('The recording was too short.'); return; }
+  file._sid = sid; file._name = done.name;
   J.show('new'); await J.addFiles([file]);
   if (!$('#unit').value) $('#unit').value = done.name;
   toast('✓ Recording saved. Transcribing now…');
@@ -178,7 +179,7 @@ async function list() {
   box.innerHTML = rows.map(s => `<div class="rec-row"><div class="body"><b dir="auto">${esc(s.name)}</b><small>${dur(s.secs || 0)}${s.status === 'recording' ? ' · <span style="color:var(--warn)">not finished</span>' : ''}</small></div>
     <span class="row-gap" style="margin:0">${s.status === 'recording' ? `<button type="button" class="primary small" data-fin="${s.id}">Finish</button>` : `<button type="button" class="ghost small" data-tr="${s.id}">Transcribe</button><button type="button" class="ghost small" data-dl="${s.id}">Save</button>`}<button type="button" class="ghost small danger" data-rm="${s.id}">×</button></span></div>`).join('');
   $$('[data-fin]', box).forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = 'Working…'; await finish(b.dataset.fin); });
-  $$('[data-tr]', box).forEach(b => b.onclick = async () => { const s = ss.find(x => x.id === b.dataset.tr); if (s?.file) { J.show('new'); await J.addFiles([s.file]); if (!$('#unit').value) $('#unit').value = s.name; } });
+  $$('[data-tr]', box).forEach(b => b.onclick = async () => { const s = ss.find(x => x.id === b.dataset.tr); if (s?.file) { s.file._sid = s.id; J.show('new'); await J.addFiles([s.file]); if (!$('#unit').value) $('#unit').value = s.name; } });
   $$('[data-dl]', box).forEach(b => b.onclick = () => { const s = ss.find(x => x.id === b.dataset.dl); if (s?.file) J.download(s.file, s.file.name); });
   $$('[data-rm]', box).forEach(b => b.onclick = () => { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Delete?'; return; } remove(b.dataset.rm); });
   // a recording cut off when the app closed: offer to finish it
@@ -186,6 +187,6 @@ async function list() {
   const ban = $('#rec-banner');
   if (ban) { ban.hidden = !cut; if (cut) ban.innerHTML = `<b>A recording was cut off</b> (${dur(cut.secs || 0)}, ${esc(cut.name)}). It is saved. <button type="button" class="link" data-go="library">Finish it in Notes → Recordings</button>`; }
 }
-window.JundRecorder = { start, list, active: () => !!R };
+window.JundRecorder = { start, list, active: () => !!R, sessions: getSessions, remove, finish };
 setTimeout(list, 1000);
 })();

@@ -212,7 +212,7 @@ function renderPaletteSettings() {
 }
 
 /* ---------- navigation ---------- */
-const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings', 'assistant'];
+const SCREENS = ['new', 'result', 'library', 'calendar', 'studio', 'settings', 'assistant', 'recordings', 'pending'];
 function show(name) {
   for (const s of SCREENS) { const el = $('#screen-' + s); if (el) el.hidden = s !== name; }
   const tab = name === 'result' || name === 'new' ? 'library' : name;
@@ -221,6 +221,8 @@ function show(name) {
   if (name === 'library') { renderLibrary(); window.JundRecorder?.list(); }
   if (name === 'calendar') window.JundCal?.render();
   if (name === 'studio') window.JundStudio?.open();
+  if (name === 'recordings') window.JundRecs?.open();
+  if (name === 'pending') window.JundPending?.open();
   if (name === 'assistant') window.JundAssistant?.open();
   if (name === 'settings') { renderPaletteSettings(); renderSpend(); window.__syncEngine?.(); }
   if (name === 'new') $('#key-missing').hidden = engineKind() !== 'claude' || !!store.get('key');
@@ -891,7 +893,7 @@ async function hearAll() {
       if (offline && p.images) { p.bad = true; p.status = '✗ Reading photos needs the internet. Connect, then add them again.'; renderPending(); continue; }
       if (offline && p.yt) { p.bad = true; p.status = '✗ YouTube needs the internet. Connect, then add it again.'; renderPending(); continue; }
       if (offline && !(await window.JundOffline?.ready())) { p.bad = true; p.status = '✗ No internet, and offline transcription is not downloaded yet (Settings → Offline transcription).'; renderPending(); continue; }
-      p.busy = true;
+      p.busy = true; window.JundRecs?.started(p);
       const st = s => { p.status = '⏳ ' + s; const li = $$('#pending li')[pending.indexOf(p)]; const el = li && $('.st', li); if (el) el.textContent = p.status; else renderPending(); };
       try {
         const text = p.yt ? await hearYouTube(p, hearCtl.signal, st)
@@ -900,9 +902,10 @@ async function hearAll() {
         if (!text) { p.bad = true; p.status = '✗ No speech was heard in this file.'; }
         else { p.text = text; p.status = '✓ Transcribed'; }
       } catch (e) {
-        if (hearCtl.signal.aborted) break;
+        if (hearCtl.signal.aborted) { window.JundRecs?.finished(p, 'Stopped'); break; }
         p.bad = true; p.status = '✗ ' + errText(e);
       } finally { p.busy = false; }
+      window.JundRecs?.finished(p, p.bad ? p.status.replace(/^✗\s*/, '') : '');
       renderPending();
     }
   } finally {
@@ -2012,7 +2015,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.0';
+const APP_VERSION = '8.1';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

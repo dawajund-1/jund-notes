@@ -1,6 +1,6 @@
 // Keeps the app opening without internet, and receives transcripts shared from other apps.
-const CACHE = 'jn-app-v59';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js', 'assistant.js', 'features.js', 'study.js', 'reminders.js', 'recorder.js', 'rec-worker.js', 'vendor/lame.min.js', 'i18n.js', 'voice.js', 'report.js', 'welcome.js', 'attach.js', 'drawer.js', 'dictate.js', 'mark.js', 'ical.js', 'busy.js', 'icon-maskable-512.png'];
+const CACHE = 'jn-app-v60';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'prompt.js', 'subjects.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'quran.js', 'local-ai.js', 'ai-worker.js', 'data/quran.json', 'vendor/web-llm.js', 'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs', 'media.js', 'vendor/mp4box.all.min.js', 'calendar.js', 'studio.js', 'offline.js', 'offline-worker.js', 'assistant.js', 'features.js', 'study.js', 'reminders.js', 'recorder.js', 'rec-worker.js', 'vendor/lame.min.js', 'i18n.js', 'voice.js', 'report.js', 'welcome.js', 'attach.js', 'drawer.js', 'dictate.js', 'mark.js', 'ical.js', 'busy.js', 'recordings.js', 'pending.js', 'icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

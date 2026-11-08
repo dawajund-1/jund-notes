@@ -28,6 +28,8 @@ function build() {
         <button type="button" class="dr-item" data-nav-to="assistant"><span class="dr-ic">⌂</span><span class="dr-t">${L('Home', 'الرئيسية')}</span></button>
         <button type="button" class="dr-item" data-nav-to="library"><span class="dr-ic">≡</span><span class="dr-t">${L('Notes', 'الملاحظات')}</span></button>
         <button type="button" class="dr-item" data-nav-to="calendar"><span class="dr-ic">▦</span><span class="dr-t">${L('Calendar', 'التقويم')}</span></button>
+        <button type="button" class="dr-item" data-nav-to="pending"><span class="dr-ic">◔</span><span class="dr-t">${L('Left to do', 'ما تبقّى')}</span><small id="dr-left"></small></button>
+        <button type="button" class="dr-item" data-nav-to="recordings"><span class="dr-ic">●</span><span class="dr-t">${L('Recordings & meetings', 'التسجيلات والاجتماعات')}</span><small id="dr-recs"></small></button>
         <button type="button" class="dr-item" data-nav-to="studio"><span class="dr-ic">T</span><span class="dr-t">${L('Studio', 'الاستوديو')}</span></button>
       </nav>
       <div class="dr-scroll">
@@ -54,6 +56,8 @@ function build() {
 }
 
 async function fill() {
+  window.JundPending?.count().then(n => { const e = $('#dr-left', el); if (e) e.textContent = n || ''; }).catch(() => {});
+  window.JundRecs?.summary().then(s => { const e = $('#dr-recs', el); if (e) e.textContent = s.left.length ? s.left.length + ' left' : ''; }).catch(() => {});
   // projects: one per subject, with how many notes it has
   const ls = await J.allLessons();
   const by = new Map();
