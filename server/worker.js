@@ -285,7 +285,8 @@ export default {
       const b = await req.json().catch(() => ({}));
       let u = String(b.url || '').trim().replace(/^webcal:/i, 'https:');
       if (!/^https:\/\/[^\s]{8,900}$/i.test(u)) return json({ error: 'bad link', code: 'bad' }, 400, h);
-      const r = await fetch(u, { headers: { 'user-agent': 'Mustatar calendar reader' }, cf: { cacheTtl: 900 } }).catch(() => null);
+      let r = await fetch(u, { headers: { accept: 'text/calendar,*/*' }, redirect: 'follow' }).catch(() => null);
+      if (r && !r.ok && u.includes('%')) r = await fetch(decodeURI(u), { headers: { accept: 'text/calendar,*/*' }, redirect: 'follow' }).catch(() => r);
       if (!r || !r.ok) return json({ error: 'could not open that calendar link', code: 'bad', status: r?.status || 0 }, 400, h);
       const text = (await r.text()).slice(0, 3_000_000);
       if (!/BEGIN:VCALENDAR/.test(text)) return json({ error: 'that link is not a calendar (iCal) link', code: 'bad' }, 400, h);
