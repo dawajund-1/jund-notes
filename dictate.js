@@ -64,6 +64,9 @@ const norm = w => w.replace(/[.,!?؟،:;"“”()]/g, '').replace(/[\u064B-\u065
 // when the message is sent, compare it with what was written from the voice
 document.addEventListener('click', e => {
   if (!e.target.closest('#as-send')) return;
+  // the message is going: words still arriving from the voice must not come back into the empty box
+  if (lastR) { lastR.sent = true; lastR.cancelled = true; }
+  if (R) cancel();
   const d = J.store.get('lastDictation'); const ta = $('#as-text');
   if (d && ta && Date.now() - d.t < 15 * 60e3) { learn(d.text, ta.value.trim()); J.store.set('lastDictation', null); }
 }, true);
@@ -179,8 +182,9 @@ function cancel() {
   closeBar(r);
   const ta = $('#as-text'); ta.value = r.before.trim(); ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); grow(ta);
 }
+let lastR = null;
 function stop(andSend) {
-  const r = R; if (!r) return; R = null;
+  const r = R; if (!r) return; R = null; lastR = r;
   cancelAnimationFrame(r.raf);
   const last = r.cur; r.cur = null;
   r.allDone = new Promise(ok => { if (!r.all) return ok(null); r.all.onstop = () => ok(new Blob(r.allParts, { type: r.all.mimeType || 'audio/webm' })); try { r.all.stop(); } catch { ok(null); } });
@@ -197,11 +201,12 @@ function stop(andSend) {
         const file = new File([allBlob], 'voice.' + (/mp4/.test(allBlob.type) ? 'm4a' : /ogg/.test(allBlob.type) ? 'ogg' : 'webm'), { type: allBlob.type.split(';')[0] });
         const res = await window.JundAttach.askFile(file, { system: 'You write down speech for a message box. Output ONLY the exact words spoken, in the language(s) spoken (Arabic in Arabic script, English in English), with normal punctuation. No notes, no quotes.\n' + vocab(), user: 'Write down everything said in this audio.', maxTokens: 6000 });
         const t = res.text.trim().replace(/^["“]|["”]$/g, '');
-        if (t) ta.value = (r.before + t).trim();
+        if (t && !r.sent) ta.value = (r.before + t).trim();
       } catch {}
     }
     ta.placeholder = L('Message Mustatar…', 'اكتب إلى مستطر…'); grow(ta);
     if (r.err && !r.pieces.some(p => p.text)) hint('✗ ' + J.errText(r.err));
+    if (r.sent) return;
     J.store.set('lastDictation', { text: ta.value.trim().slice(r.before.trim().length).trim(), t: Date.now() });
     if (andSend && ta.value.trim()) { J.store.set('lastDictation', null); $('#as-send')?.click(); } else ta.focus();
   };
