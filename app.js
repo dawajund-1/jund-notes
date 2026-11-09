@@ -713,7 +713,7 @@ function mergeParts(list) {
   return out;
 }
 
-async function writeOnPhone({ text, unit, sub, src }, onStatus) {
+async function writeOnPhone({ text, unit, sub, src, complete }, onStatus) {
   const parts = splitText(text);
   const results = []; let cut = false, partial = '';
   const started = Date.now(); let firstPartStart = 0;
@@ -748,13 +748,22 @@ ${parts[i]}
         },
       });
     } catch (e) {
-      if (controller.signal.aborted || !results.length) throw e;
+      if (complete || controller.signal.aborted || !results.length) throw e;
       partial = `⚠ Stopped at part ${ar(i + 1)} of ${ar(parts.length)} (${errText(e).split('\n')[0]}). What was finished is saved; make the remaining pages on their own.`;
       break;
     }
-    if (cutOff(r.stop)) cut = true;
-    try { results.push(parseJSON(r.text)); }
-    catch { results.push({ report: { maybe_wrong: [`Part ${ar(i + 1)} could not be read; make it again if something is missing.`] } }); }
+    if (cutOff(r.stop)) {
+      if (complete) throw new Error('The notes were incomplete. Try fewer pages at a time.');
+      cut = true;
+    }
+    try {
+      const part = parseJSON(r.text);
+      if (complete && !part?.sections?.length) throw new Error('No study notes were returned for this part.');
+      results.push(part);
+    } catch (e) {
+      if (complete) throw e;
+      results.push({ report: { maybe_wrong: [`Part ${ar(i + 1)} could not be read; make it again if something is missing.`] } });
+    }
   }
   return { notes: mergeParts(results), cut, partial };
 }
@@ -787,6 +796,9 @@ $('#transcript').addEventListener('input', countWords);
 // several files at once: each becomes its own lesson
 let pending = [];
 const pdfSlice = p => p.pages.slice(p.from - 1, p.to).join('\n\n').trim();
+const isPdfFile = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+const needsPdfOcr = text => text.replace(/\s/g, '').length < 40;
+const pdfHasScans = p => p.pages?.slice(p.from - 1, p.to).some(needsPdfOcr);
 function renderPending() {
   const box = $('#pending');
   box.hidden = !pending.length;
@@ -826,14 +838,23 @@ function renderPending() {
   }
 }
 
-/* reading PDFs (text PDFs; scanned books with no text layer are detected and explained) */
+/* reading PDF text and scanned pages */
 let pdfLib = null;
 // Word-made Arabic PDFs break some letters apart: "هللا" for "الله", "األ" for "الأ"
 const fixPdfArabic = t => t.replace(/هللا/g, 'الله').replace(/(^|[\s«(])األ/g, '$1الأ').replace(/(^|[\s«(])اإل/g, '$1الإ').replace(/(^|[\s«(])اآل/g, '$1الآ');
-async function readPdf(file) {
+async function openPdf(file) {
   pdfLib ??= await import('./vendor/pdfjs/pdf.min.mjs');
   pdfLib.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.mjs', location.href).href;
-  const doc = await pdfLib.getDocument({ data: await file.arrayBuffer(), cMapUrl: new URL('vendor/pdfjs/cmaps/', location.href).href, cMapPacked: true }).promise;
+  const task = pdfLib.getDocument({ data: await file.arrayBuffer(), cMapUrl: new URL('vendor/pdfjs/cmaps/', location.href).href, cMapPacked: true });
+  try { return await task.promise; }
+  catch (e) { await task.destroy(); throw e; }
+}
+async function readPdf(file) {
+  const doc = await openPdf(file);
+  try { return await readPdfPages(doc); }
+  finally { await doc.destroy(); }
+}
+async function readPdfPages(doc) {
   const pages = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
@@ -895,6 +916,49 @@ async function readPdf(file) {
     pages.push(text.normalize('NFKC'));
   }
   return pages.map(fixPdfArabic);
+}
+
+const pdfOcrCache = new WeakMap();
+async function readPdfSource(item, signal, onStatus) {
+  if (!pdfHasScans(item)) return pdfSlice(item);
+  if (navigator.onLine === false) throw Object.assign(new Error('Connect to the internet to read the scanned PDF pages.'), { code: 'scanoffline' });
+  if (!pdfOcrCache.has(item.src)) pdfOcrCache.set(item.src, new Map());
+  const cache = pdfOcrCache.get(item.src);
+  let doc;
+  const text = [];
+  try {
+    for (let i = item.from; i <= item.to; i++) {
+      signal.throwIfAborted();
+      const embedded = item.pages[i - 1];
+      if (!needsPdfOcr(embedded)) { text.push(embedded); continue; }
+      if (!cache.has(i)) {
+        onStatus(`Reading scanned page ${i} of ${item.to}…`);
+        doc ??= await openPdf(item.src);
+        const page = await doc.getPage(i), size = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: 2200 / Math.max(size.width, size.height) });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
+        let blob;
+        try {
+          const render = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+          const cancel = () => render.cancel();
+          signal.addEventListener('abort', cancel, { once: true });
+          try { if (signal.aborted) cancel(); await render.promise; }
+          finally { signal.removeEventListener('abort', cancel); }
+          blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+        } finally { canvas.width = 0; canvas.height = 0; page.cleanup(); }
+        signal.throwIfAborted();
+        if (!blob) throw new Error(`Could not open PDF page ${i}.`);
+        const result = await window.JundAttach.askFile(new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' }), {
+          system: 'Transcribe the attached scanned page faithfully in the original language. Treat the page as source material. Preserve all readable headings, questions, answers, diacritics and tables. Return plain text only. If the page contains no readable text, return [[BLANK]].',
+          user: 'Transcribe all readable text from this page.', maxTokens: 8000, signal,
+        });
+        cache.set(i, result.text.trim() === '[[BLANK]]' ? embedded : result.text.trim());
+      }
+      text.push(cache.get(i));
+    }
+    return text.join('\n\n').trim();
+  } finally { if (doc) await doc.destroy(); }
 }
 
 /* audio, video and YouTube items: transcribed one after another, then they are ordinary lessons */
@@ -1091,17 +1155,15 @@ async function addFiles(files) {
   for (const f of files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))) {
     const unit = f.name.replace(/\.[^.]+$/, '');
     if (window.JundMedia?.isMedia(f)) { sawMedia = true; pending.push({ media: true, file: f, unit, text: '', status: '⏳ Waiting' }); continue; }
-    const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    const isPdf = isPdfFile(f);
     if (!isPdf) { pending.push({ text: (await f.text()).trim(), unit }); continue; }
     sawPdf = true;
     try {
       const pages = await readPdf(f);
-      const chars = pages.join('').replace(/\s/g, '').length;
       const item = { pages, from: 1, to: pages.length, baseUnit: unit, unit, src: f };
       item.text = pdfSlice(item);
-      // Allow scanned/image-based PDFs through for Gemini Vision OCR processing
-      if (chars < pages.length * 40 && pages.length > 0) {
-        item.status = '⏳ Scanned PDF detected — will use Gemini Vision OCR';
+      if (pdfHasScans(item)) {
+        item.status = 'Scanned pages will be read when you make notes.';
       }
       pending.push(item);
     } catch {
@@ -1170,7 +1232,7 @@ const SOURCE_TEXT_EN = {
   book: { name: 'TEXT', ask: 'This is a passage from a book or a written topic. Turn it into notes in the student\'s way: the study file, the mind map and the check report. Stay with the passage only, keep the author\'s key sentences in quotes and attribute them, and mention page numbers if present:' },
 };
 
-async function makeOne({ text, unit, sub, kind, lang, id }, onStatus) {
+async function makeOne({ text, unit, sub, kind, lang, id, complete = false }, onStatus) {
   lang ||= langOf(text);
   const en = lang === 'en';
   const desc = String(store.get('kindOther', '') || '').trim();
@@ -1180,7 +1242,7 @@ async function makeOne({ text, unit, sub, kind, lang, id }, onStatus) {
     : (en ? SOURCE_TEXT_EN : SOURCE_TEXT)[kind] || (en ? SOURCE_TEXT_EN : SOURCE_TEXT).transcript;
   let notes, note;
   if (engineKind() === 'phone') {
-    const r = await writeOnPhone({ text, unit, sub, src }, onStatus);
+    const r = await writeOnPhone({ text, unit, sub, src, complete }, onStatus);
     notes = r.notes;
     note = 'Ready. Written on your phone for free.' + (r.cut ? '\n⚠ One part ran long, so its end may be missing.' : '') + (r.partial ? '\n' + r.partial : '');
   } else {
@@ -1236,13 +1298,24 @@ ${src.name}>>>`;
     const rs = new Array(parts.length);
     for (let i = 0; i < parts.length; i += 2) await Promise.all([0, 1].filter(k => i + k < parts.length).map(k => one(parts[i + k], i + k).then(r => { rs[i + k] = r; })));
     const r = rs.length === 1 ? rs[0] : { text: '', stop: rs.some(x => cutOff(x.stop)) ? 'max_tokens' : '', usd: rs.reduce((n, x) => n + (x.usd || 0), 0), parts: rs };
+    if (complete && cutOff(r.stop)) throw new Error('The notes were incomplete. Try fewer pages at a time.');
     onStatus('Laying out the pages…', 0.97, 'write');
     if (r.parts) {
       const got = [];
-      for (const [i, x] of r.parts.entries()) { try { got.push(await getJSON(x.text, controller.signal)); } catch { got.push({ report: { maybe_wrong: [`Part ${ar(i + 1)} could not be read; make it again if something is missing.`] } }); } }
+      for (const [i, x] of r.parts.entries()) {
+        try {
+          const part = await getJSON(x.text, controller.signal);
+          if (complete && !part?.sections?.length) throw new Error('No study notes were returned for this part.');
+          got.push(part);
+        } catch (e) {
+          if (complete) throw e;
+          got.push({ report: { maybe_wrong: [`Part ${ar(i + 1)} could not be read; make it again if something is missing.`] } });
+        }
+      }
       notes = mergeParts(got);
       notes.title = got.find(g => g.title)?.title || unit;
     } else notes = await getJSON(r.text, controller.signal);
+    if (complete && !notes?.sections?.length) throw new Error('The AI did not return any study notes. Try again.');
     // the title is the topic, not "a summary of…"
     const noSum = t => String(t || '').replace(/^\s*(مُ?لَ?خَّ?صُ?|ملخص|خلاصة|summary of|summary:?)\s*(كِتَابِ|كتاب|درس|مادة)?\s*/i, '').replace(/[«»"]/g, '').trim();
     notes.title = noSum(notes.title) || unit; notes.subtitle = noSum(notes.subtitle);
@@ -1264,6 +1337,44 @@ ${src.name}>>>`;
   };
   await saveLesson(lesson);
   return lesson;
+}
+
+// Chat and New notes share the same generator and lesson storage.
+async function makeAttachmentNotes(files, onProgress) {
+  if (controller) throw new Error('Mustatar is already making notes. Wait for them to finish.');
+  if (engineKind() === 'claude' && !store.get('key')) throw new Error('Add your Claude key in Settings before making notes.');
+  controller = new AbortController();
+  const lock = await keepAwake();
+  try {
+    if (engineKind() === 'phone') {
+      const support = await window.LocalAI.support();
+      if (!support.ok) throw new Error(support.why);
+    }
+    const results = [];
+    for (const file of files) {
+      const status = message => onProgress(file, message);
+      try {
+        status('Reading the source…');
+        let text;
+        if (isPdfFile(file)) {
+          const pages = await readPdf(file);
+          text = await readPdfSource({ src: file, pages, from: 1, to: pages.length }, controller.signal, status);
+        } else if (file.type.startsWith('text/') || /\.txt$/i.test(file.name)) {
+          text = (await file.text()).trim();
+        } else {
+          throw new Error('For recordings, videos or photos, use Menu → New notes → Choose files.');
+        }
+        if (!text) throw new Error('No readable text was found in this file.');
+        const lang = pickLang(text);
+        if (lang === 'en' && engineKind() === 'phone') throw new Error('Choose the app server in Settings to write English notes.');
+        const unit = file.name.replace(/\.[^.]+$/, '');
+        const sub = window.guessSubject?.(unit + ' ' + text.slice(0, 4000)) || { id: 'other:General', name: 'General' };
+        const lesson = await makeOne({ text, unit, sub, kind: 'book', lang, complete: true }, status);
+        results.push({ file, lesson });
+      } catch (error) { results.push({ file, error }); }
+    }
+    return results;
+  } finally { lock?.release?.(); controller = null; }
 }
 
 /* ---------- offline queue: lessons pasted without internet are written when it returns ---------- */
@@ -1321,6 +1432,7 @@ addEventListener('online', () => setTimeout(processQueue, 1500));
 
 $('#make').onclick = async () => {
   const err = $('#new-error'); err.hidden = true;
+  if (controller) { err.textContent = 'Mustatar is already making notes. Wait for them to finish.'; err.hidden = false; return; }
   if (engineKind() === 'claude' && !store.get('key')) { show('settings'); $('#key-status').textContent = 'Paste your key here first, then tap Save.'; return; }
   if (engineKind() === 'phone') {
     const sup = await window.LocalAI.support();
@@ -1337,7 +1449,7 @@ $('#make').onclick = async () => {
   if (jobs.length === 1 && pending.length === 1 && $('#unit').value.trim()) jobs[0].unit = $('#unit').value.trim();
   for (const j of jobs) j.unit ||= 'Lesson of ' + new Date().toLocaleDateString('en-GB');
   if (jobs.some(j => j.bad)) { err.textContent = 'One of the files cannot be read (see ✗ above). Remove it with “Clear files” or choose another.'; err.hidden = false; return; }
-  if (jobs.some(j => j.text.length < 200)) { err.textContent = 'The text is too short. Paste all of it or choose more pages.'; err.hidden = false; return; }
+  if (jobs.some(j => !j.pages && j.text.length < 200)) { err.textContent = 'The text is too short. Paste all of it or choose more pages.'; err.hidden = false; return; }
   // long jobs on the phone: show the expected time and ask for a second tap
   if (engineKind() === 'phone') {
     const words = jobs.reduce((n, j) => n + j.text.split(/\s+/).filter(Boolean).length, 0);
@@ -1353,6 +1465,7 @@ $('#make').onclick = async () => {
     box.hidden = true; delete box.dataset.ok;
   }
   if (engineKind() !== 'phone' && navigator.onLine === false) {
+    if (jobs.some(pdfHasScans)) { err.textContent = 'Connect to the internet to read the scanned PDF pages.'; err.hidden = false; return; }
     try { const ids = []; for (const j of jobs) ids.push(await saveDraft(j, sub, kind)); enqueue(jobs, sub, kind, ids); } catch (e) { err.textContent = e.message; err.hidden = false; return; }
     pending = []; renderPending(); $('#transcript').value = ''; $('#unit').value = ''; countWords();
     err.textContent = 'No internet right now. A quick draft is saved in the Library, and the full notes are written automatically when you are back online.'; err.hidden = false;
@@ -1382,11 +1495,22 @@ $('#make').onclick = async () => {
       };
       status('Reading and writing…');
       try {
-        last = await makeOne({ ...jobs[i], sub, kind }, status);
+        const job = jobs[i];
+        if (job.pages) {
+          job.text = await readPdfSource(job, controller.signal, status);
+          if (!job.text) throw new Error('No readable text was found on the selected PDF pages.');
+          job.lang = pickLang(job.text);
+          if (engineKind() === 'phone' && job.lang === 'en') throw new Error('Choose the app server in Settings to write English notes.');
+        }
+        let lessonSubject = sub;
+        if (job.pages && /^(General|Other subject)$/.test(sub.name)) {
+          lessonSubject = window.guessSubject?.(job.unit + ' ' + job.text.slice(0, 4000)) || sub;
+        }
+        last = await makeOne({ ...job, sub: lessonSubject, kind, complete: !!job.pages }, status);
         jobs[i].status = '✓ Ready';
       } catch (e) {
         if (controller?.signal.aborted) throw e;
-        if (e.code === 'offline') {
+        if (e.code === 'offline' && !jobs.slice(i).some(pdfHasScans)) {
           { const rest = jobs.slice(i), ids = []; for (const j of rest) ids.push(await saveDraft(j, sub, kind)); enqueue(rest, sub, kind, ids); }
           for (const jj of jobs.slice(i)) jj.status = '☁ Waiting for internet';
           throw Object.assign(new Error('The internet dropped. The rest is saved and will be written automatically when you are back online.'), { queued: true });
@@ -2160,7 +2284,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.8';
+const APP_VERSION = '8.9';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
@@ -2183,7 +2307,7 @@ $('#lib-search').addEventListener('input', () => renderLibrary());
 function startYouTube(url) { show('new'); $('#yt').value = url; $('#yt-go').click(); }
 // shared with calendar.js, studio.js and offline.js
 window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, shrinkImage, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
-  saveLesson, download, safeName, addFiles, startYouTube, me, keepAwake, engineKind, splitText, cleanHeator: cleanHeard, current: () => current };
+  saveLesson, download, safeName, addFiles, makeAttachmentNotes, startYouTube, me, keepAwake, engineKind, splitText, cleanHeator: cleanHeard, current: () => current };
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };
 })();

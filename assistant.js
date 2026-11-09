@@ -45,6 +45,7 @@ function openChat(id) {
 }
 function deleteChat(id) { store.set('chats', chats().filter(c => c.id !== id)); if (id === chatId) { chatId = 'c' + Date.now().toString(36); store.set('chatId', chatId); log = []; persist(); if (built) render(); } }
 let busy = false, built = false;
+let recentAttachment;
 
 function build() {
   built = true;
@@ -192,7 +193,7 @@ function render() {
   renderHome();
   const box = $('#as-log'); if (!box) return;
   box.innerHTML = log.length ? log.map((m, i) => m.who !== 'me' && m.working && busy ? `<div class="msg ai working" data-i="${i}"><details class="ws"><summary>${window.MustatarMark?.(22, true) || ''}<span class="ws-now"></span><span class="ws-chev">›</span></summary><div class="ws-body">${m.steps ? stepsHtml(m) : ''}</div></details></div>`
-    : `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto" data-i="${i}">${m.who !== 'me' && m.steps?.length ? `<details class="ws ws-done"><summary><span class="ws-now">${m.steps.length} ${AR_() ? 'خطوات' : m.steps.length > 1 ? 'steps' : 'step'} · ${((m.ms || 0) / 1000).toFixed(1)}s${m.steps.some(x => x.state === 'fail') ? ' · ✗' : ''}</span><span class="ws-chev">›</span></summary><div class="ws-body">${stepsHtml(m)}</div></details>` : ''}${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${m.open ? `<button type="button" class="link" data-open="${esc(m.open)}">Open the lesson</button>` : ''}</div>`).join('')
+    : `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto" data-i="${i}">${m.who !== 'me' && m.steps?.length ? `<details class="ws ws-done"><summary><span class="ws-now">${m.steps.length} ${AR_() ? 'خطوات' : m.steps.length > 1 ? 'steps' : 'step'} · ${((m.ms || 0) / 1000).toFixed(1)}s${m.steps.some(x => x.state === 'fail') ? ' · ✗' : ''}</span><span class="ws-chev">›</span></summary><div class="ws-body">${stepsHtml(m)}</div></details>` : ''}${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${lessonLinks(m)}</div>`).join('')
     : '';
   $$('[data-open]', box).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
   const tries = J.me().use === 'work'
@@ -201,6 +202,11 @@ function render() {
   $('#as-try').innerHTML = log.length ? '' : tries.map(t => `<button type="button" class="chip-b" dir="auto">${esc(t)}</button>`).join('');
   $$('#as-try button').forEach(b => b.onclick = () => { $('#as-text').value = b.textContent; send(); });
   if (log.length) box.lastElementChild?.scrollIntoView({ block: 'end' });
+}
+
+function lessonLinks(message) {
+  const lessons = message.lessons || (message.open ? [{ id: message.open }] : []);
+  return lessons.map(lesson => `<div><button type="button" class="link" data-open="${esc(lesson.id)}">${esc(lesson.label || (AR_() ? 'افتح الدرس' : 'Open the lesson'))}</button></div>`).join('');
 }
 
 /* what the assistant is told about you */
@@ -252,7 +258,7 @@ Rules:
 - Timetable classes repeat weekly.
 - IMPORTANT: whenever he MENTIONS something with a day — an exam, class, deadline, meeting, appointment, homework ("tomorrow I have an exam", "عندي اختبار يوم الأحد") — ADD it to the calendar right away with an "add" action, even if he did not say "add" or "remind me". Do not ask first. Give it a clear title with the subject (e.g. "Exam: Ayat al-Ahkam — Kulliyat al-Haram"). If no time was given, leave time empty and set remind 0. Then say in the reply that you added it.
 - If he has an exam or test coming and the exam is later than today, also add one "study" item for today (or the day before the exam) titled "Revise for <subject> exam", unless one already exists in the calendar.
-- If he says he will send files to turn into notes, tell him to tap + next to the message box, attach his files, describe what he needs, then tap Send.
+- If he wants to turn a PDF or text file into study notes, tell him to attach it with + and say “Make complete study notes from this file”. For recordings, videos and photos, point to New notes. Never claim that you started or saved notes in a chat reply.
 - Only use ids that appear in the calendar or lessons below. Never invent calendar items or lesson content.
 - Questions about his studies or work notes: answer only from the notes given, and end the reply with the source on its own line, like "📖 Lesson title › section heading". Put that lesson's id in "open". If the answer is not in the notes, say so and suggest which lesson might have it.
 - When he gives a YouTube link and wants it transcribed or made into notes, use the "youtube" action and say you started it.
@@ -282,6 +288,16 @@ function paintWork(pend) {
   const list = el.querySelector('.ws-body'); if (list) list.innerHTML = stepsHtml(pend);
 }
 
+function requestsNotes(text) {
+  const request = text.replace(/[\u064B-\u065F\u0670]/g, '').replace(/\s+/g, ' ').trim();
+  const en = request.replace(/^(?:(?:please|can you|could you|would you)\s+)*/i, '');
+  const ar = request.replace(/^(?:(?:من فضلك|لو سمحت)\s+)*/, '');
+  return /^(?:make|create|write|generate|prepare|produce)\s+(?:(?:me|the|my|some|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
+    || /^(?:convert|turn)\b.{0,180}\b(?:to|into|as)\s+(?:(?:the|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
+    || /^(?:حول|استخرج)\s+.{0,180}(?:ملاحظات|مذكرة|مذكرات)/.test(ar)
+    || /^(?:اكتب|أكتب|اصنع|أنشئ|انشئ|اعمل|أعمل|استخرج|أعد|اعد|أريد|اريد|أبغى|ابغى|سو|سوي)\s+(?:لي\s+)?(?:ملاحظات|الملاحظات|مذكرة|المذكرة|مذكرات|المذكرات)(?:\s|$|[.،؟!])/.test(ar);
+}
+
 async function send() {
   const files = window.JundAttach?.homeFiles() || [];
   const att = files[0];
@@ -291,12 +307,36 @@ async function send() {
     : input;
   if (!t || busy) return;
   busy = true; $('#as-send').disabled = true;
+  if (att) recentAttachment = { chatId, files };
   log.push({ who: 'me', text: (att ? files.map(f => '📎 ' + f.name).join('\n') + '\n' : '') + t }); if (att) window.JundAttach.clearHome(); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
   const pend = { who: 'ai', text: '…', working: true }; log.push(pend);
   const S = stepper(pend); render();
   const ar = AR_();
   let st;
   try {
+    if (requestsNotes(t)) {
+      const sources = recentAttachment?.chatId === chatId ? recentAttachment.files : [];
+      if (!sources.length) {
+        pend.text = ar ? 'أرفق ملف PDF أو ملفًا نصيًا عبر زر + هنا، ثم أرسل طلب إعداد الملاحظات.' : 'Tap + to attach the PDF or text file here, then send your request to make study notes.';
+        return;
+      }
+      st = S.start(ar ? 'إعداد الملاحظات الدراسية' : 'Making study notes');
+      const results = await J.makeAttachmentNotes(sources, (file, status) => S.note(st, `${file.name} · ${status}`));
+      const saved = results.filter(result => result.lesson);
+      const failed = results.filter(result => result.error);
+      if (saved.length) {
+        pend.text = ar ? 'حُفظت الملاحظات الدراسية في المكتبة.' : 'Your study notes are saved in the Library.';
+        pend.lessons = saved.map(({ lesson }) => ({ id: lesson.id, label: lesson.notes.title || lesson.unit }));
+      } else {
+        pend.text = ar ? 'تعذّر إعداد الملاحظات الدراسية.' : 'Mustatar could not make the study notes.';
+      }
+      if (failed.length) {
+        pend.text += '\n' + failed.map(({ file, error }) => `✗ ${file.name} · ${J.errText(error)}`).join('\n');
+        if (recentAttachment?.chatId === chatId) recentAttachment.files = failed.map(result => result.file);
+        S.fail(st, ar ? 'تعذّر إكمال بعض الملفات' : 'Some files could not be completed');
+      } else S.ok(st, ar ? 'حُفظت في المكتبة' : 'Saved in the Library');
+      return;
+    }
     st = S.start(ar ? 'قراءة تقويمك وملاحظاتك' : 'Reading your calendar and notes');
     const history = log.slice(-12, -2).map(m => `${m.who === 'me' ? 'Student' : 'You'}: ${m.text}`).join('\n');
     const ctx = await context(t);
@@ -330,10 +370,11 @@ async function send() {
     pend.text = '✗ ' + J.errText(e);
     if (files.length) window.JundAttach.addHome(files);
     if (!$('#as-text').value) $('#as-text').value = t;
+  } finally {
+    pend.working = false; pend.ms = Date.now() - pend.t0;
+    busy = false; $('#as-send').disabled = false;
+    persist(); render();
   }
-  pend.working = false; pend.ms = Date.now() - pend.t0;
-  busy = false; $('#as-send').disabled = false;
-  persist(); render();
 }
 
 function apply(actions) {
