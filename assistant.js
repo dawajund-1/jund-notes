@@ -271,7 +271,7 @@ MOST RELEVANT LESSON NOTES:
 ${notes || '(none matched)'}`;
 }
 const SYSTEM = () => `You are the assistant inside "Mustatar", the personal notes and planning app of ${J.me().name || 'its owner'}${J.me().study ? ' (' + (J.me().use === 'work' ? 'work: ' : 'studies at: ') + J.me().study + ')' : ''}. He or she talks to you in Arabic or English; always answer in the language of his last message, briefly and plainly, like a helpful friend.
-You can act on his calendar. Reply with JSON only, in this shape:
+You can act on his calendar and habit tracker. Reply with JSON only, in this shape:
 {"reply": "what you say to him",
  "actions": [
    {"do": "add", "title": "...", "date": "YYYY-MM-DD", "time": "HH:MM or empty", "type": "task|homework|exam|class|meeting|study", "repeat": "none|weekly", "remind": minutes before (-1 none, 0 at the time, 10, 30, 60, 1440), "notes": "..."},
@@ -279,12 +279,15 @@ You can act on his calendar. Reply with JSON only, in this shape:
    {"do": "undone", "id": "calendar id"},
    {"do": "move", "id": "calendar id", "date": "YYYY-MM-DD", "time": "HH:MM or empty"},
    {"do": "delete", "id": "calendar id"},
-   {"do": "youtube", "url": "a YouTube video or playlist link he gave, to transcribe and make notes from"}
+   {"do": "youtube", "url": "a YouTube video or playlist link he gave, to transcribe and make notes from"},
+   {"do": "habit", "title": "a daily habit the user explicitly asked to track", "time": "HH:MM if a daily reminder was requested, or empty"}
  ],
  "open": "a lesson id to offer to open, or empty"}
 Rules:
 - Work out dates yourself from today's date ("tomorrow", "next Tuesday", "بعد أسبوعين"). Use 24-hour times. "Remind me" means remind 0 unless he says otherwise; a task with a time and no reminder wish gets remind 30.
 - Timetable classes repeat weekly.
+- Understand the meaning of the user's Arabic or English request, including casual phrasing. A one-time to-do is a calendar task. A repeated personal practice the user asks to track is a habit. Handle each clearly requested item in one message. If asked to add an undated to-do, put it on today's list without a reminder unless the user requested one. Ask about an ambiguous time or date when guessing would create a wrong reminder.
+- Suggestions, questions and hypothetical examples do not create tasks or habits. When the user asks for habit ideas, suggest small Islamic practices if relevant, such as a Quran portion, adhkar or revision. Add a habit only if the user asks to add or track it.
 - IMPORTANT: whenever he MENTIONS something with a day — an exam, class, deadline, meeting, appointment, homework ("tomorrow I have an exam", "عندي اختبار يوم الأحد") — ADD it to the calendar right away with an "add" action, even if he did not say "add" or "remind me". Do not ask first. Give it a clear title with the subject (e.g. "Exam: Ayat al-Ahkam — Kulliyat al-Haram"). If no time was given, leave time empty and set remind 0. Then say in the reply that you added it.
 - If he has an exam or test coming and the exam is later than today, also add one "study" item for today (or the day before the exam) titled "Revise for <subject> exam", unless one already exists in the calendar.
 - If he wants to turn a PDF or text file into study notes, tell him to attach it with + and say “Make complete study notes from this file”. For recordings, videos and photos, point to New notes. Never claim that you started or saved notes in a chat reply.
@@ -321,10 +324,10 @@ function requestsNotes(text) {
   const request = text.replace(/[\u064B-\u065F\u0670]/g, '').replace(/\s+/g, ' ').trim();
   const en = request.replace(/^(?:(?:please|can you|could you|would you)\s+)*/i, '');
   const ar = request.replace(/^(?:(?:من فضلك|لو سمحت)\s+)*/, '');
-  return /^(?:make|create|write|generate|prepare|produce)\s+(?:(?:me|the|my|some|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
+  return /^(?:make|create|write|generate|prepare|produce|i need|i want|i(?:'d| would) like)\s+(?:(?:me|the|my|some|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
     || /^(?:convert|turn)\b.{0,180}\b(?:to|into|as)\s+(?:(?:the|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
     || /^(?:حول|استخرج)\s+.{0,180}(?:ملاحظات|مذكرة|مذكرات)/.test(ar)
-    || /^(?:اكتب|أكتب|اصنع|أنشئ|انشئ|اعمل|أعمل|استخرج|أعد|اعد|أريد|اريد|أبغى|ابغى|سو|سوي)\s+(?:لي\s+)?(?:ملاحظات|الملاحظات|مذكرة|المذكرة|مذكرات|المذكرات)(?:\s|$|[.،؟!])/.test(ar);
+    || /^(?:اكتب|أكتب|اصنع|أنشئ|انشئ|اعمل|أعمل|استخرج|أعد|اعد|أريد|اريد|أحتاج|احتاج|أبغى|ابغى|سو|سوي)\s+(?:لي\s+)?(?:ملاحظات|الملاحظات|مذكرة|المذكرة|مذكرات|المذكرات)(?:\s|$|[.،؟!])/.test(ar);
 }
 
 function notePageSelection(text) {
@@ -440,7 +443,7 @@ async function send({ retryNotes = false } = {}) {
     const out = J.parseJSON(r.text);
     const acts = out.actions || [];
     if (acts.length) {
-      st = S.start(ar ? 'تنفيذ على تقويمك' : 'Updating your calendar', ar ? `${acts.length} خطوة` : `${acts.length} step${acts.length > 1 ? 's' : ''}`);
+      st = S.start(ar ? 'تحديث مهامك وعاداتك' : 'Updating your tasks and habits', ar ? `${acts.length} خطوة` : `${acts.length} step${acts.length > 1 ? 's' : ''}`);
       pend.done = apply(acts);
       if (pend.done.length) S.ok(st, pend.done.join(' · ')); else S.fail(st, ar ? 'لم يُنفَّذ شيء (تاريخ أو معرّف غير صالح)' : 'nothing could be done (missing date or unknown item)');
     }
@@ -466,7 +469,9 @@ function apply(actions) {
   const nice = (d, t) => new Date(d + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + (t ? ' ' + t : '');
   for (const a of actions) {
     const e = a.id && evs.find(x => x.id === a.id);
-    if (a.do === 'add' && a.title && /^\d{4}-\d\d-\d\d$/.test(a.date || '')) {
+    if (a.do === 'habit' && typeof a.title === 'string') {
+      if (window.JundFeatures?.createHabit(a.title, a.time)) done.push((AR_() ? 'أُضيفت عادة: ' : 'Habit added: ') + a.title.trim().slice(0, 120));
+    } else if (a.do === 'add' && a.title && /^\d{4}-\d\d-\d\d$/.test(a.date || '')) {
       if (evs.some(x => x.title === a.title && x.date === a.date && (x.time || '') === (/^\d\d:\d\d$/.test(a.time || '') ? a.time : ''))) continue;   // already there: never add the same thing twice
       cal.add({ title: a.title, date: a.date, time: /^\d\d:\d\d$/.test(a.time || '') ? a.time : '', type: a.type || 'task', repeat: a.repeat === 'weekly' ? 'weekly' : 'none',
         remind: Number.isFinite(+a.remind) ? +a.remind : Number(store.get('remindDefault', 30)), notes: a.notes || '' });

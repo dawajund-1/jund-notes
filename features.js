@@ -128,31 +128,83 @@ setTimeout(() => askLocation(false), 2500);
 
 /* ---------- habits ---------- */
 const habits = () => store.get('habits', []);
-const saveHabits = h => { store.set('habits', h); J.cloud.putData('habits', { saved: Date.now(), habits: h }).catch(() => {}); };
+const habitText = (en, ar) => window.ZadLang === 'ar' ? ar : en;
+const saveHabits = h => {
+  store.set('habits', h);
+  J.cloud.putData('habits', { saved: Date.now(), habits: h }).catch(() => {});
+  window.JundCal?.pushSync();
+};
+const habitIdeas = [
+  ['quran', 'Read a portion of the Quran', 'قراءة ورد من القرآن'],
+  ['adhkar-am', 'Morning adhkar', 'أذكار الصباح'],
+  ['adhkar-pm', 'Evening adhkar', 'أذكار المساء'],
+  ['revision', 'Review Quran memorization', 'مراجعة حفظ القرآن'],
+  ['reflection', 'Evening self-review', 'محاسبة النفس مساءً'],
+];
+function createHabit(name, reminder = '', idea = '') {
+  name = String(name || '').trim().slice(0, 120);
+  if (!name || habits().some(h => h.name.toLowerCase() === name.toLowerCase() || (idea && h.idea === idea))) return false;
+  saveHabits([...habits(), { id: 'H' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name, days: {}, created: iso(new Date()), reminder: /^([01]\d|2[0-3]):[0-5]\d$/.test(reminder) ? reminder : '', idea }]);
+  renderHabits();
+  return true;
+}
+function habitReminders() {
+  const now = iso(new Date());
+  return habits().filter(h => /^([01]\d|2[0-3]):[0-5]\d$/.test(h.reminder || '')).map(h => ({
+    id: h.id, title: h.name, body: habitText('Daily habit', 'عادة يومية'), date: h.created || now,
+    time: h.reminder, every: 1, skip: Object.keys(h.days || {}).filter(d => d >= now && h.days[d]),
+  }));
+}
 function streak(h) {
   let n = 0, d = new Date();
-  if (!h.days?.[iso(d)]) d.setDate(d.getDate() - 1);   // today not done yet: count up to yesterday
+  if (!h.days?.[iso(d)]) d.setDate(d.getDate() - 1);
   while (h.days?.[iso(d)]) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
 function renderHabits() {
   const box = $('#hm-habits'); if (!box) return;
-  const t = iso(new Date()), list = habits();
-  const wrap = $('#hm-habits-wrap'); if (wrap) wrap.hidden = !list.length && !store.get('habitAdd');   // no habits yet: keep Home clear (add one from the ☰ menu)
-  box.innerHTML = list.map(h => `<button type="button" class="habit ${h.days?.[t] ? 'on' : ''}" data-h="${h.id}" dir="auto">
-      <span class="hc">${h.days?.[t] ? '✓' : ''}</span>${esc(h.name)}${streak(h) > 1 ? `<small>${streak(h)} days</small>` : ''}</button>`).join('') +
-    `<span class="habit-add"><input id="habit-new" type="text" dir="auto" placeholder="+ habit"></span>`;
-  $$('[data-h]', box).forEach(b => {
-    let timer;
-    b.onclick = () => { const l = habits(), h = l.find(x => x.id === b.dataset.h); h.days ||= {}; if (h.days[t]) delete h.days[t]; else h.days[t] = true; saveHabits(l); renderHabits(); };
-    b.oncontextmenu = e => { e.preventDefault(); if (confirmRemove(b)) { saveHabits(habits().filter(x => x.id !== b.dataset.h)); renderHabits(); } };
+  const list = habits();
+  const wrap = $('#hm-habits-wrap'); if (wrap) wrap.hidden = !list.length && !store.get('habitAdd');
+  const open = new Set($$('details[open]', box).map(el => el.dataset.track));
+  const days = Array.from({length:7}, (_, i) => { const date = new Date(); date.setDate(date.getDate() + i - 6); return date; });
+  box.innerHTML = `<div class="habit-tracker"><h3>${habitText('Habit tracker','متابعة العادات')}</h3>` +
+    list.map(h => {
+      const count = days.filter(d => h.days?.[iso(d)]).length;
+      return `<details class="habit-row" data-track="${esc(h.id)}" ${open.has(h.id) ? 'open' : ''}>
+        <summary dir="auto">${esc(h.name)} <small>${count}/7 · ${streak(h)} ${habitText('day streak','أيام متتالية')}</small></summary>
+        <div class="habit-week">${days.map(d => {
+          const date = iso(d), label = d.toLocaleDateString(window.ZadLang === 'ar' ? 'ar' : 'en', {weekday:'short'});
+          return `<button type="button" class="habit ${h.days?.[date] ? 'on' : ''}" data-day="${date}" aria-label="${date}" aria-pressed="${!!h.days?.[date]}">${esc(label)}${h.days?.[date] ? ' ✓' : ''}</button>`;
+        }).join('')}</div>
+        <label>${habitText('Daily reminder','تذكير يومي')} <input type="time" data-habit-time value="${esc(h.reminder || '')}"></label>
+        <button type="button" class="link" data-habit-clear>${habitText('Clear reminder','إلغاء التذكير')}</button>
+      </details>`;
+    }).join('') + `<form class="habit-add" id="habit-form"><input id="habit-new" type="text" maxlength="120" dir="auto" placeholder="${habitText('New habit','عادة جديدة')}" aria-label="${habitText('New habit','عادة جديدة')}"><button type="submit" class="ghost small">${habitText('Add','إضافة')}</button></form>
+    <details data-track="ideas" ${open.has('ideas') || !list.length ? 'open' : ''}><summary>${habitText('Islamic habit ideas','أفكار لعادات إسلامية')}</summary>
+    <div class="habit-week">${habitIdeas.filter(([id])=>!list.some(h=>h.idea===id)).map(([id,en,ar])=>`<button type="button" class="ghost small" data-habit-idea="${id}">${habitText(en,ar)}</button>`).join('')}</div></details></div>`;
+  $('#habit-form').onsubmit = e => { e.preventDefault(); createHabit($('#habit-new').value); };
+  $$('[data-habit-idea]', box).forEach(btn => btn.onclick = () => {
+    const [id,en,ar] = habitIdeas.find(([key]) => key === btn.dataset.habitIdea);
+    createHabit(habitText(en, ar), '', id);
   });
-  $('#habit-new').onkeydown = e => {
-    if (e.key !== 'Enter') return;
-    const name = e.target.value.trim(); if (!name) return;
-    saveHabits([...habits(), { id: 'H' + Date.now().toString(36), name, days: {} }]); renderHabits();
-  };
-  $('#habit-new').onblur = e => { if (e.target.value.trim()) $('#habit-new').onkeydown({ key: 'Enter', target: e.target }); };
+  $$('.habit-row', box).forEach(row => {
+    const change = update => {
+      const all = habits(), habit = all.find(h => h.id === row.dataset.track); if (!habit) return;
+      update(habit); saveHabits(all); renderHabits();
+    };
+    $$('[data-day]', row).forEach(btn => btn.onclick = () => change(h => {
+      h.days ||= {}; const day = btn.dataset.day;
+      if (h.days[day]) delete h.days[day]; else h.days[day] = true;
+    }));
+    const time = $('[data-habit-time]', row);
+    time.onchange = () => change(h => { h.reminder = time.value; });
+    $('[data-habit-clear]', row).onclick = () => change(h => { h.reminder = ''; });
+    $('summary', row).oncontextmenu = e => {
+      e.preventDefault();
+      if (confirmRemove(e.currentTarget)) { saveHabits(habits().filter(h => h.id !== row.dataset.track)); renderHabits(); }
+    };
+  });
 }
 function confirmRemove(b) {
   if (b.dataset.sure) return true;
@@ -330,7 +382,7 @@ setInterval(() => { const r = store.get('focusRun'); if (r && Date.now() >= r.en
 
 /* ---------- start ---------- */
 function addHabit() { store.set('habitAdd', true); window.JN.show('assistant'); renderHabits(); setTimeout(() => { const i = $('#habit-new'); i?.focus(); i?.scrollIntoView({ block: 'center' }); }, 150); }
-window.JundFeatures = { addHabit, write, lessonText, home, onLesson, review, decorateCalendar, cleanCalendarExtras, openFocus, record: () => window.JundRecorder?.start(), hijri, timesFor, nextPrayer, prayerLine };
+window.JundFeatures = { addHabit, createHabit, habitReminders, write, lessonText, home, onLesson, review, decorateCalendar, cleanCalendarExtras, openFocus, record: () => window.JundRecorder?.start(), hijri, timesFor, nextPrayer, prayerLine };
 // prayer place setting
 function placeSetting() {
   const sel = $('#prayer-place'); if (!sel) return;
@@ -353,7 +405,7 @@ function placeSetting() {
   const nm = new Date(); nm.setMonth(nm.getMonth() + 1, 1); loadMonth(nm);
 }
 placeSetting();
-J.cloud.getData('habits').then(r => { if (r?.habits && !habits().length) { store.set('habits', r.habits); renderHabits(); } }).catch(() => {});
+J.cloud.getData('habits').then(r => { if (r?.habits && !habits().length) { store.set('habits', r.habits); renderHabits(); window.JundCal?.pushSync(); } }).catch(() => {});
 setInterval(home, 60000);
 })();
 // Home may be drawn before this file loads: draw its parts now

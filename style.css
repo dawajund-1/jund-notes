@@ -1179,3 +1179,14 @@ body.net-busy .net-bar { opacity: 1; }
 .dc-mark.e i { width: 3px; height: 9px; border-radius: 2px; border: 0; background: color-mix(in srgb, var(--ink-2) 55%, transparent); }
 .dc-mark.e.past i { background: color-mix(in srgb, var(--ink-2) 30%, transparent); }
 .dc-mark.e { z-index: 0; }
+
+.habit-tracker { width: 100%; display: grid; gap: 8px; }
+.habit-tracker h3 { margin: 0; font-size: 1rem; }
+.habit-row { padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; }
+.habit-row summary { cursor: pointer; }
+.habit-row summary small { color: var(--muted); margin-inline-start: .4em; }
+.habit-week { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+.habit-week .habit { min-height: 36px; padding: 4px 8px; font-size: .8rem; }
+.habit-week .habit.on { outline: 1px solid var(--ok); color: var(--ok); }
+.habit-row input[type="time"] { width: auto; margin: 4px; }
+.habit-add { display: flex; align-items: center; gap: 6px; }
