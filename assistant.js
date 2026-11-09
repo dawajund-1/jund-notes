@@ -193,9 +193,11 @@ function render() {
   renderHome();
   const box = $('#as-log'); if (!box) return;
   box.innerHTML = log.length ? log.map((m, i) => m.who !== 'me' && m.working && busy ? `<div class="msg ai working" data-i="${i}"><details class="ws"><summary>${window.MustatarMark?.(22, true) || ''}<span class="ws-now"></span><span class="ws-chev">›</span></summary><div class="ws-body">${m.steps ? stepsHtml(m) : ''}</div></details></div>`
-    : `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto" data-i="${i}">${m.who !== 'me' && m.steps?.length ? `<details class="ws ws-done"><summary><span class="ws-now">${m.steps.length} ${AR_() ? 'خطوات' : m.steps.length > 1 ? 'steps' : 'step'} · ${((m.ms || 0) / 1000).toFixed(1)}s${m.steps.some(x => x.state === 'fail') ? ' · ✗' : ''}</span><span class="ws-chev">›</span></summary><div class="ws-body">${stepsHtml(m)}</div></details>` : ''}${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${lessonLinks(m)}</div>`).join('')
+    : `<div class="msg ${m.who === 'me' ? 'me' : 'ai'}" dir="auto" data-i="${i}">${m.who !== 'me' && m.steps?.length ? `<details class="ws ws-done"><summary><span class="ws-now">${m.steps.length} ${AR_() ? 'خطوات' : m.steps.length > 1 ? 'steps' : 'step'} · ${((m.ms || 0) / 1000).toFixed(1)}s${m.steps.some(x => x.state === 'fail') ? ' · ✗' : ''}</span><span class="ws-chev">›</span></summary><div class="ws-body">${stepsHtml(m)}</div></details>` : ''}${esc(m.text)}${m.done?.length ? `<div class="as-done">${m.done.map(d => `<div dir="auto">✓ ${esc(d)}</div>`).join('')}</div>` : ''}${lessonLinks(m)}${m.retryNotes && i === log.length - 1 && recentAttachment?.chatId === chatId ? `<div><button type="button" class="link as-notes-retry">${AR_() ? 'أعد المحاولة' : 'Retry notes'}</button></div>` : ''}</div>`).join('')
     : '';
   $$('[data-open]', box).forEach(b => b.onclick = async () => { const l = (await J.allLessons()).find(x => x.id === b.dataset.open); if (l) J.openLesson(l); });
+  const retry = $('.as-notes-retry', box);
+  if (retry) retry.onclick = () => send({ retryNotes: true });
   const tries = J.me().use === 'work'
     ? ['What do I have this week?', 'Remind me to send the report tomorrow at 9']
     : ['What do I have this week?', 'ذكرني بمراجعة الفقه يوم الخميس الساعة ٨ مساءً'];
@@ -298,23 +300,25 @@ function requestsNotes(text) {
     || /^(?:اكتب|أكتب|اصنع|أنشئ|انشئ|اعمل|أعمل|استخرج|أعد|اعد|أريد|اريد|أبغى|ابغى|سو|سوي)\s+(?:لي\s+)?(?:ملاحظات|الملاحظات|مذكرة|المذكرة|مذكرات|المذكرات)(?:\s|$|[.،؟!])/.test(ar);
 }
 
-async function send() {
-  const files = window.JundAttach?.homeFiles() || [];
+async function send({ retryNotes = false } = {}) {
+  const files = retryNotes ? [] : window.JundAttach?.homeFiles() || [];
   const att = files[0];
-  const input = $('#as-text').value.trim();
+  const input = retryNotes ? (AR_() ? 'أعد الملاحظات من الملف' : 'Make complete study notes again') : $('#as-text').value.trim();
   const t = att && /^[\p{P}\s]*$/u.test(input)
     ? (AR_() ? 'ما محتوى المرفقات؟ لخّصها باختصار.' : 'What do the attachments contain? Summarise them briefly.')
     : input;
   if (!t || busy) return;
   busy = true; $('#as-send').disabled = true;
   if (att) recentAttachment = { chatId, files };
-  log.push({ who: 'me', text: (att ? files.map(f => '📎 ' + f.name).join('\n') + '\n' : '') + t }); if (att) window.JundAttach.clearHome(); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
+  log.push({ who: 'me', text: (att ? files.map(f => '📎 ' + f.name).join('\n') + '\n' : '') + t });
+  if (att) window.JundAttach.clearHome();
+  if (!retryNotes) { $('#as-text').value = ''; $('#as-text').style.height = 'auto'; }
   const pend = { who: 'ai', text: '…', working: true }; log.push(pend);
   const S = stepper(pend); render();
   const ar = AR_();
   let st;
   try {
-    if (requestsNotes(t)) {
+    if (retryNotes || requestsNotes(t)) {
       const sources = recentAttachment?.chatId === chatId ? recentAttachment.files : [];
       if (!sources.length) {
         pend.text = ar ? 'أرفق ملف PDF أو ملفًا نصيًا عبر زر + هنا، ثم أرسل طلب إعداد الملاحظات.' : 'Tap + to attach the PDF or text file here, then send your request to make study notes.';
@@ -331,7 +335,11 @@ async function send() {
         pend.text = ar ? 'تعذّر إعداد الملاحظات الدراسية.' : 'Mustatar could not make the study notes.';
       }
       if (failed.length) {
-        pend.text += '\n' + failed.map(({ file, error }) => `✗ ${file.name} · ${J.errText(error)}`).join('\n');
+        pend.text += '\n' + failed.map(({ file, error, phase }) => {
+          const stage = phase === 'read' ? (ar ? 'قراءة الملف' : 'Reading the file') : (ar ? 'كتابة الملاحظات' : 'Writing notes');
+          return `✗ ${file.name} · ${stage} · ${J.errText(error)}`;
+        }).join('\n');
+        pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'rate', 'offline', 'scanoffline'].includes(error.code));
         if (recentAttachment?.chatId === chatId) recentAttachment.files = failed.map(result => result.file);
         S.fail(st, ar ? 'تعذّر إكمال بعض الملفات' : 'Some files could not be completed');
       } else S.ok(st, ar ? 'حُفظت في المكتبة' : 'Saved in the Library');

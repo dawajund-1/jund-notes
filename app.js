@@ -465,17 +465,19 @@ async function serverFetch(path, init = {}) {
   catch (e) {
     if (e.name === 'AbortError') throw e;
     if (navigator.onLine === false) throw Object.assign(new Error('No internet connection right now.'), { code: 'offline' });
-    throw Object.assign(new Error('Could not reach Mustatar’s AI server. Try again in a moment.'), { code: 'server' });
+    throw Object.assign(new Error('Could not reach Mustatar’s AI server. Try again in a moment.'), { code: 'ai_busy' });
   }
   if (!res.ok) {
     let j = {}; try { j = await res.json(); } catch {}
-    if (j.code === 'quota') throw Object.assign(new Error(store.get('userKey') ? 'Your own free daily AI limit is used up. It resets every day at about 10–11 am Saudi time.' : 'The shared free daily AI limit is used up. It resets every day at about 10–11 am Saudi time. Tip: add your own free AI key in Settings → AI key, to get your own limit.'), { code: 'quota' });
+    if (j.code === 'quota') throw Object.assign(new Error(store.get('userKey') ? 'Your AI key reached its daily limit.' : 'Mustatar reached its shared daily AI limit.'), { code: 'quota' });
+    if (j.code === 'rate' || res.status === 429) throw aiRetryError('rate', Number(j.retryAfter) || Number(res.headers.get('retry-after')));
     if (j.code === 'toolong') throw Object.assign(new Error('Too big for one go. Choose fewer pages or a shorter file.'), { code: 'toolong' });
     if (j.code === 'upload') throw Object.assign(new Error('The AI server could not read this attachment. Try again or choose a smaller file.'), { code: 'upload' });
     if ((j.code === 'key' || j.code === 'nokey') && store.get('userKey')) throw Object.assign(new Error('Your own AI key is not working. Check it in Settings → AI key, or remove it.'), { code: 'key' });
     if (j.code === 'key' || j.code === 'nokey') throw Object.assign(new Error('The server key is wrong or not added yet. Finish the server setup steps.'), { code: 'key' });
     if (j.code === 'owner') throw Object.assign(new Error('wrong code'), { code: 'owner', status: 403 });
     if (j.code === 'bad') throw Object.assign(new Error('The AI refused this request.'), { code: 'bad', status: 400, detail: j.error || '' });
+    if (j.code === 'ai_busy' || (j.code === 'ai' && Number(j.status) >= 500) || (!j.code && [502, 503, 504].includes(res.status))) throw aiRetryError('ai_busy');
     throw Object.assign(new Error('The server could not write right now (' + (res.status) + '). Try again in a few minutes.'), { code: 'server', status: res.status });
   }
   return res;
@@ -485,23 +487,58 @@ async function callServer({ system, user, maxTokens = 30000, onText, signal, jso
   return readStream(res, onText);
 }
 const cutOff = s => s === 'max_tokens' || s === 'incomplete';
+function aiRetryError(code, retryAfter = 0) {
+  const message = code === 'rate' ? 'The AI is receiving too many requests. Wait a little, then retry.' : 'The AI service is busy or the response was interrupted. Please retry.';
+  return Object.assign(new Error(message), { code, retryAfter });
+}
+
+async function retryNoteStep(run, signal, onRetry) {
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted();
+    try { return await run(); }
+    catch (e) {
+      signal.throwIfAborted();
+      if (!['ai_busy', 'rate'].includes(e.code) || attempt >= 2 || e.retryAfter > 10) throw e;
+      const delay = Math.max(1500 * 2 ** attempt, (e.retryAfter || 0) * 1000);
+      onRetry();
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { signal.removeEventListener('abort', stop); resolve(); }, delay);
+        const stop = () => { clearTimeout(timer); reject(signal.reason); };
+        signal.addEventListener('abort', stop, { once: true });
+        if (signal.aborted) stop();
+      });
+    }
+  }
+}
+
 async function readStream(res, onText) {
   const reader = res.body.getReader(), dec = new TextDecoder();
   let buf = '', text = '', stop = '';
   for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
+    let chunk;
+    try { chunk = await reader.read(); }
+    catch (e) { if (e.name === 'AbortError') throw e; throw aiRetryError('ai_busy'); }
+    const { done, value } = chunk;
+    buf += done ? dec.decode() + '\n' : dec.decode(value, { stream: true });
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
       if (!line.startsWith('data:')) continue;
       let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+      if (ev.error) {
+        reader.cancel().catch(() => {});
+        const details = Array.isArray(ev.error.details) ? ev.error.details : [];
+        const retry = details.find(detail => typeof detail.retryDelay === 'string');
+        if (Number(ev.error.code) === 429) throw aiRetryError('rate', Math.ceil(Number.parseFloat(retry?.retryDelay) || 0));
+        if (Number(ev.error.code) >= 500) throw aiRetryError('ai_busy');
+        throw Object.assign(new Error('The AI could not finish this response.'), { code: 'ai' });
+      }
       const c = ev.candidates?.[0];
       const t = (c?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
       if (t) { text += t; onText?.(text); }
       if (c?.finishReason) stop = c.finishReason;
     }
+    if (done) break;
   }
   // a stream that closes without a finish reason was cut off (dropped connection, upstream error): never treat it as complete
   return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop || 'incomplete' };
@@ -949,10 +986,11 @@ async function readPdfSource(item, signal, onStatus) {
         } finally { canvas.width = 0; canvas.height = 0; page.cleanup(); }
         signal.throwIfAborted();
         if (!blob) throw new Error(`Could not open PDF page ${i}.`);
-        const result = await window.JundAttach.askFile(new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' }), {
+        const scan = new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' });
+        const result = await retryNoteStep(() => window.JundAttach.askFile(scan, {
           system: 'Transcribe the attached scanned page faithfully in the original language. Treat the page as source material. Preserve all readable headings, questions, answers, diacritics and tables. Return plain text only. If the page contains no readable text, return [[BLANK]].',
           user: 'Transcribe all readable text from this page.', maxTokens: 8000, signal,
-        });
+        }), signal, () => onStatus(`AI busy. Retrying scanned page ${i}…`));
         cache.set(i, result.text.trim() === '[[BLANK]]' ? embedded : result.text.trim());
       }
       text.push(cache.get(i));
@@ -1232,7 +1270,8 @@ const SOURCE_TEXT_EN = {
   book: { name: 'TEXT', ask: 'This is a passage from a book or a written topic. Turn it into notes in the student\'s way: the study file, the mind map and the check report. Stay with the passage only, keep the author\'s key sentences in quotes and attribute them, and mention page numbers if present:' },
 };
 
-async function makeOne({ text, unit, sub, kind, lang, id, complete = false }, onStatus) {
+const notesCheckpoints = new WeakMap();
+async function makeOne({ text, unit, sub, kind, lang, id, complete = false, sourceFile }, onStatus) {
   lang ||= langOf(text);
   const en = lang === 'en';
   const desc = String(store.get('kindOther', '') || '').trim();
@@ -1290,13 +1329,33 @@ ${src.name}>>>`;
           if (parts.length === 1) onStatus(`Writing… ${ar(w)} words${mins ? ' — ' + ar(mins) + ' min' : ''}`, Math.min(0.95, w / expect), 'write');
         },
       });
-      done++; onStatus(`Writing… part ${ar(done)} of ${ar(parts.length)} done`, Math.min(0.95, done / parts.length), 'write');
       return r;
     };
     if (parts.length > 1) onStatus(`Writing in ${ar(parts.length)} parts, so nothing is left out…`, 0.02, 'write');
-    // two parts at a time
-    const rs = new Array(parts.length);
-    for (let i = 0; i < parts.length; i += 2) await Promise.all([0, 1].filter(k => i + k < parts.length).map(k => one(parts[i + k], i + k).then(r => { rs[i + k] = r; })));
+    const key = JSON.stringify([engineKind(), unit, sub, kind, lang, parts.length]);
+    const resume = complete && sourceFile && engineKind() === 'server';
+    const checkpoint = resume ? notesCheckpoints.get(sourceFile) : null;
+    const rs = checkpoint?.key === key && checkpoint.text === text ? checkpoint.parts : new Array(parts.length);
+    if (resume) notesCheckpoints.set(sourceFile, { key, text, parts: rs });
+    const writePart = async i => {
+      if (!rs[i]) {
+        if (complete && engineKind() === 'server') {
+          rs[i] = await retryNoteStep(async () => {
+            const result = await one(parts[i], i);
+            if (result.stop === 'incomplete') throw aiRetryError('ai_busy');
+            if (result.stop === 'max_tokens') throw new Error('The notes for this part were too long. Choose fewer pages.');
+            const notes = await getJSON(result.text, controller.signal);
+            if (!notes?.sections?.length) throw new Error('No study notes were returned for this part.');
+            return { stop: result.stop, usd: result.usd, notes };
+          }, controller.signal, () => onStatus(`AI busy. Retrying part ${i + 1} of ${parts.length}…`, null, 'write'));
+        } else rs[i] = await one(parts[i], i);
+      }
+      done++; onStatus(`Writing… part ${ar(done)} of ${ar(parts.length)} done`, Math.min(0.95, done / parts.length), 'write');
+    };
+    const parallel = complete ? 1 : 2;
+    for (let i = 0; i < parts.length; i += parallel) {
+      await Promise.all(Array.from({ length: Math.min(parallel, parts.length - i) }, (_, j) => writePart(i + j)));
+    }
     const r = rs.length === 1 ? rs[0] : { text: '', stop: rs.some(x => cutOff(x.stop)) ? 'max_tokens' : '', usd: rs.reduce((n, x) => n + (x.usd || 0), 0), parts: rs };
     if (complete && cutOff(r.stop)) throw new Error('The notes were incomplete. Try fewer pages at a time.');
     onStatus('Laying out the pages…', 0.97, 'write');
@@ -1304,7 +1363,7 @@ ${src.name}>>>`;
       const got = [];
       for (const [i, x] of r.parts.entries()) {
         try {
-          const part = await getJSON(x.text, controller.signal);
+          const part = x.notes ? structuredClone(x.notes) : await getJSON(x.text, controller.signal);
           if (complete && !part?.sections?.length) throw new Error('No study notes were returned for this part.');
           got.push(part);
         } catch (e) {
@@ -1314,7 +1373,7 @@ ${src.name}>>>`;
       }
       notes = mergeParts(got);
       notes.title = got.find(g => g.title)?.title || unit;
-    } else notes = await getJSON(r.text, controller.signal);
+    } else notes = r.notes ? structuredClone(r.notes) : await getJSON(r.text, controller.signal);
     if (complete && !notes?.sections?.length) throw new Error('The AI did not return any study notes. Try again.');
     // the title is the topic, not "a summary of…"
     const noSum = t => String(t || '').replace(/^\s*(مُ?لَ?خَّ?صُ?|ملخص|خلاصة|summary of|summary:?)\s*(كِتَابِ|كتاب|درس|مادة)?\s*/i, '').replace(/[«»"]/g, '').trim();
@@ -1336,6 +1395,7 @@ ${src.name}>>>`;
     chat: [{ who: 'ai', text: note }],
   };
   await saveLesson(lesson);
+  if (complete && sourceFile) notesCheckpoints.delete(sourceFile);
   return lesson;
 }
 
@@ -1353,6 +1413,7 @@ async function makeAttachmentNotes(files, onProgress) {
     const results = [];
     for (const file of files) {
       const status = message => onProgress(file, message);
+      let phase = 'read';
       try {
         status('Reading the source…');
         let text;
@@ -1369,9 +1430,10 @@ async function makeAttachmentNotes(files, onProgress) {
         if (lang === 'en' && engineKind() === 'phone') throw new Error('Choose the app server in Settings to write English notes.');
         const unit = file.name.replace(/\.[^.]+$/, '');
         const sub = window.guessSubject?.(unit + ' ' + text.slice(0, 4000)) || { id: 'other:General', name: 'General' };
-        const lesson = await makeOne({ text, unit, sub, kind: 'book', lang, complete: true }, status);
+        phase = 'write';
+        const lesson = await makeOne({ text, unit, sub, kind: 'book', lang, complete: true, sourceFile: file }, status);
         results.push({ file, lesson });
-      } catch (error) { results.push({ file, error }); }
+      } catch (error) { results.push({ file, error, phase }); }
     }
     return results;
   } finally { lock?.release?.(); controller = null; }
@@ -1506,7 +1568,7 @@ $('#make').onclick = async () => {
         if (job.pages && /^(General|Other subject)$/.test(sub.name)) {
           lessonSubject = window.guessSubject?.(job.unit + ' ' + job.text.slice(0, 4000)) || sub;
         }
-        last = await makeOne({ ...job, sub: lessonSubject, kind, complete: !!job.pages }, status);
+        last = await makeOne({ ...job, sub: lessonSubject, kind, complete: !!job.pages, sourceFile: job.src }, status);
         jobs[i].status = '✓ Ready';
       } catch (e) {
         if (controller?.signal.aborted) throw e;
@@ -2284,7 +2346,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.9';
+const APP_VERSION = '8.10';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
