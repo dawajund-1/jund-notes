@@ -208,7 +208,34 @@ function render() {
 
 function lessonLinks(message) {
   const lessons = message.lessons || (message.open ? [{ id: message.open }] : []);
-  return lessons.map(lesson => `<div><button type="button" class="link" data-open="${esc(lesson.id)}">${esc(lesson.label || (AR_() ? 'افتح الدرس' : 'Open the lesson'))}</button></div>`).join('');
+  const ar = AR_();
+  return lessons.map(lesson => {
+    if (!lesson.preview) return `<div><button type="button" class="link" data-open="${esc(lesson.id)}">${esc(lesson.label || (ar ? 'افتح الدرس' : 'Open the lesson'))}</button></div>`;
+    const { title, source, sections } = lesson.preview;
+    return `<div class="as-notes-card"><b dir="auto">${esc(title)}</b><small dir="auto">${esc(source)}</small>${sections.length ? `<div class="as-notes-caption">${ar ? 'مقتطف من الملاحظات' : 'From your notes'}</div><ul>${sections.map(({ heading, excerpt }) => `<li dir="auto"><b>${esc(heading)}</b>${excerpt ? `<div>${esc(excerpt)}</div>` : ''}</li>`).join('')}</ul>` : ''}<button type="button" class="link" data-open="${esc(lesson.id)}">${ar ? 'افتح الملاحظات كاملة' : 'Open full study notes'}</button></div>`;
+  }).join('');
+}
+
+function savedNotePreview(lesson) {
+  const shorten = (value, max) => {
+    const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+    return text.length > max ? text.slice(0, max).replace(/\s+\S*$/, '') + '…' : text;
+  };
+  const sections = [];
+  const noteSections = lesson.notes?.sections;
+  for (const section of Array.isArray(noteSections) ? noteSections : []) {
+    const heading = shorten(section?.heading, 100);
+    if (!heading) continue;
+    let excerpt = '';
+    for (const block of Array.isArray(section.blocks) ? section.blocks : []) {
+      const item = block?.items?.[0];
+      excerpt = shorten(block?.text || (typeof item === 'string' ? item : item?.text || item?.title), 180);
+      if (excerpt) break;
+    }
+    sections.push({ heading, excerpt });
+    if (sections.length === 3) break;
+  }
+  return { title: shorten(lesson.notes?.title || lesson.unit, 150), source: lesson.unit, sections };
 }
 
 /* what the assistant is told about you */
@@ -378,7 +405,7 @@ async function send({ retryNotes = false } = {}) {
       const failed = results.filter(result => result.error);
       if (saved.length) {
         pend.text = ar ? 'حُفظت الملاحظات الدراسية في المكتبة.' : 'Your study notes are saved in the Library.';
-        pend.lessons = saved.map(({ lesson }) => ({ id: lesson.id, label: pages.ranges.length ? lesson.unit : lesson.notes.title || lesson.unit }));
+        pend.lessons = saved.map(({ lesson }) => ({ id: lesson.id, preview: savedNotePreview(lesson) }));
       } else {
         pend.text = ar ? 'تعذّر إعداد الملاحظات الدراسية.' : 'Mustatar could not make the study notes.';
       }
@@ -387,7 +414,7 @@ async function send({ retryNotes = false } = {}) {
           const stage = phase === 'read' ? (ar ? 'قراءة الملف' : 'Reading the file') : (ar ? 'كتابة الملاحظات' : 'Writing notes');
           return `✗ ${file.name} · ${stage} · ${J.errText(error)}`;
         }).join('\n');
-        pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'ai_format', 'rate', 'quota', 'offline', 'scanoffline'].includes(error.code));
+        pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'ai_timeout', 'ai_format', 'rate', 'quota', 'offline', 'scanoffline', 'notes_limit'].includes(error.code));
         if (recentAttachment?.chatId === chatId) recentAttachment.files = failed.map(result => result.file);
         S.fail(st, ar ? 'تعذّر إكمال بعض الملفات' : 'Some files could not be completed');
       } else S.ok(st, ar ? 'حُفظت في المكتبة' : 'Saved in the Library');

@@ -448,16 +448,16 @@ function repairJSON(t) {
 }
 /* ---------- the app's own free server ---------- */
 let serverUrl = null;
-async function getServer() {
+async function getServer(signal) {
   if (serverUrl) return serverUrl;
-  try { const j = await (await fetch('server.json', { cache: 'no-cache' })).json(); serverUrl = j.url.replace(/\/$/, ''); store.set('serverUrl', serverUrl); }
-  catch { serverUrl = store.get('serverUrl', null); }
+  try { const j = await (await fetch('server.json', { cache: 'no-cache', signal })).json(); serverUrl = j.url.replace(/\/$/, ''); store.set('serverUrl', serverUrl); }
+  catch { signal?.throwIfAborted(); serverUrl = store.get('serverUrl', null); }
   if (!serverUrl) throw Object.assign(new Error('The app server is not set up yet. Finish the server steps I sent you, then try again.'), { code: 'noserver' });
   return serverUrl;
 }
 // one call to the app's server; the answer streams back as it is written
 async function serverFetch(path, init = {}) {
-  const base = await getServer();
+  const base = await getServer(init.signal);
   const uk = store.get('userKey', '');  // a person's own free AI key: their own daily limit
   if (uk) init = { ...init, headers: { ...(init.headers || {}), 'x-user-key': uk } };
   let res;
@@ -492,23 +492,37 @@ function aiRetryError(code, retryAfter = 0) {
   return Object.assign(new Error(message), { code, retryAfter });
 }
 
-async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false } = {}) {
+async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false, requestLimitMs = 180_000 } = {}) {
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
-    try { return await run(); }
-    catch (e) {
+    const request = new AbortController();
+    const cancel = () => request.abort(signal.reason);
+    signal.addEventListener('abort', cancel, { once: true });
+    const timeout = setTimeout(() => request.abort(), requestLimitMs);
+    let error;
+    try {
+      const result = await run(request.signal);
+      request.signal.throwIfAborted();
+      return result;
+    } catch (e) {
       signal.throwIfAborted();
-      const retryable = ['ai_busy', 'rate'].includes(e.code) || (retryFormat && e.code === 'ai_format');
-      if (!retryable || attempt >= 2 || e.retryAfter > waitLimit) throw e;
-      const delay = Math.max(1500 * 2 ** attempt, (e.retryAfter || 0) * 1000);
-      onRetry(e, Math.ceil(delay / 1000));
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { signal.removeEventListener('abort', stop); resolve(); }, delay);
-        const stop = () => { clearTimeout(timer); reject(signal.reason); };
-        signal.addEventListener('abort', stop, { once: true });
-        if (signal.aborted) stop();
-      });
+      error = request.signal.aborted ? Object.assign(new Error(
+        window.ZadLang === 'ar' ? 'تأخر رد الذكاء الاصطناعي. أعد المحاولة للمتابعة.' : 'The AI took too long to answer. Retry notes to continue.'
+      ), { code: 'ai_timeout' }) : e;
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', cancel);
     }
+    const retryable = ['ai_busy', 'rate'].includes(error.code) || (retryFormat && error.code === 'ai_format');
+    if (!retryable || attempt >= 2 || error.retryAfter > waitLimit) throw error;
+    const delay = Math.max(1500 * 2 ** attempt, (error.retryAfter || 0) * 1000);
+    onRetry(error, Math.ceil(delay / 1000));
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { signal.removeEventListener('abort', stop); resolve(); }, delay);
+      const stop = () => { clearTimeout(timer); reject(signal.reason); };
+      signal.addEventListener('abort', stop, { once: true });
+      if (signal.aborted) stop();
+    });
   }
 }
 
@@ -1018,7 +1032,7 @@ async function readScans(scans, signal, onStatus, cache, pages) {
   const label = scans.map(({ page }) => page).join(', ');
   onStatus(`Reading scanned pages ${label}…`);
   try {
-    const output = await retryNoteStep(() => window.JundAttach.readScanBatch(scans, signal), signal,
+    const output = await retryNoteStep(requestSignal => window.JundAttach.readScanBatch(scans, requestSignal), signal,
       (_, seconds) => onStatus(`Retrying scanned pages ${label} in ${seconds}s…`), { retryFormat: scans.length === 1 });
     for (const { page, text } of output) cache.set(page, text.trim() || pages[page - 1]);
   } catch (e) {
@@ -1406,7 +1420,7 @@ ${src.name}>>>`;
     const parts = engineKind() === 'claude' || words <= 2200 ? [text] : splitText(text, 1600);
     const expect = Math.max(400, words * 0.8);
     let done = 0;
-    const one = async (part, i, compact = false) => {
+    const one = async (part, i, compact = false, signal = controller.signal) => {
       const head = parts.length > 1 ? (en ? `\n\nThis is PART ${i + 1} of ${parts.length} of one source. Write the notes for this part only, completely.` : `\n\nهذا هو الجزء ${i + 1} من ${parts.length} من مصدر واحد. اكتب ملاحظات هذا الجزء وحده كاملة.`) : '';
       const msg = part === text ? user : user.replace(text, () => part);
       const studyGuide = sourceScope ? (en
@@ -1420,7 +1434,7 @@ ${src.name}>>>`;
         messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head + studyGuide + recovery }], deep: true, studyNotes: complete,
         // The model also spends this budget on thinking, even for a short scan.
         maxTokens: complete && engineKind() === 'server' ? (compact ? 30000 : 24000) : undefined,
-        signal: controller.signal,
+        signal,
         onText: t => {
           const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
           if (parts.length === 1) onStatus(`Writing… ${ar(w)} words${mins ? ' — ' + ar(mins) + ' min' : ''}`, Math.min(0.95, w / expect), 'write');
@@ -1460,12 +1474,12 @@ ${src.name}>>>`;
       if (!fragments[path]?.split) {
         let compact = false;
         try {
-          const result = await retryNoteStep(async () => {
-            let r = await one(source, i, compact);
+          const result = await retryNoteStep(async requestSignal => {
+            let r = await one(source, i, compact, requestSignal);
             if (r.stop === 'max_tokens' && !canSplit && !compact) {
               compact = true;
               onStatus(`Retrying part ${i + 1} of ${parts.length} with a larger writing budget…`, null, 'write');
-              r = await one(source, i, compact);
+              r = await one(source, i, compact, requestSignal);
             }
             if (r.stop === 'incomplete') throw aiRetryError('ai_busy');
             if (r.stop === 'max_tokens') throw Object.assign(new Error('This part exceeded the AI output limit.'), { code: 'notes_limit' });
