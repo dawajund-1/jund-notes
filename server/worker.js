@@ -14,8 +14,8 @@ let G = 'https://generativelanguage.googleapis.com';  // GEMINI_BASE replaces it
 const WRITE_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
 const FILE_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-// notes: the stronger model first, and it may think before writing (slower, much better)
 const NOTES_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const STUDY_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash'];
 const VOICE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 const OWNER_HASH = 'acbe7ee98a566ab6ed2537fc1d67662eddda3739d19aedde6ee8f89f223fe602';   // sha-256 of the owner code (the code itself is not stored here)
 const MAX_BODY = 900_000;            // characters of text: about 150 pages
@@ -126,7 +126,11 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson,
   for (const model of models) {
     for (let vi = 0; vi < variants.length; vi++) {
       const v = variants[vi];
-      const thinking = /2\.5-flash-lite/.test(model) || (/2\.5-flash/.test(model) && !think) ? { thinkingConfig: { thinkingBudget: 0 } } : /2\.5-flash/.test(model) ? { thinkingConfig: { thinkingBudget: 8192 } } : {};
+      const thinking = think && /^gemini-3\.[68]-flash$/.test(model)
+        ? { thinkingConfig: { thinkingLevel: 'HIGH' } }
+        : /2\.5-flash-lite/.test(model) || (/2\.5-flash/.test(model) && !think)
+          ? { thinkingConfig: { thinkingBudget: 0 } }
+          : /2\.5-flash/.test(model) ? { thinkingConfig: { thinkingBudget: 8192 } } : {};
       const payload = JSON.stringify({
         systemInstruction: system ? { parts: [{ text: system }] } : undefined,
         contents: [{ role: 'user', parts: v.parts }],
@@ -506,7 +510,7 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
     if (req.method === 'OPTIONS') return new Response(null, { headers: h });
-    if (req.method === 'GET' && path === '/') return json({ ok: true, app: 'jund-notes', version: 10, uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH }, 200, h);
+    if (req.method === 'GET' && path === '/') return json({ ok: true, app: 'jund-notes', version: 11, studyModel: STUDY_MODELS[0], uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH }, 200, h);
     if (path.startsWith('/push/')) return pushRoutes(req, env, h, path, url);
     if (path === '/widget' || path.startsWith('/widget/')) return widgetRoutes(req, env, h, path, url);
     if (req.method === 'GET' && /^\/ics\/[a-f0-9]{16,64}\.ics$/.test(path)) return icsFeed(env, path.slice(5, -4));
@@ -632,8 +636,8 @@ export default {
       let body; try { body = JSON.parse(raw); } catch { return json({ error: 'bad request' }, 400, h); }
       const { system = '', user = '', maxTokens = 30000, json: wantJson = true, deep = false, studyNotes = false } = body || {};
       if (!user) return json({ error: 'empty' }, 400, h);
-      const models = deep ? NOTES_MODELS : (env.MODELS ? String(env.MODELS).split(',') : WRITE_MODELS).map(s => s.trim()).filter(Boolean);
       const structured = studyNotes === true && wantJson;
+      const models = deep && structured ? STUDY_MODELS : deep ? NOTES_MODELS : (env.MODELS ? String(env.MODELS).split(',') : WRITE_MODELS).map(s => s.trim()).filter(Boolean);
       const config = structured ? { responseSchema: noteSchema } : undefined;
       return generate(env, h, { models, system: structured ? system : (system + '\n\n' + CLAUDE_NOTE_FORMAT).trim(), maxTokens, wantJson, think: !!deep, variants: [{ parts: [{ text: user }], config }] });
     }
