@@ -1361,8 +1361,9 @@ ${text}
 ${src.name}>>>`;
     // written sources (books, summaries, question-and-answer files) must be covered completely
     const written = ['book', 'notes', 'other'].includes(kind);
-    const qCount = (text.match(/(^|\s)س\s*[٠-٩0-9]+/g) || []).length;
-    const full = en
+    const countQuestions = source => (source.match(/(^|\s)س\s*[٠-٩0-9]+/g) || []).length;
+    const qCount = countQuestions(text);
+    const full = qCount => en
       ? `\n\nCOMPLETE COVERAGE: this is ${written ? 'written material' : 'a lesson'} the student must study in full. Cover every point${qCount > 5 ? ` and every one of the questions with its answer (there are about ${qCount}; keep their numbers, grouped by topic)` : ''}. Do not drop or shorten anything that carries information. These are full notes, not a "summary": never call the file or its sections a summary, even if the source calls itself one; the title is the topic itself. Think it through and plan the sections before writing.`
       : `\n\nالتغطية الكاملة: هذا ${written ? 'مصدر مكتوب' : 'درس'} سيذاكره الطالب كله. اشمل كل نقطة فيه${qCount > 5 ? `، وكل سؤال مع جوابه (عددها نحو ${qCount}؛ احفظ أرقامها ورتّبها في أبواب بحسب الموضوع)` : ''}. لا تحذف ولا تختصر شيئًا فيه علم. المطلوب ملاحظات كاملة لا «ملخص»: لا تسمِّ الملف ولا أقسامه «ملخصًا» ولو كان المصدر يسمّي نفسه كذلك؛ العنوان هو الموضوع نفسه (مثل: العقيدة الطحاوية). فكّر ورتّب الأقسام أولًا ثم اكتب.`;
     const words = text.split(/\s+/).filter(Boolean).length;
@@ -1371,10 +1372,11 @@ ${src.name}>>>`;
     let done = 0;
     const one = async (part, i) => {
       const head = parts.length > 1 ? (en ? `\n\nThis is PART ${i + 1} of ${parts.length} of one source. Write the notes for this part only, completely.` : `\n\nهذا هو الجزء ${i + 1} من ${parts.length} من مصدر واحد. اكتب ملاحظات هذا الجزء وحده كاملة.`) : '';
-      const msg = parts.length > 1 ? user.replace(text, () => part) : user;
+      const msg = part === text ? user : user.replace(text, () => part);
       const r = await callBig({
         system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
-        messages: [{ role: 'user', content: msg + full + head }], deep: true, studyNotes: complete,
+        messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head }], deep: true, studyNotes: complete,
+        maxTokens: complete && engineKind() === 'server' ? Math.max(4500, Math.min(14000, part.split(/\s+/).length * 8)) : undefined,
         signal: controller.signal,
         onText: t => {
           const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
@@ -1388,27 +1390,67 @@ ${src.name}>>>`;
     const resume = complete && sourceFile && engineKind() === 'server';
     const fingerprint = resume ? await pdfFingerprint(sourceFile) : null;
     const saved = fingerprint ? await pdfProgress('notes') : null;
-    const checkpoint = resume ? notesCheckpoints.get(sourceFile) || (saved?.fingerprint === fingerprint ? saved : null) : null;
-    const rs = checkpoint?.key === key && checkpoint.text === text ? checkpoint.parts : new Array(parts.length);
-    if (resume) notesCheckpoints.set(sourceFile, { key, text, parts: rs });
-    const writePart = async i => {
-      if (!rs[i]) {
-        if (complete && engineKind() === 'server') {
-          rs[i] = await retryNoteStep(async () => {
-            const result = await one(parts[i], i);
-            if (result.stop === 'incomplete') throw aiRetryError('ai_busy');
-            if (result.stop === 'max_tokens') throw new Error('The notes for this part were too long. Choose fewer pages.');
+    const previous = resume ? notesCheckpoints.get(sourceFile) || (saved?.fingerprint === fingerprint ? saved : null) : null;
+    const matches = previous?.key === key && previous.text === text;
+    const rs = matches ? previous.parts : new Array(parts.length);
+    const fragments = matches ? previous.fragments || {} : {};
+    const checkpoint = { fingerprint, key, text, parts: rs, fragments };
+    if (resume) notesCheckpoints.set(sourceFile, checkpoint);
+    const persist = async () => { if (fingerprint) await pdfProgress('notes', checkpoint); };
+    const retainSource = (result, source, i) => {
+      if (!result.notes || source.length < 300 || JSON.stringify(result.notes.sections).length * 3 >= source.length) return result;
+      const notes = structuredClone(result.notes);
+      const heading = en ? `Source text for part ${i + 1}` : `النص الأصلي للجزء ${i + 1}`;
+      notes.sections.push({ heading, blocks: splitText(source, 180).map(text => ({ t: 'text', text })) });
+      notes.report ||= {};
+      if (!Array.isArray(notes.report.maybe_wrong)) notes.report.maybe_wrong = [];
+      notes.report.maybe_wrong.push(en
+        ? `The AI notes for part ${i + 1} were brief. The source text is included for study.`
+        : `جاءت ملاحظات الجزء ${i + 1} مختصرة، فأُدرج نصه الأصلي للمراجعة.`);
+      return { ...result, notes };
+    };
+    const writeComplete = async (source, i, path = String(i), depth = 0) => {
+      if (fragments[path]?.notes) return fragments[path];
+      if (!fragments[path]?.split) {
+        try {
+          const result = await retryNoteStep(async () => {
+            const r = await one(source, i);
+            if (r.stop === 'incomplete') throw aiRetryError('ai_busy');
+            if (r.stop === 'max_tokens') throw Object.assign(new Error('This part exceeded the AI output limit.'), { code: 'notes_limit' });
             let notes;
-            try { notes = JSON.parse(result.text); } catch {}
+            try { notes = JSON.parse(r.text); } catch {}
             if (!Array.isArray(notes?.sections) || !notes.sections.length ||
               notes.sections.some(section => !Array.isArray(section?.blocks) || !section.blocks.length)) {
               throw Object.assign(new Error('The AI returned an invalid notes format. Retry notes to continue.'), { code: 'ai_format' });
             }
-            return { stop: result.stop, usd: result.usd, notes };
+            return { stop: r.stop, usd: r.usd, notes };
           }, controller.signal, (_, seconds) => onStatus(`Retrying part ${i + 1} of ${parts.length} in ${seconds}s…`, null, 'write'), { retryFormat: true });
-        } else rs[i] = await one(parts[i], i);
-        if (fingerprint) await pdfProgress('notes', { fingerprint, key, text, parts: rs });
+          const retained = retainSource(result, source, i);
+          if (depth) { fragments[path] = retained; await persist(); }
+          return retained;
+        } catch (e) {
+          if (e.code !== 'notes_limit' || depth >= 3 || source.trim().split(/\s+/).length < 100) throw e;
+          fragments[path] = { split: true };
+          await persist();
+        }
       }
+      const smaller = splitText(source, Math.ceil(source.trim().split(/\s+/).length / 2));
+      onStatus(`Writing part ${i + 1} of ${parts.length} in smaller sections…`, null, 'write');
+      const results = [];
+      for (const [j, fragment] of smaller.entries()) results.push(await writeComplete(fragment, i, `${path}.${j}`, depth + 1));
+      const notes = mergeParts(results.map(result => structuredClone(result.notes)));
+      return { stop: 'STOP', usd: results.reduce((sum, result) => sum + (result.usd || 0), 0), notes };
+    };
+    const writePart = async i => {
+      if (!rs[i]) {
+        if (complete && engineKind() === 'server') {
+          rs[i] = await writeComplete(parts[i], i);
+          for (const path of Object.keys(fragments)) {
+            if (path === String(i) || path.startsWith(`${i}.`)) delete fragments[path];
+          }
+        } else rs[i] = await one(parts[i], i);
+        await persist();
+      } else if (complete && rs[i].notes) rs[i] = retainSource(rs[i], parts[i], i);
       done++; onStatus(`Writing… part ${ar(done)} of ${ar(parts.length)} done`, Math.min(0.95, done / parts.length), 'write');
     };
     const parallel = complete ? 1 : 2;
@@ -2410,7 +2452,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.11';
+const APP_VERSION = '8.12';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
