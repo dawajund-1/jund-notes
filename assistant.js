@@ -208,7 +208,34 @@ function render() {
 
 function lessonLinks(message) {
   const lessons = message.lessons || (message.open ? [{ id: message.open }] : []);
-  return lessons.map(lesson => `<div><button type="button" class="link" data-open="${esc(lesson.id)}">${esc(lesson.label || (AR_() ? 'افتح الدرس' : 'Open the lesson'))}</button></div>`).join('');
+  const ar = AR_();
+  return lessons.map(lesson => {
+    if (!lesson.preview) return `<div><button type="button" class="link" data-open="${esc(lesson.id)}">${esc(lesson.label || (ar ? 'افتح الدرس' : 'Open the lesson'))}</button></div>`;
+    const { title, source, sections } = lesson.preview;
+    return `<div class="as-notes-card"><b dir="auto">${esc(title)}</b><small dir="auto">${esc(source)}</small>${sections.length ? `<div class="as-notes-caption">${ar ? 'مقتطف من الملاحظات' : 'From your notes'}</div><ul>${sections.map(({ heading, excerpt }) => `<li dir="auto"><b>${esc(heading)}</b>${excerpt ? `<div>${esc(excerpt)}</div>` : ''}</li>`).join('')}</ul>` : ''}<button type="button" class="link" data-open="${esc(lesson.id)}">${ar ? 'افتح الملاحظات كاملة' : 'Open full study notes'}</button></div>`;
+  }).join('');
+}
+
+function savedNotePreview(lesson) {
+  const shorten = (value, max) => {
+    const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+    return text.length > max ? text.slice(0, max).replace(/\s+\S*$/, '') + '…' : text;
+  };
+  const sections = [];
+  const noteSections = lesson.notes?.sections;
+  for (const section of Array.isArray(noteSections) ? noteSections : []) {
+    const heading = shorten(section?.heading, 100);
+    if (!heading) continue;
+    let excerpt = '';
+    for (const block of Array.isArray(section.blocks) ? section.blocks : []) {
+      const item = block?.items?.[0];
+      excerpt = shorten(block?.text || (typeof item === 'string' ? item : item?.text || item?.title), 180);
+      if (excerpt) break;
+    }
+    sections.push({ heading, excerpt });
+    if (sections.length === 3) break;
+  }
+  return { title: shorten(lesson.notes?.title || lesson.unit, 150), source: lesson.unit, sections };
 }
 
 /* what the assistant is told about you */
@@ -244,7 +271,7 @@ MOST RELEVANT LESSON NOTES:
 ${notes || '(none matched)'}`;
 }
 const SYSTEM = () => `You are the assistant inside "Mustatar", the personal notes and planning app of ${J.me().name || 'its owner'}${J.me().study ? ' (' + (J.me().use === 'work' ? 'work: ' : 'studies at: ') + J.me().study + ')' : ''}. He or she talks to you in Arabic or English; always answer in the language of his last message, briefly and plainly, like a helpful friend.
-You can act on his calendar. Reply with JSON only, in this shape:
+You can act on his calendar and habit tracker. Reply with JSON only, in this shape:
 {"reply": "what you say to him",
  "actions": [
    {"do": "add", "title": "...", "date": "YYYY-MM-DD", "time": "HH:MM or empty", "type": "task|homework|exam|class|meeting|study", "repeat": "none|weekly", "remind": minutes before (-1 none, 0 at the time, 10, 30, 60, 1440), "notes": "..."},
@@ -252,12 +279,15 @@ You can act on his calendar. Reply with JSON only, in this shape:
    {"do": "undone", "id": "calendar id"},
    {"do": "move", "id": "calendar id", "date": "YYYY-MM-DD", "time": "HH:MM or empty"},
    {"do": "delete", "id": "calendar id"},
-   {"do": "youtube", "url": "a YouTube video or playlist link he gave, to transcribe and make notes from"}
+   {"do": "youtube", "url": "a YouTube video or playlist link he gave, to transcribe and make notes from"},
+   {"do": "habit", "title": "a daily habit the user explicitly asked to track", "time": "HH:MM if a daily reminder was requested, or empty"}
  ],
  "open": "a lesson id to offer to open, or empty"}
 Rules:
 - Work out dates yourself from today's date ("tomorrow", "next Tuesday", "بعد أسبوعين"). Use 24-hour times. "Remind me" means remind 0 unless he says otherwise; a task with a time and no reminder wish gets remind 30.
 - Timetable classes repeat weekly.
+- Understand the meaning of the user's Arabic or English request, including casual phrasing. A one-time to-do is a calendar task. A repeated personal practice the user asks to track is a habit. Handle each clearly requested item in one message. If asked to add an undated to-do, put it on today's list without a reminder unless the user requested one. Ask about an ambiguous time or date when guessing would create a wrong reminder.
+- Suggestions, questions and hypothetical examples do not create tasks or habits. When the user asks for habit ideas, suggest small Islamic practices if relevant, such as a Quran portion, adhkar or revision. Add a habit only if the user asks to add or track it.
 - IMPORTANT: whenever he MENTIONS something with a day — an exam, class, deadline, meeting, appointment, homework ("tomorrow I have an exam", "عندي اختبار يوم الأحد") — ADD it to the calendar right away with an "add" action, even if he did not say "add" or "remind me". Do not ask first. Give it a clear title with the subject (e.g. "Exam: Ayat al-Ahkam — Kulliyat al-Haram"). If no time was given, leave time empty and set remind 0. Then say in the reply that you added it.
 - If he has an exam or test coming and the exam is later than today, also add one "study" item for today (or the day before the exam) titled "Revise for <subject> exam", unless one already exists in the calendar.
 - If he wants to turn a PDF or text file into study notes, tell him to attach it with + and say “Make complete study notes from this file”. For recordings, videos and photos, point to New notes. Never claim that you started or saved notes in a chat reply.
@@ -294,16 +324,58 @@ function requestsNotes(text) {
   const request = text.replace(/[\u064B-\u065F\u0670]/g, '').replace(/\s+/g, ' ').trim();
   const en = request.replace(/^(?:(?:please|can you|could you|would you)\s+)*/i, '');
   const ar = request.replace(/^(?:(?:من فضلك|لو سمحت)\s+)*/, '');
-  return /^(?:make|create|write|generate|prepare|produce)\s+(?:(?:me|the|my|some|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
+  return /^(?:make|create|write|generate|prepare|produce|i need|i want|i(?:'d| would) like)\s+(?:(?:me|the|my|some|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
     || /^(?:convert|turn)\b.{0,180}\b(?:to|into|as)\s+(?:(?:the|a set of|complete|full|detailed|study|structured|comprehensive|revision|exam|lesson)\s+)*notes\b/i.test(en)
     || /^(?:حول|استخرج)\s+.{0,180}(?:ملاحظات|مذكرة|مذكرات)/.test(ar)
-    || /^(?:اكتب|أكتب|اصنع|أنشئ|انشئ|اعمل|أعمل|استخرج|أعد|اعد|أريد|اريد|أبغى|ابغى|سو|سوي)\s+(?:لي\s+)?(?:ملاحظات|الملاحظات|مذكرة|المذكرة|مذكرات|المذكرات)(?:\s|$|[.،؟!])/.test(ar);
+    || /^(?:اكتب|أكتب|اصنع|أنشئ|انشئ|اعمل|أعمل|استخرج|أعد|اعد|أريد|اريد|أحتاج|احتاج|أبغى|ابغى|سو|سوي)\s+(?:لي\s+)?(?:ملاحظات|الملاحظات|مذكرة|المذكرة|مذكرات|المذكرات)(?:\s|$|[.،؟!])/.test(ar);
+}
+
+function notePageSelection(text) {
+  const request = text.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) & 15))
+    .replace(/[\u061C\u200E\u200F\u064B-\u065F\u0670]/g, '');
+  const label = /(?:\b(?:PDF\s+)?pages?(?:\s+(?:numbers?\b|nos?\b\.?))?|(?:الصفحات|الصفحة|صفحات|صفحة|ص)(?![\p{L}])(?:\s+رقم)?)/u.source;
+  const separator = /(?:[-–—−]|\b(?:to|through|thru|until)\b|إلى|الى|حتى|لغاية|ل(?=\s*(?:صفحة|ص\s|\d)))/u.source;
+  const number = /\d+(?!\d|[.,]\d)/u.source;
+  const page = label + /\s*[:#]?\s*/.source;
+  const entry = '(' + number + ')(?:\\s*' + separator + '\\s*(?:' + page + ')?(' + number + '))?';
+  const first = new RegExp(/(?:\bfrom\s+|من\s+)?/.source + page + entry, 'giu');
+  const next = new RegExp(/^\s*(?:[,،]\s*|(?:and\b|و)\s*)/.source + '(?:' + page + ')?' + entry, 'iu');
+  const dangling = new RegExp('^\\s*' + separator, 'iu');
+  const ranges = [];
+  let rest = '', consumed = 0, invalid = false;
+  const add = (from, to) => {
+    const range = { from: Number(from), to: Number(to ?? from) };
+    if (!Number.isSafeInteger(range.from) || !Number.isSafeInteger(range.to) || range.from < 1 || range.to < range.from) invalid = true;
+    ranges.push(range);
+  };
+  for (let m; (m = first.exec(request));) {
+    rest += request.slice(consumed, m.index);
+    add(m[1], m[2]);
+    let end = first.lastIndex;
+    for (let extra; (extra = next.exec(request.slice(end)));) {
+      add(extra[1], extra[2]);
+      end += extra[0].length;
+    }
+    if (dangling.test(request.slice(end))) invalid = true;
+    consumed = first.lastIndex = end;
+  }
+  rest += request.slice(consumed);
+  const explicit = new RegExp(/(?:\bfrom\s+|من\s+)/.source + page, 'iu');
+  if (explicit.test(rest)) invalid = true;
+  const only = ranges.length > 0 && /^(?:(?:please\b|فقط|لو سمحت|من فضلك|only\b)|[\s,،.;؛؟?!])*$/iu.test(rest);
+  const merged = [];
+  for (const range of ranges.sort((a, b) => a.from - b.from)) {
+    const last = merged[merged.length - 1];
+    if (last && range.from <= last.to + 1) last.to = Math.max(last.to, range.to);
+    else merged.push(range);
+  }
+  return { ranges: merged, only, invalid, rest: rest.replace(/^[\s,،:؛-]+/, '').trim() };
 }
 
 async function send({ retryNotes = false } = {}) {
   const files = retryNotes ? [] : window.JundAttach?.homeFiles() || [];
   const att = files[0];
-  const input = retryNotes ? (AR_() ? 'أعد الملاحظات من الملف' : 'Make complete study notes again') : $('#as-text').value.trim();
+  const input = retryNotes ? recentAttachment?.noteRequest || (AR_() ? 'أعد الملاحظات من الملف' : 'Make complete study notes again') : $('#as-text').value.trim();
   const t = att && /^[\p{P}\s]*$/u.test(input)
     ? (AR_() ? 'ما محتوى المرفقات؟ لخّصها باختصار.' : 'What do the attachments contain? Summarise them briefly.')
     : input;
@@ -318,19 +390,25 @@ async function send({ retryNotes = false } = {}) {
   const ar = AR_();
   let st;
   try {
-    if (retryNotes || requestsNotes(t)) {
+    const pages = notePageSelection(t);
+    if (retryNotes || requestsNotes(t) || requestsNotes(pages.rest) || pages.only) {
       const sources = recentAttachment?.chatId === chatId ? recentAttachment.files : [];
       if (!sources.length) {
         pend.text = ar ? 'أرفق ملف PDF أو ملفًا نصيًا عبر زر + هنا، ثم أرسل طلب إعداد الملاحظات.' : 'Tap + to attach the PDF or text file here, then send your request to make study notes.';
         return;
       }
+      if (pages.invalid) {
+        pend.text = ar ? 'اكتب نطاقًا صحيحًا، مثل: من صفحة 21 إلى 53.' : 'Enter a valid range, such as pages 21–53.';
+        return;
+      }
+      recentAttachment.noteRequest = t;
       st = S.start(ar ? 'إعداد الملاحظات الدراسية' : 'Making study notes');
-      const results = await J.makeAttachmentNotes(sources, (file, status) => S.note(st, `${file.name} · ${status}`));
+      const results = await J.makeAttachmentNotes(sources, (file, status) => S.note(st, `${file.name} · ${status}`), pages.ranges);
       const saved = results.filter(result => result.lesson);
       const failed = results.filter(result => result.error);
       if (saved.length) {
         pend.text = ar ? 'حُفظت الملاحظات الدراسية في المكتبة.' : 'Your study notes are saved in the Library.';
-        pend.lessons = saved.map(({ lesson }) => ({ id: lesson.id, label: lesson.notes.title || lesson.unit }));
+        pend.lessons = saved.map(({ lesson }) => ({ id: lesson.id, preview: savedNotePreview(lesson) }));
       } else {
         pend.text = ar ? 'تعذّر إعداد الملاحظات الدراسية.' : 'Mustatar could not make the study notes.';
       }
@@ -339,7 +417,7 @@ async function send({ retryNotes = false } = {}) {
           const stage = phase === 'read' ? (ar ? 'قراءة الملف' : 'Reading the file') : (ar ? 'كتابة الملاحظات' : 'Writing notes');
           return `✗ ${file.name} · ${stage} · ${J.errText(error)}`;
         }).join('\n');
-        pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'ai_format', 'rate', 'quota', 'offline', 'scanoffline'].includes(error.code));
+        pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'ai_timeout', 'ai_format', 'rate', 'quota', 'offline', 'scanoffline', 'notes_limit'].includes(error.code));
         if (recentAttachment?.chatId === chatId) recentAttachment.files = failed.map(result => result.file);
         S.fail(st, ar ? 'تعذّر إكمال بعض الملفات' : 'Some files could not be completed');
       } else S.ok(st, ar ? 'حُفظت في المكتبة' : 'Saved in the Library');
@@ -365,7 +443,7 @@ async function send({ retryNotes = false } = {}) {
     const out = J.parseJSON(r.text);
     const acts = out.actions || [];
     if (acts.length) {
-      st = S.start(ar ? 'تنفيذ على تقويمك' : 'Updating your calendar', ar ? `${acts.length} خطوة` : `${acts.length} step${acts.length > 1 ? 's' : ''}`);
+      st = S.start(ar ? 'تحديث مهامك وعاداتك' : 'Updating your tasks and habits', ar ? `${acts.length} خطوة` : `${acts.length} step${acts.length > 1 ? 's' : ''}`);
       pend.done = apply(acts);
       if (pend.done.length) S.ok(st, pend.done.join(' · ')); else S.fail(st, ar ? 'لم يُنفَّذ شيء (تاريخ أو معرّف غير صالح)' : 'nothing could be done (missing date or unknown item)');
     }
@@ -391,7 +469,9 @@ function apply(actions) {
   const nice = (d, t) => new Date(d + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + (t ? ' ' + t : '');
   for (const a of actions) {
     const e = a.id && evs.find(x => x.id === a.id);
-    if (a.do === 'add' && a.title && /^\d{4}-\d\d-\d\d$/.test(a.date || '')) {
+    if (a.do === 'habit' && typeof a.title === 'string') {
+      if (window.JundFeatures?.createHabit(a.title, a.time)) done.push((AR_() ? 'أُضيفت عادة: ' : 'Habit added: ') + a.title.trim().slice(0, 120));
+    } else if (a.do === 'add' && a.title && /^\d{4}-\d\d-\d\d$/.test(a.date || '')) {
       if (evs.some(x => x.title === a.title && x.date === a.date && (x.time || '') === (/^\d\d:\d\d$/.test(a.time || '') ? a.time : ''))) continue;   // already there: never add the same thing twice
       cal.add({ title: a.title, date: a.date, time: /^\d\d:\d\d$/.test(a.time || '') ? a.time : '', type: a.type || 'task', repeat: a.repeat === 'weekly' ? 'weekly' : 'none',
         remind: Number.isFinite(+a.remind) ? +a.remind : Number(store.get('remindDefault', 30)), notes: a.notes || '' });

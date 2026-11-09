@@ -5,6 +5,10 @@ const J = window.JN; if (!J) return;
 const { store, esc } = J;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const android = window.MustatarAndroid;
+const ar = () => window.ZadLang === 'ar';
+const L = (en, arabic) => ar() ? arabic : en;
+let nativeStatus;
 
 const TYPES = { task: 'Task', homework: 'Homework', exam: 'Exam', class: 'Class', meeting: 'Meeting', study: 'Study time' };
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -28,6 +32,7 @@ const newId = () => 'E' + Date.now().toString(36) + Math.random().toString(36).s
 let syncTimer = null;
 function save() {
   store.set('events', events); store.set('eventsSaved', Date.now());
+  if (android) pushSync();
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => { J.cloud.putData('calendar', { saved: store.get('eventsSaved'), events }).catch(() => {}); pushSync(); widgetSync(); }, 2500);
 }
@@ -247,6 +252,7 @@ async function notify(title, body, tag) {
   } catch {}
 }
 function checkReminders() {
+  if (android && nativeStatus?.notifications) return [];
   const now = Date.now(), n = notified(), missed = [];
   for (const d of [addDays(today(), -1), today(), addDays(today(), 1)]) for (const e of on(d)) {
     if (!(e.remind >= 0) || isDone(e, d)) continue;
@@ -300,10 +306,29 @@ function reminderList() {
   }
   const run = store.get('focusRun');
   if (run && run.end > Date.now()) out.push({ at: run.end, title: 'Focus time done', body: `${run.min} min of ${run.subject}. Take a short break.`, tag: 'focus-' + run.start });
-  return out.slice(0, 200);
+  for (const h of window.JundFeatures?.habitReminders?.() || []) for (let i = 0; i <= 7; i++) {
+    const date = addDays(today(), i), at = new Date(`${date}T${h.time}`).getTime();
+    if (at >= Date.now() - 60e3 && !h.skip.includes(date)) out.push({ at, title: h.title, body: h.body, tag: `${h.id}|${date}` });
+  }
+  return out.sort((a, b) => a.at - b.at).slice(0, 200);
 }
+function nativeReminders() {
+  const items = events.filter(e => e.remind >= 0 && (e.repeat === 'weekly' || (!e.done && e.date >= addDays(today(), -1))))
+    .map(e => ({ id: e.id, title: e.title, body: TYPES[e.type] || L('Task', 'مهمة'), date: e.date,
+      time: e.time || '08:00', lead: e.time ? e.remind : 0, every: e.repeat === 'weekly' ? 7 : 0,
+      skip: [...(e.skip || []), ...Object.keys(e.doneDates || {}).filter(d => e.doneDates[d])].filter(d => d >= addDays(today(), -1)) }));
+  items.push(...(window.JundFeatures?.habitReminders?.() || []));
+  const run = store.get('focusRun');
+  if (run && run.end > Date.now()) items.push({ id: 'focus-' + run.start, at: run.end, title: L('Focus time done', 'انتهى وقت التركيز'), body: run.subject });
+  return items;
+}
+function nativeMessage(action, details = {}) { android.postMessage(JSON.stringify({ action, ...details })); }
+if (android) android.onmessage = e => {
+  try { nativeStatus = JSON.parse(e.data); notifStatus(); } catch {}
+};
 let pushBusy = false;
 async function pushSync(force) {
+  if (android) { nativeMessage('sync', { items: nativeReminders() }); return null; }
   if (pushBusy || !('PushManager' in window) || !('serviceWorker' in navigator) || Notification.permission !== 'granted' || !navigator.onLine) return null;
   pushBusy = true;
   try {
@@ -358,6 +383,15 @@ async function widgetConnect() {
 if ($('#widget-connect')) $('#widget-connect').onclick = widgetConnect;
 if ($('#widget-style')) { $('#widget-style').value = store.get('widgetStyle', 'clear'); $('#widget-style').onchange = () => { store.set('widgetStyle', $('#widget-style').value); widgetSync(); toast('Widget style saved. It changes on your home screen within a few minutes, or tap the widget once.'); }; }
 function notifStatus() {
+  if (android) {
+    const s = $('#notif-status');
+    $('#notif-allow').hidden = !!(nativeStatus?.notifications && nativeStatus?.exact);
+    $('#notif-test').hidden = !nativeStatus?.notifications;
+    s.textContent = !nativeStatus?.notifications ? L('Allow Android notifications for reminders when the app is closed.', 'اسمح بإشعارات أندرويد لتصل التذكيرات والتطبيق مغلق.')
+      : nativeStatus.exact ? L('Android reminders are enabled, including when the app is closed.', 'تذكيرات أندرويد مفعّلة حتى عند إغلاق التطبيق.')
+        : L('Reminders work in the background. Allow exact alarms for more precise delivery.', 'تعمل التذكيرات في الخلفية. اسمح بالمنبّهات الدقيقة لتحسين توقيت وصولها.');
+    return;
+  }
   const s = $('#notif-status'); if (!('Notification' in window)) { s.textContent = 'This browser cannot show notifications; reminders show inside the app.'; return; }
   const p = Notification.permission;
   $('#notif-allow').hidden = p === 'granted';
@@ -365,8 +399,9 @@ function notifStatus() {
   s.textContent = p === 'granted' ? (store.get('pushOk') ? '✓ Reminders reach this phone even when Mustatar is closed.' : '✓ Reminders pop up while the app is open. Connecting closed-app reminders…')
     : p === 'denied' ? 'Notifications are blocked. Allow them for this app in your phone settings.' : 'Allow notifications to get reminders on the phone, even when the app is closed.';
 }
-$('#notif-allow').onclick = async () => { try { await Notification.requestPermission(); } catch {} notifStatus(); await pushSync(); notifStatus(); };
+$('#notif-allow').onclick = async () => { if (android) { nativeMessage('permissions'); return; } try { await Notification.requestPermission(); } catch {} notifStatus(); await pushSync(); notifStatus(); };
 $('#notif-test').onclick = async () => {
+  if (android) { nativeMessage('test'); toast(L('Test reminder scheduled. You can close Mustatar.', 'جُدول إشعار تجريبي. يمكنك إغلاق مستطر.')); return; }
   $('#notif-status').textContent = 'Sending a test… you can close the app now.';
   const ok = await pushSync();
   if (!ok) { $('#notif-status').textContent = '✗ Could not connect closed-app reminders on this browser. In-app reminders still work. (On Android, open Mustatar with Chrome.)'; return; }

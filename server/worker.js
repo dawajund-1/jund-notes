@@ -14,8 +14,10 @@ let G = 'https://generativelanguage.googleapis.com';  // GEMINI_BASE replaces it
 const WRITE_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
 const FILE_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-// notes: the stronger model first, and it may think before writing (slower, much better)
 const NOTES_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const STUDY_MODELS = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash'];
+const OPENROUTER_STUDY_MODEL = 'nvidia/nemotron-3.5-super-vl:free';
+const GROQ_STUDY_MODELS = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'];
 const VOICE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 const OWNER_HASH = 'acbe7ee98a566ab6ed2537fc1d67662eddda3739d19aedde6ee8f89f223fe602';   // sha-256 of the owner code (the code itself is not stored here)
 const MAX_BODY = 900_000;            // characters of text: about 150 pages
@@ -119,14 +121,18 @@ function rateLimit(text, header) {
 
 // Ask the AI, trying each model in turn (a model that is missing or out of free quota today is skipped).
 // `variants` lets a request be retried once in a simpler form if the AI refuses an optional setting.
-async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait, think }) {
+async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait, startTimeout, think }) {
   let last = { status: 500, text: '' };
   let busy, rate, quota;
   const attempts = [];
   for (const model of models) {
     for (let vi = 0; vi < variants.length; vi++) {
       const v = variants[vi];
-      const thinking = /2\.5-flash-lite/.test(model) || (/2\.5-flash/.test(model) && !think) ? { thinkingConfig: { thinkingBudget: 0 } } : /2\.5-flash/.test(model) ? { thinkingConfig: { thinkingBudget: 8192 } } : {};
+      const thinking = think && /^gemini-3\.[68]-flash$/.test(model)
+        ? { thinkingConfig: { thinkingLevel: 'HIGH' } }
+        : /2\.5-flash-lite/.test(model) || (/2\.5-flash/.test(model) && !think)
+          ? { thinkingConfig: { thinkingBudget: 0 } }
+          : /2\.5-flash/.test(model) ? { thinkingConfig: { thinkingBudget: 8192 } } : {};
       const payload = JSON.stringify({
         systemInstruction: system ? { parts: [{ text: system }] } : undefined,
         contents: [{ role: 'user', parts: v.parts }],
@@ -138,10 +144,12 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson,
           ...thinking,
         },
       });
+      const startup = startTimeout ? new AbortController() : null;
+      const timer = startup && setTimeout(() => startup.abort(), startTimeout);
       try {
         const r = await fetch(`${G}/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
           method: 'POST', headers: { 'content-type': 'application/json', ...keyHeaders(env) }, body: payload,
-          ...(wait ? { signal: AbortSignal.timeout(wait) } : {}),
+          signal: startup?.signal || (wait ? AbortSignal.timeout(wait) : undefined),
         });
         if (r.ok) return new Response(r.body, { headers: { ...h, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-model': model } });
         const text = (await r.text()).slice(0, 8000);
@@ -155,6 +163,8 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson,
         last = { status: 504, text: 'The AI connection timed out.' };
         attempts.push([model, last.status]);
         break;
+      } finally {
+        if (startup) clearTimeout(timer);
       }
       attempts.push([model, last.status]);
       const modelProblem = last.status !== 400 || /model|not found|not supported/i.test(last.text);
@@ -169,6 +179,71 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson,
   const failure = (rate?.retryAfter > 0 ? rate : busy || rate) || quota || { status: last.status, code: errCode(last.status) };
   console.warn('AI generation failed', { attempts, failure });
   return json(failure, failure.status === 429 ? 429 : 502, h);
+}
+
+function jsonSchema({ type, properties, items, ...fields }) {
+  const schema = { ...fields, type: type.toLowerCase() };
+  if (properties) schema.properties = Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, jsonSchema(value)]));
+  if (items) schema.items = jsonSchema(items);
+  return schema;
+}
+
+const studyResponseFormat = {
+  type: 'json_schema',
+  json_schema: { name: 'study_notes', strict: false, schema: jsonSchema(noteSchema) },
+};
+
+async function generateStudyFallback(env, h, { system, user, maxTokens }) {
+  const routes = [];
+  if (env.OPENROUTER_API_KEY) {
+    routes.push({
+      url: 'https://openrouter.ai/api/v1/chat/completions', key: env.OPENROUTER_API_KEY, model: OPENROUTER_STUDY_MODEL, timeout: 55000,
+      options: { max_tokens: Math.min(maxTokens, 32000), reasoning: { effort: 'high', exclude: true },
+        provider: { require_parameters: true, data_collection: 'deny', zdr: true, max_price: { prompt: 0, completion: 0, request: 0 } } },
+    });
+  }
+  // Groq's free TPM limits make it useful for smaller requests and split sections.
+  if (env.GROQ_FREE_API_KEY && system.length + user.length <= 26000) {
+    for (const model of GROQ_STUDY_MODELS) routes.push({
+      url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_FREE_API_KEY, model, timeout: 20000,
+      options: { max_completion_tokens: Math.min(maxTokens, 3800), reasoning_effort: 'high', include_reasoning: false },
+    });
+  }
+  let truncatedModel;
+  for (const { url, key, model, timeout, options } of routes) {
+    try {
+      const result = await fetch(url, {
+        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+        body: JSON.stringify({ model, stream: false, response_format: studyResponseFormat,
+          messages: [{ role: 'system', content: system || 'Write source-grounded study notes as JSON.' }, { role: 'user', content: user }], ...options }),
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (!result.ok) {
+        await result.body?.cancel();
+        continue;
+      }
+      const choice = (await result.json()).choices?.[0];
+      if (choice?.finish_reason === 'length') {
+        truncatedModel = model;
+        continue;
+      }
+      if (choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string') continue;
+      const notes = JSON.parse(choice.message.content);
+      if (!Array.isArray(notes?.sections) || !notes.sections.length || notes.sections.some(section =>
+        !Array.isArray(section?.blocks) || !section.blocks.length || section.blocks.some(block => typeof block?.t !== 'string'))) continue;
+      return studyFallbackResponse(h, model, choice.message.content, 'STOP');
+    } catch {
+      // A fallback can be unavailable or return invalid JSON. Try the next configured model.
+    }
+  }
+  return truncatedModel ? studyFallbackResponse(h, truncatedModel, '', 'MAX_TOKENS') : null;
+}
+
+function studyFallbackResponse(h, model, text, finishReason) {
+  const event = { candidates: [{ content: { parts: [{ text }] }, finishReason }] };
+  return new Response(`data: ${JSON.stringify(event)}\n\n`, {
+    headers: { ...h, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-model': model },
+  });
 }
 
 async function boundedForm(req) {
@@ -506,7 +581,11 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
     if (req.method === 'OPTIONS') return new Response(null, { headers: h });
-    if (req.method === 'GET' && path === '/') return json({ ok: true, app: 'jund-notes', version: 10, uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH }, 200, h);
+    if (req.method === 'GET' && path === '/') return json({
+      ok: true, app: 'jund-notes', version: 11, studyModel: STUDY_MODELS[0],
+      studyFallbacks: [...(env.OPENROUTER_API_KEY ? [OPENROUTER_STUDY_MODEL] : []), ...(env.GROQ_FREE_API_KEY ? GROQ_STUDY_MODELS : [])],
+      uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH,
+    }, 200, h);
     if (path.startsWith('/push/')) return pushRoutes(req, env, h, path, url);
     if (path === '/widget' || path.startsWith('/widget/')) return widgetRoutes(req, env, h, path, url);
     if (req.method === 'GET' && /^\/ics\/[a-f0-9]{16,64}\.ics$/.test(path)) return icsFeed(env, path.slice(5, -4));
@@ -578,7 +657,7 @@ export default {
 
     if (req.method !== 'POST') return json({ error: 'not found' }, 404, h);
     if (!origin && !req.headers.get('x-user-key')) return json({ error: 'forbidden' }, 403, h);
-    if (!env.GEMINI_API_KEY) return json({ error: 'server has no key', code: 'nokey' }, 500, h);
+    if (!env.GEMINI_API_KEY && path !== '/write') return json({ error: 'server has no key', code: 'nokey' }, 500, h);
 
     /* ----- reports from the app: problems, feedback, usage counts ----- */
     if (path === '/report') {
@@ -631,11 +710,18 @@ export default {
       if (raw.length > MAX_BODY) return json({ error: 'text too long', code: 'toolong' }, 413, h);
       let body; try { body = JSON.parse(raw); } catch { return json({ error: 'bad request' }, 400, h); }
       const { system = '', user = '', maxTokens = 30000, json: wantJson = true, deep = false, studyNotes = false } = body || {};
-      if (!user) return json({ error: 'empty' }, 400, h);
-      const models = deep ? NOTES_MODELS : (env.MODELS ? String(env.MODELS).split(',') : WRITE_MODELS).map(s => s.trim()).filter(Boolean);
+      if (typeof system !== 'string' || typeof user !== 'string' || !user) return json({ error: 'bad request' }, 400, h);
       const structured = studyNotes === true && wantJson;
+      const models = deep && structured ? STUDY_MODELS : deep ? NOTES_MODELS : (env.MODELS ? String(env.MODELS).split(',') : WRITE_MODELS).map(s => s.trim()).filter(Boolean);
       const config = structured ? { responseSchema: noteSchema } : undefined;
-      return generate(env, h, { models, system: structured ? system : (system + '\n\n' + CLAUDE_NOTE_FORMAT).trim(), maxTokens, wantJson, think: !!deep, variants: [{ parts: [{ text: user }], config }] });
+      const useFallbacks = deep && structured && (env.OPENROUTER_API_KEY || env.GROQ_FREE_API_KEY);
+      const gemini = env.GEMINI_API_KEY
+        ? await generate(env, h, { models, system: structured ? system : (system + '\n\n' + CLAUDE_NOTE_FORMAT).trim(),
+          maxTokens, wantJson, think: !!deep, startTimeout: useFallbacks ? 25000 : undefined,
+          variants: [{ parts: [{ text: user }], config }] })
+        : json({ error: 'server has no key', code: 'nokey' }, 500, h);
+      if (!useFallbacks || gemini.ok || gemini.status === 400) return gemini;
+      return await generateStudyFallback(env, h, { system, user, maxTokens: Number(maxTokens) || 30000 }) || gemini;
     }
 
     /* ----- audio piece → transcript ----- */

@@ -1,1 +1,11 @@
 plugins { id 'com.android.application' version '8.5.2' apply false }
+
+// Keep Android runtime dependencies separate from the existing APK signing configuration.
+project(':app') {
+    configurations.configureEach {
+        exclude group: 'com.google.androidbrowserhelper', module: 'androidbrowserhelper'
+    }
+    plugins.withId('com.android.application') {
+        dependencies.add('implementation', 'androidx.webkit:webkit:1.11.0')
+    }
+}
