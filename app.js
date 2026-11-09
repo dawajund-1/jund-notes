@@ -1396,6 +1396,18 @@ ${src.name}>>>`;
     const checkpoint = { fingerprint, key, text, parts: rs, fragments };
     if (resume) notesCheckpoints.set(sourceFile, checkpoint);
     const persist = async () => { if (fingerprint) await pdfProgress('notes', checkpoint); };
+    const retainSource = (result, source, i) => {
+      if (!result.notes || source.length < 300 || JSON.stringify(result.notes.sections).length * 3 >= source.length) return result;
+      const notes = structuredClone(result.notes);
+      const heading = en ? `Source text for part ${i + 1}` : `النص الأصلي للجزء ${i + 1}`;
+      notes.sections.push({ heading, blocks: splitText(source, 180).map(text => ({ t: 'text', text })) });
+      notes.report ||= {};
+      if (!Array.isArray(notes.report.maybe_wrong)) notes.report.maybe_wrong = [];
+      notes.report.maybe_wrong.push(en
+        ? `The AI notes for part ${i + 1} were brief. The source text is included for study.`
+        : `جاءت ملاحظات الجزء ${i + 1} مختصرة، فأُدرج نصه الأصلي للمراجعة.`);
+      return { ...result, notes };
+    };
     const writeComplete = async (source, i, path = String(i), depth = 0) => {
       if (fragments[path]?.notes) return fragments[path];
       if (!fragments[path]?.split) {
@@ -1412,8 +1424,9 @@ ${src.name}>>>`;
             }
             return { stop: r.stop, usd: r.usd, notes };
           }, controller.signal, (_, seconds) => onStatus(`Retrying part ${i + 1} of ${parts.length} in ${seconds}s…`, null, 'write'), { retryFormat: true });
-          if (depth) { fragments[path] = result; await persist(); }
-          return result;
+          const retained = retainSource(result, source, i);
+          if (depth) { fragments[path] = retained; await persist(); }
+          return retained;
         } catch (e) {
           if (e.code !== 'notes_limit' || depth >= 3 || source.trim().split(/\s+/).length < 100) throw e;
           fragments[path] = { split: true };
@@ -1436,7 +1449,7 @@ ${src.name}>>>`;
           }
         } else rs[i] = await one(parts[i], i);
         await persist();
-      }
+      } else if (complete && rs[i].notes) rs[i] = retainSource(rs[i], parts[i], i);
       done++; onStatus(`Writing… part ${ar(done)} of ${ar(parts.length)} done`, Math.min(0.95, done / parts.length), 'write');
     };
     const parallel = complete ? 1 : 2;
