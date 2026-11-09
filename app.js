@@ -1376,6 +1376,7 @@ ${src.name}>>>`;
       const r = await callBig({
         system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
         messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head }], deep: true, studyNotes: complete,
+        maxTokens: complete && engineKind() === 'server' ? Math.max(4500, Math.min(14000, part.split(/\s+/).length * 8)) : undefined,
         signal: controller.signal,
         onText: t => {
           const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
