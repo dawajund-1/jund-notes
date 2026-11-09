@@ -469,6 +469,8 @@ async function serverFetch(path, init = {}) {
   }
   if (!res.ok) {
     let j = {}; try { j = await res.json(); } catch {}
+    if (j.code === 'noplaylist') throw Object.assign(new Error('No playable videos were found. Check that the playlist is public or unlisted, or paste individual video links.'), { code: 'noplaylist' });
+    if (j.code === 'yt_unavailable') throw Object.assign(new Error('YouTube did not return this playlist. Try again in a moment.'), { code: 'yt_unavailable' });
     if (j.code === 'quota') throw Object.assign(new Error(store.get('userKey') ? 'Your AI key reached its daily limit.' : 'Mustatar reached its shared daily AI limit.'), { code: 'quota' });
     if (j.code === 'rate' || res.status === 429) throw aiRetryError('rate', Number(j.retryAfter) || Number(res.headers.get('retry-after')));
     if (j.code === 'toolong') throw Object.assign(new Error('Too big for one go. Choose fewer pages or a shorter file.'), { code: 'toolong' });
@@ -641,23 +643,42 @@ async function hearYouTube(item, signal, onStatus) {
 }
 async function ytList(lines) {
   const items = [];
+  const seen = new Set();
+  const add = (id, unit) => {
+    if (!/^[\w-]{11}$/.test(id || '') || seen.has(id)) return;
+    seen.add(id);
+    items.push({ yt: 'https://www.youtube.com/watch?v=' + id, unit });
+  };
   for (const raw of lines) {
     let u; try { u = new URL(raw.trim()); } catch { continue; }
-    const list = u.searchParams.get('list'), v = u.searchParams.get('v') || (/youtu\.be$/.test(u.hostname) ? u.pathname.slice(1) : '');
+    const short = u.hostname === 'youtu.be';
+    if (!/^https?:$/.test(u.protocol) || (!short && !/(^|\.)youtube\.com$/.test(u.hostname))) continue;
+    const list = u.searchParams.get('list');
+    const v = short ? u.pathname.split('/')[1] : u.searchParams.get('v') || u.pathname.match(/^\/(?:shorts|live|embed)\/([\w-]{11})\/?$/)?.[1];
+    const video = /^[\w-]{11}$/.test(v || '');
     // a playlist link (also "watch?v=…&list=…" — the whole playlist is wanted)
     if (list && !/^(RD|UL|LL|WL)/.test(list)) {
-      let j = null;
-      try { j = await (await serverFetch('/playlist?list=' + encodeURIComponent(list), { method: 'GET' })).json(); } catch {}
-      if (j?.items?.length) {
-        j.items.forEach((it, i) => items.push({ yt: 'https://www.youtube.com/watch?v=' + it.id, unit: it.title || `${j.title || 'Playlist'} ${ar(i + 1)}` }));
-        if (j.items.length === 15) items.push({ note: 'YouTube showed only 15 videos of this playlist; paste the links of the others if some are missing.' });
+      try {
+        const j = await (await serverFetch('/playlist?list=' + encodeURIComponent(list), { method: 'GET' })).json();
+        if (!j?.items?.length) throw Object.assign(new Error('No playable videos were found in this playlist.'), { code: 'noplaylist' });
+        j.items.forEach((it, i) => add(it.id, it.title || `${j.title || 'Playlist'} ${ar(i + 1)}`));
+        if (j.partial === 'feed' || j.partial === 'more' || (j.partial === undefined && j.items.length === 15)) {
+          items.push({ note: `YouTube returned only part of this playlist (${ar(j.items.length)} videos). Paste links to any missing videos to add them.` });
+        }
         continue;
+      } catch (e) {
+        if (!video || e.code !== 'noplaylist') throw e;
+        items.push({ note: 'The playlist could not be opened. Only the video in the link was added.' });
       }
-      if (!v) throw Object.assign(new Error('I could not open this playlist. It may be private. Make it Public or Unlisted on YouTube, or paste the video links one by one.'), { code: 'yt' });
-    } else if (list && !v) throw Object.assign(new Error('This is a YouTube Mix or a personal list (Liked, Watch later), which YouTube does not share. Paste the video links instead.'), { code: 'yt' });
+    } else if (list) {
+      if (!video) throw Object.assign(new Error('This is a YouTube Mix or a personal list (Liked, Watch later), which YouTube does not share. Paste the video links instead.'), { code: 'yt' });
+      items.push({ note: 'This is a YouTube Mix or personal list. Only the video in the link was added.' });
+    }
+    if (!video || seen.has(v)) continue;
     let title = '';
-    try { title = (await (await serverFetch('/ytmeta?url=' + encodeURIComponent(u.href), { method: 'GET' })).json()).title; } catch {}
-    items.push({ yt: u.href, unit: title || 'YouTube video' });
+    const url = 'https://www.youtube.com/watch?v=' + v;
+    try { title = (await (await serverFetch('/ytmeta?url=' + encodeURIComponent(url), { method: 'GET' })).json()).title; } catch {}
+    add(v, title || 'YouTube video');
   }
   return items;
 }
@@ -851,7 +872,7 @@ function renderPending() {
     </div>` : '';
   box.innerHTML = pending.length ? `<b>${pending.length > 1 ? ar(pending.length) + ' lessons will be made, one per file:' : 'Chosen file:'}</b>
     <ol>${pending.map((p, i) => `<li>${esc(p.unit)} <small class="muted">(${p.pages ? ar(p.pages.length) + ' pages, ' : ''}${p.media && !p.text ? (p.yt ? 'YouTube' : 'audio or video') : ar(p.text.split(/\s+/).filter(Boolean).length) + ' words'})</small>${p.status ? ' — <span class="st">' + p.status + '</span>' : ''}${canListen(p) ? ` <button type="button" class="link small listen-btn" data-act="listen" data-i="${i}">▶ Listen</button>` : ''}${tools(p, i)}${p.images || p.src || (p.file && /^video\//.test(p.file.type)) ? `<div class="pend-th" data-th="${i}" hidden></div>` : ''}</li>`).join('')}</ol>
-    ${hearNote ? `<small class="muted">${hearNote}</small>` : ''}
+    ${hearNote ? `<small class="muted">${esc(hearNote)}</small>` : ''}
     ${one?.pages && !one.bad ? `<div class="row-gap" style="align-items:center">
       <span>Pages: from</span><input id="pg-from" type="number" min="1" max="${one.pages.length}" value="${one.from}" style="width:5.5em">
       <span>to</span><input id="pg-to" type="number" min="1" max="${one.pages.length}" value="${one.to}" style="width:5.5em">
@@ -1225,7 +1246,7 @@ $('#yt-go').onclick = async () => {
     const vids = items.filter(x => x.yt);
     if (!vids.length) throw new Error('I found no video in these links.');
     pending = pending.filter(p => p.media || p.text).concat(vids.map(v => ({ media: true, yt: v.yt, unit: v.unit, text: '', status: '⏳ Waiting' })));
-    hearNote = notes[0] || '';
+    hearNote = notes.join(' ');
     $('#yt').value = '';
     if ($('#kind').value !== 'other') $('#kind').value = 'transcript';
     renderPending();
