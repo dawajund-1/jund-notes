@@ -339,7 +339,7 @@ async function send({ retryNotes = false } = {}) {
           const stage = phase === 'read' ? (ar ? 'قراءة الملف' : 'Reading the file') : (ar ? 'كتابة الملاحظات' : 'Writing notes');
           return `✗ ${file.name} · ${stage} · ${J.errText(error)}`;
         }).join('\n');
-        pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'rate', 'offline', 'scanoffline'].includes(error.code));
+        pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'ai_format', 'rate', 'quota', 'offline', 'scanoffline'].includes(error.code));
         if (recentAttachment?.chatId === chatId) recentAttachment.files = failed.map(result => result.file);
         S.fail(st, ar ? 'تعذّر إكمال بعض الملفات' : 'Some files could not be completed');
       } else S.ok(st, ar ? 'حُفظت في المكتبة' : 'Saved in the Library');
