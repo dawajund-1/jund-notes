@@ -10,40 +10,36 @@ const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-let log = store.get('assistantLog', []);
-let chatId = store.get('chatId') || ('c' + Date.now().toString(36));
-function freshStart() {
-  if (!log.length) return;
-  const all = store.get('chats', []).filter(c => c.id !== chatId);
-  const first = log.find(m => m.who === 'me')?.text || 'Chat';
-  all.unshift({ id: chatId, title: first.replace(/^📎[^\n]*\n/, '📎 ').slice(0, 60), t: Date.now(), log: log.slice(-60) });
-  store.set('chats', all.slice(0, 50));
-  chatId = 'c' + Date.now().toString(36); log = [];
-  store.set('chatId', chatId); store.set('assistantLog', []);
-}
-freshStart();
-// coming back after 30 minutes away also starts fresh
-let hiddenAt = 0;
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = Date.now(); return; }
-  if (hiddenAt && Date.now() - hiddenAt > 30 * 60e3 && !busy && log.length) { freshStart(); if (built) render(); }
-});
 // past conversations, newest first: [{ id, title, t, log }]
 const chats = () => store.get('chats', []);
-function saveChat() {
-  if (!log.length) return;
-  const all = chats().filter(c => c.id !== chatId);
-  const first = log.find(m => m.who === 'me')?.text || 'Chat';
-  all.unshift({ id: chatId, title: first.replace(/^📎[^\n]*\n/, '📎 ').slice(0, 60), t: Date.now(), log: log.slice(-60) });
+const newChatId = () => 'c' + crypto.randomUUID();
+const savedChatId = store.get('chatId');
+const savedLog = store.get('assistantLog');
+let chatId = savedChatId || newChatId();
+let log = restoreLog(savedLog ?? chats().find(c => c.id === chatId)?.log);
+let pendingReply = null;
+
+function restoreLog(messages) {
+  return Array.isArray(messages) ? messages.map(m => m.working ? {
+    who: 'ai',
+    text: window.ZadLang === 'ar' ? 'انقطع الرد. أرسل طلبك مرة أخرى.' : 'The reply was interrupted. Send your request again.',
+  } : m) : [];
+}
+function saveChat(id = chatId, messages = log) {
+  if (!messages.length) return;
+  const all = chats().filter(c => c.id !== id);
+  const first = messages.find(m => m.who === 'me')?.text || 'Chat';
+  all.unshift({ id, title: first.replace(/^📎[^\n]*\n/, '📎 ').slice(0, 60), t: Date.now(), log: messages.slice(-60) });
   store.set('chats', all.slice(0, 50));
 }
-function newChat() { saveChat(); chatId = 'c' + Date.now().toString(36); store.set('chatId', chatId); log = []; persist(); if (built) render(); }
+function newChat() { saveChat(); chatId = newChatId(); log = []; persist(); if (built) render(); }
 function openChat(id) {
-  const c = chats().find(x => x.id === id); if (!c) return;
-  saveChat(); chatId = c.id; store.set('chatId', chatId); log = c.log || []; persist(); if (built) render();
+  const c = chats().find(x => x.id === id); if (!c || id === chatId) return;
+  saveChat(); chatId = c.id; log = pendingReply?.id === id ? pendingReply.log : restoreLog(c.log);
+  persist(); if (built) render();
   setTimeout(() => $('#as-log')?.lastElementChild?.scrollIntoView({ block: 'end' }), 50);
 }
-function deleteChat(id) { store.set('chats', chats().filter(c => c.id !== id)); if (id === chatId) { chatId = 'c' + Date.now().toString(36); store.set('chatId', chatId); log = []; persist(); if (built) render(); } }
+function deleteChat(id) { store.set('chats', chats().filter(c => c.id !== id)); if (id === chatId) { chatId = newChatId(); log = []; persist(); if (built) render(); } }
 let busy = false, built = false;
 let recentAttachment;
 
@@ -87,10 +83,13 @@ function build() {
   render();
 }
 
-function persist() {
-  store.set('assistantLog', log.slice(-60)); store.set('chatId', chatId); saveChat();
+function persist({ sync = true } = {}) {
+  const snapshot = log.slice(-60);
+  store.set('assistantLog', snapshot); store.set('chatId', chatId); saveChat();
+  if (!sync || snapshot.some(m => m.working)) return;
   clearTimeout(persist.t);
-  persist.t = setTimeout(() => J.cloud.putData('assistant', { saved: Date.now(), log: log.slice(-60) }).catch(() => {}), 3000);
+  const data = { saved: Date.now(), id: chatId, log: snapshot };
+  persist.t = setTimeout(() => J.cloud.putData('assistant', data).catch(() => {}), 3000);
 }
 
 // nothing coming: today as a 24-hour line, the five prayers marked on it, and a dot that moves with the time
@@ -283,7 +282,9 @@ function stepsHtml(m) {
   return `<ol class="ws-list">${m.steps.map(st => `<li class="ws-${st.state}"><span class="ws-ic">${st.state === 'ok' ? '✓' : st.state === 'fail' ? '✗' : '•'}</span><span class="ws-l" dir="auto">${esc(st.label)}${st.detail ? `<small dir="auto">${esc(st.detail)}</small>` : ''}</span>${st.ms != null ? `<em>${(st.ms / 1000).toFixed(1)}s</em>` : ''}</li>`).join('')}</ol>`;
 }
 function paintWork(pend) {
-  const i = log.indexOf(pend), el = $(`#as-log [data-i="${i}"]`);
+  const i = log.indexOf(pend);
+  if (i < 0) return;
+  const el = $(`#as-log [data-i="${i}"]`);
   if (!el) return render();
   const cur = [...pend.steps].reverse().find(st => st.state === 'run') || pend.steps[pend.steps.length - 1];
   el.querySelector('.ws-now').textContent = cur ? cur.label + (cur.state === 'run' && cur.detail ? ' · ' + cur.detail : '') : '';
@@ -314,12 +315,15 @@ async function send({ retryNotes = false } = {}) {
   if (att) window.JundAttach.clearHome();
   if (!retryNotes) { $('#as-text').value = ''; $('#as-text').style.height = 'auto'; }
   const pend = { who: 'ai', text: '…', working: true }; log.push(pend);
+  const reply = { id: chatId, log };
+  pendingReply = reply;
   const S = stepper(pend); render();
+  persist({ sync: false });
   const ar = AR_();
   let st;
   try {
     if (retryNotes || requestsNotes(t)) {
-      const sources = recentAttachment?.chatId === chatId ? recentAttachment.files : [];
+      const sources = recentAttachment?.chatId === reply.id ? recentAttachment.files : [];
       if (!sources.length) {
         pend.text = ar ? 'أرفق ملف PDF أو ملفًا نصيًا عبر زر + هنا، ثم أرسل طلب إعداد الملاحظات.' : 'Tap + to attach the PDF or text file here, then send your request to make study notes.';
         return;
@@ -340,7 +344,7 @@ async function send({ retryNotes = false } = {}) {
           return `✗ ${file.name} · ${stage} · ${J.errText(error)}`;
         }).join('\n');
         pend.retryNotes = failed.some(({ error }) => ['ai_busy', 'ai_format', 'rate', 'quota', 'offline', 'scanoffline'].includes(error.code));
-        if (recentAttachment?.chatId === chatId) recentAttachment.files = failed.map(result => result.file);
+        if (recentAttachment?.chatId === reply.id) recentAttachment.files = failed.map(result => result.file);
         S.fail(st, ar ? 'تعذّر إكمال بعض الملفات' : 'Some files could not be completed');
       } else S.ok(st, ar ? 'حُفظت في المكتبة' : 'Saved in the Library');
       return;
@@ -376,12 +380,16 @@ async function send({ retryNotes = false } = {}) {
   } catch (e) {
     if (st && st.state === 'run') S.fail(st, J.errText(e));
     pend.text = '✗ ' + J.errText(e);
-    if (files.length) window.JundAttach.addHome(files);
-    if (!$('#as-text').value) $('#as-text').value = t;
+    if (reply.id === chatId) {
+      if (files.length) window.JundAttach.addHome(files);
+      if (!$('#as-text').value) $('#as-text').value = t;
+    }
   } finally {
     pend.working = false; pend.ms = Date.now() - pend.t0;
+    pendingReply = null;
     busy = false; $('#as-send').disabled = false;
-    persist(); render();
+    if (reply.id === chatId) { persist(); render(); }
+    else if (chats().some(c => c.id === reply.id)) saveChat(reply.id, reply.log);
   }
 }
 
@@ -434,7 +442,15 @@ function listen() {
 
 window.JundAssistant = { open() { if (!built) build(); render(); }, home: () => renderHome(), context, chats, newChat, openChat, deleteChat, currentChat: () => chatId,
   addTalk(turns) { if (!turns?.length) return; turns.forEach(t => log.push({ who: t.who === 'me' ? 'me' : 'ai', text: t.text })); persist(); render(); } };
-J.cloud.getData('assistant').then(r => { if (r?.log && (r.saved || 0) > 0 && !log.length) { log = r.log; render(); } }).catch(() => {});
+if (savedChatId || Array.isArray(savedLog)) {
+  persist({ sync: false });
+} else {
+  J.cloud.getData('assistant').then(r => {
+    if (store.get('chatId') || !Array.isArray(r?.log) || !r.log.length || !(r.saved > 0)) return;
+    chatId = r.id || chatId; log = restoreLog(r.log);
+    persist({ sync: false }); if (built) render();
+  }).catch(() => {});
+}
 })();
 // the app opens on Home before this file loads, so draw it now
 if (!document.querySelector('#screen-assistant').hidden) window.JundAssistant.open();
