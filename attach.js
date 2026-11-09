@@ -18,6 +18,23 @@ const mimeOf = f => /\.pdf$/i.test(f.name) ? 'application/pdf' : f.type || (/\.t
 const sizeLimit = mime => mime === 'application/pdf' ? MAX_PDF : MAX;
 const icon = m => m.startsWith('image/') ? '🖼' : m === 'application/pdf' ? '📄' : m.startsWith('audio/') ? '🎧' : m.startsWith('video/') ? '🎬' : '📃';
 
+async function readScanBatch(scans, signal) {
+  const pages = [];
+  for (const { page, blob } of scans) pages.push({ page, data: b64(await blob.arrayBuffer()) });
+  const response = await J.serverFetch('/read-pages', {
+    method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pages }),
+  });
+  const result = await J.readStream(response);
+  if (result.stop === 'incomplete') throw Object.assign(new Error('The scan reader was interrupted.'), { code: 'ai_busy' });
+  let output;
+  try { output = JSON.parse(result.text)?.pages; } catch {}
+  if (result.stop !== 'STOP' || !Array.isArray(output) || output.length !== pages.length ||
+    output.some((entry, i) => entry?.page !== pages[i].page || typeof entry.text !== 'string')) {
+    throw Object.assign(new Error('The scan reader did not return every page. Retry notes to continue.'), { code: 'ai_format' });
+  }
+  return output;
+}
+
 // one call: the file + instructions → the answer (streamed)
 async function askFile(file, { system, user, json = false, maxTokens = 8000, onText, signal }) {
   let f = file; const mime = mimeOf(file);
@@ -161,7 +178,7 @@ async function chatExtract(onStatus) {
   return `\n\n<<<ملف مرفق (${f.name})\n${r.text.trim()}\nملف مرفق>>>`;
 }
 
-window.JundAttach = { askFile, askFiles, addHome, homeFiles: () => [...homeFiles], homeFile: () => homeFiles[0] || null, clearHome, chatExtract, chatFileName: () => chatFile?.name || '', homeSetup, chatSetup };
+window.JundAttach = { askFile, askFiles, readScanBatch, addHome, homeFiles: () => [...homeFiles], homeFile: () => homeFiles[0] || null, clearHome, chatExtract, chatFileName: () => chatFile?.name || '', homeSetup, chatSetup };
 chatSetup();
 setTimeout(homeSetup, 0);
 })();

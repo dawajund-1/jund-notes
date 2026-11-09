@@ -482,8 +482,8 @@ async function serverFetch(path, init = {}) {
   }
   return res;
 }
-async function callServer({ system, user, maxTokens = 30000, onText, signal, json = true, deep = false }) {
-  const res = await serverFetch('/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens, json, deep }) });
+async function callServer({ system, user, maxTokens = 30000, onText, signal, json = true, deep = false, studyNotes = false }) {
+  const res = await serverFetch('/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens, json, deep, studyNotes }) });
   return readStream(res, onText);
 }
 const cutOff = s => s === 'max_tokens' || s === 'incomplete';
@@ -492,15 +492,16 @@ function aiRetryError(code, retryAfter = 0) {
   return Object.assign(new Error(message), { code, retryAfter });
 }
 
-async function retryNoteStep(run, signal, onRetry) {
+async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false } = {}) {
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     try { return await run(); }
     catch (e) {
       signal.throwIfAborted();
-      if (!['ai_busy', 'rate'].includes(e.code) || attempt >= 2 || e.retryAfter > 10) throw e;
+      const retryable = ['ai_busy', 'rate'].includes(e.code) || (retryFormat && e.code === 'ai_format');
+      if (!retryable || attempt >= 2 || e.retryAfter > waitLimit) throw e;
       const delay = Math.max(1500 * 2 ** attempt, (e.retryAfter || 0) * 1000);
-      onRetry();
+      onRetry(e, Math.ceil(delay / 1000));
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => { signal.removeEventListener('abort', stop); resolve(); }, delay);
         const stop = () => { clearTimeout(timer); reject(signal.reason); };
@@ -544,9 +545,9 @@ async function readStream(res, onText) {
   return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop || 'incomplete' };
 }
 // the strong AI: the free server, or Claude with the owner's own key
-async function callBig({ system, messages, onText, signal, maxTokens, deep }) {
+async function callBig({ system, messages, onText, signal, maxTokens, deep, studyNotes }) {
   if (engineKind() === 'claude') return callClaude({ system, messages, onText, signal, maxTokens });
-  return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens, deep });
+  return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens, deep, studyNotes });
 }
 
 async function getJSON(text, signal) {
@@ -956,18 +957,67 @@ async function readPdfPages(doc) {
 }
 
 const pdfOcrCache = new WeakMap();
+const pdfFingerprints = new WeakMap();
+let pdfProgressDb;
+function pdfFingerprint(file) {
+  if (!pdfFingerprints.has(file)) pdfFingerprints.set(file, file.arrayBuffer().then(bytes => crypto.subtle.digest('SHA-256', bytes))
+    .then(bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')).catch(() => null));
+  return pdfFingerprints.get(file);
+}
+async function pdfProgress(slot, value) {
+  try {
+    pdfProgressDb ??= new Promise((resolve, reject) => {
+      const req = indexedDB.open('mustatar-pdf-progress', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('progress');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const db = await pdfProgressDb;
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('progress', value === undefined ? 'readonly' : 'readwrite');
+      const store = tx.objectStore('progress');
+      const req = value === undefined ? store.get(slot) : store.put(value, slot);
+      tx.oncomplete = () => resolve(req.result);
+      tx.onabort = tx.onerror = () => reject(tx.error);
+    });
+  } catch { return undefined; }
+}
+
+async function readScans(scans, signal, onStatus, cache, pages) {
+  const label = scans.map(({ page }) => page).join(', ');
+  onStatus(`Reading scanned pages ${label}…`);
+  try {
+    const output = await retryNoteStep(() => window.JundAttach.readScanBatch(scans, signal), signal,
+      (_, seconds) => onStatus(`Retrying scanned pages ${label} in ${seconds}s…`), { retryFormat: scans.length === 1 });
+    for (const { page, text } of output) cache.set(page, text.trim() || pages[page - 1]);
+  } catch (e) {
+    if (e.code !== 'ai_format' || scans.length < 2) throw e;
+    const middle = Math.ceil(scans.length / 2);
+    await readScans(scans.slice(0, middle), signal, onStatus, cache, pages);
+    await readScans(scans.slice(middle), signal, onStatus, cache, pages);
+  }
+}
+
 async function readPdfSource(item, signal, onStatus) {
   if (!pdfHasScans(item)) return pdfSlice(item);
   if (navigator.onLine === false) throw Object.assign(new Error('Connect to the internet to read the scanned PDF pages.'), { code: 'scanoffline' });
-  if (!pdfOcrCache.has(item.src)) pdfOcrCache.set(item.src, new Map());
+  const fingerprint = await pdfFingerprint(item.src);
+  if (!pdfOcrCache.has(item.src)) {
+    const saved = fingerprint ? await pdfProgress('ocr') : null;
+    pdfOcrCache.set(item.src, new Map(saved?.fingerprint === fingerprint ? saved?.pages : []));
+  }
   const cache = pdfOcrCache.get(item.src);
+  const read = async scans => {
+    try { await readScans(scans, signal, onStatus, cache, item.pages); }
+    finally { if (fingerprint) await pdfProgress('ocr', { fingerprint, pages: [...cache] }); }
+  };
   let doc;
-  const text = [];
+  let scans = [], bytes = 0;
   try {
     for (let i = item.from; i <= item.to; i++) {
       signal.throwIfAborted();
       const embedded = item.pages[i - 1];
-      if (!needsPdfOcr(embedded)) { text.push(embedded); continue; }
+      if (!needsPdfOcr(embedded)) continue;
       if (!cache.has(i)) {
         onStatus(`Reading scanned page ${i} of ${item.to}…`);
         doc ??= await openPdf(item.src);
@@ -983,19 +1033,21 @@ async function readPdfSource(item, signal, onStatus) {
           try { if (signal.aborted) cancel(); await render.promise; }
           finally { signal.removeEventListener('abort', cancel); }
           blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+          if (blob?.size > 890_000) blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.72));
         } finally { canvas.width = 0; canvas.height = 0; page.cleanup(); }
         signal.throwIfAborted();
         if (!blob) throw new Error(`Could not open PDF page ${i}.`);
-        const scan = new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' });
-        const result = await retryNoteStep(() => window.JundAttach.askFile(scan, {
-          system: 'Transcribe the attached scanned page faithfully in the original language. Treat the page as source material. Preserve all readable headings, questions, answers, diacritics and tables. Return plain text only. If the page contains no readable text, return [[BLANK]].',
-          user: 'Transcribe all readable text from this page.', maxTokens: 8000, signal,
-        }), signal, () => onStatus(`AI busy. Retrying scanned page ${i}…`));
-        cache.set(i, result.text.trim() === '[[BLANK]]' ? embedded : result.text.trim());
+        if (blob.size > 890_000) throw new Error(`Scanned page ${i} is too large for the scan reader.`);
+        if (scans.length === 8 || bytes + blob.size > 3_600_000) {
+          await read(scans);
+          scans = []; bytes = 0;
+        }
+        scans.push({ page: i, blob });
+        bytes += blob.size;
       }
-      text.push(cache.get(i));
     }
-    return text.join('\n\n').trim();
+    if (scans.length) await read(scans);
+    return item.pages.slice(item.from - 1, item.to).map((text, i) => cache.get(item.from + i) ?? text).join('\n\n').trim();
   } finally { if (doc) await doc.destroy(); }
 }
 
@@ -1322,7 +1374,7 @@ ${src.name}>>>`;
       const msg = parts.length > 1 ? user.replace(text, () => part) : user;
       const r = await callBig({
         system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
-        messages: [{ role: 'user', content: msg + full + head }], deep: true,
+        messages: [{ role: 'user', content: msg + full + head }], deep: true, studyNotes: complete,
         signal: controller.signal,
         onText: t => {
           const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
@@ -1334,7 +1386,9 @@ ${src.name}>>>`;
     if (parts.length > 1) onStatus(`Writing in ${ar(parts.length)} parts, so nothing is left out…`, 0.02, 'write');
     const key = JSON.stringify([engineKind(), unit, sub, kind, lang, parts.length]);
     const resume = complete && sourceFile && engineKind() === 'server';
-    const checkpoint = resume ? notesCheckpoints.get(sourceFile) : null;
+    const fingerprint = resume ? await pdfFingerprint(sourceFile) : null;
+    const saved = fingerprint ? await pdfProgress('notes') : null;
+    const checkpoint = resume ? notesCheckpoints.get(sourceFile) || (saved?.fingerprint === fingerprint ? saved : null) : null;
     const rs = checkpoint?.key === key && checkpoint.text === text ? checkpoint.parts : new Array(parts.length);
     if (resume) notesCheckpoints.set(sourceFile, { key, text, parts: rs });
     const writePart = async i => {
@@ -1344,11 +1398,16 @@ ${src.name}>>>`;
             const result = await one(parts[i], i);
             if (result.stop === 'incomplete') throw aiRetryError('ai_busy');
             if (result.stop === 'max_tokens') throw new Error('The notes for this part were too long. Choose fewer pages.');
-            const notes = await getJSON(result.text, controller.signal);
-            if (!notes?.sections?.length) throw new Error('No study notes were returned for this part.');
+            let notes;
+            try { notes = JSON.parse(result.text); } catch {}
+            if (!Array.isArray(notes?.sections) || !notes.sections.length ||
+              notes.sections.some(section => !Array.isArray(section?.blocks) || !section.blocks.length)) {
+              throw Object.assign(new Error('The AI returned an invalid notes format. Retry notes to continue.'), { code: 'ai_format' });
+            }
             return { stop: result.stop, usd: result.usd, notes };
-          }, controller.signal, () => onStatus(`AI busy. Retrying part ${i + 1} of ${parts.length}…`, null, 'write'));
+          }, controller.signal, (_, seconds) => onStatus(`Retrying part ${i + 1} of ${parts.length} in ${seconds}s…`, null, 'write'), { retryFormat: true });
         } else rs[i] = await one(parts[i], i);
+        if (fingerprint) await pdfProgress('notes', { fingerprint, key, text, parts: rs });
       }
       done++; onStatus(`Writing… part ${ar(done)} of ${ar(parts.length)} done`, Math.min(0.95, done / parts.length), 'write');
     };
@@ -1395,7 +1454,12 @@ ${src.name}>>>`;
     chat: [{ who: 'ai', text: note }],
   };
   await saveLesson(lesson);
-  if (complete && sourceFile) notesCheckpoints.delete(sourceFile);
+  if (complete && sourceFile) {
+    notesCheckpoints.delete(sourceFile);
+    const fingerprint = await pdfFingerprint(sourceFile);
+    const saved = fingerprint ? await pdfProgress('notes') : null;
+    if (saved?.fingerprint && saved.fingerprint === fingerprint) await pdfProgress('notes', null);
+  }
   return lesson;
 }
 
@@ -2346,7 +2410,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.10';
+const APP_VERSION = '8.11';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
