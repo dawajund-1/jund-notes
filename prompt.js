@@ -31,6 +31,7 @@ window.JUND_METHOD = `
 - الأمور الإدارية (مواعيد، واجبات، غياب): سطر واحد فقط في الملحق (admin).
 - دعاء الافتتاح يوضع في opening_dua، وبقية الأدعية في closing_duas.
 - القواعد والمنظومات والأبيات والمفردات والأسئلة الواردة في الدرس تذهب إلى الملحق appendix.
+- في appendix.vocab، انقل المصطلح وتعريفه بلفظهما من المصدر. إذا ورد المصطلح دون تعريف فاحذف مدخله، ولا تؤلف له تعريفًا.
 - الإحالات الداخلية بين أجزاء الملف: اكتب [انظر: عنوان القسم] (التطبيق يحوّلها إلى رقم صفحة).
 
 ## الرموز المسموحة فقط
@@ -208,6 +209,7 @@ It replaces full notes: everything important for the exam, everything the studen
 - Admin matters (dates, homework, deadlines, absences): one line only in appendix.admin.
 - An opening prayer goes in opening_dua; other closing prayers in closing_duas.
 - Rules, poems, vocabulary and questions from the lesson go in the appendix.
+- In appendix.vocab, copy both the term and its definition verbatim from the source. Omit terms the source does not define.
 - Cross-references inside the file: write [See: section title] (the app turns it into a page number).
 
 ## Allowed symbols only

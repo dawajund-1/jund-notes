@@ -1370,13 +1370,17 @@ ${src.name}>>>`;
     const parts = engineKind() === 'claude' || words <= 2200 ? [text] : splitText(text, 1600);
     const expect = Math.max(400, words * 0.8);
     let done = 0;
-    const one = async (part, i) => {
+    const one = async (part, i, compact = false) => {
       const head = parts.length > 1 ? (en ? `\n\nThis is PART ${i + 1} of ${parts.length} of one source. Write the notes for this part only, completely.` : `\n\nهذا هو الجزء ${i + 1} من ${parts.length} من مصدر واحد. اكتب ملاحظات هذا الجزء وحده كاملة.`) : '';
       const msg = part === text ? user : user.replace(text, () => part);
+      const recovery = compact ? (en
+        ? '\n\nReturn the complete study sections first, using concise blocks. Preserve every source fact, quote, condition and exception. Omit optional extras that repeat the study sections.'
+        : '\n\nأعد الأقسام الدراسية كاملة في نقاط موجزة. احفظ كل معلومة واقتباس وشرط واستثناء من المصدر. احذف الإضافات الاختيارية التي تكرر ما في الأقسام.') : '';
       const r = await callBig({
         system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
-        messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head }], deep: true, studyNotes: complete,
-        maxTokens: complete && engineKind() === 'server' ? Math.max(4500, Math.min(14000, part.split(/\s+/).length * 8)) : undefined,
+        messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head + recovery }], deep: true, studyNotes: complete,
+        // The model also spends this budget on thinking, even for a short scan.
+        maxTokens: complete && engineKind() === 'server' ? (compact ? 30000 : 24000) : undefined,
         signal: controller.signal,
         onText: t => {
           const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
@@ -1411,10 +1415,18 @@ ${src.name}>>>`;
     };
     const writeComplete = async (source, i, path = String(i), depth = 0) => {
       if (fragments[path]?.notes) return fragments[path];
+      const sourceWords = source.trim().split(/\s+/).length;
+      const canSplit = depth < 3 && sourceWords >= 100;
       if (!fragments[path]?.split) {
+        let compact = false;
         try {
           const result = await retryNoteStep(async () => {
-            const r = await one(source, i);
+            let r = await one(source, i, compact);
+            if (r.stop === 'max_tokens' && !canSplit && !compact) {
+              compact = true;
+              onStatus(`Retrying part ${i + 1} of ${parts.length} with a larger writing budget…`, null, 'write');
+              r = await one(source, i, compact);
+            }
             if (r.stop === 'incomplete') throw aiRetryError('ai_busy');
             if (r.stop === 'max_tokens') throw Object.assign(new Error('This part exceeded the AI output limit.'), { code: 'notes_limit' });
             let notes;
@@ -1429,12 +1441,12 @@ ${src.name}>>>`;
           if (depth) { fragments[path] = retained; await persist(); }
           return retained;
         } catch (e) {
-          if (e.code !== 'notes_limit' || depth >= 3 || source.trim().split(/\s+/).length < 100) throw e;
+          if (e.code !== 'notes_limit' || !canSplit) throw e;
           fragments[path] = { split: true };
           await persist();
         }
       }
-      const smaller = splitText(source, Math.ceil(source.trim().split(/\s+/).length / 2));
+      const smaller = splitText(source, Math.ceil(sourceWords / 2));
       onStatus(`Writing part ${i + 1} of ${parts.length} in smaller sections…`, null, 'write');
       const results = [];
       for (const [j, fragment] of smaller.entries()) results.push(await writeComplete(fragment, i, `${path}.${j}`, depth + 1));
@@ -1487,6 +1499,20 @@ ${src.name}>>>`;
       notes.report.inferred.unshift(`Questions covered: about ${outQ} of ${qCount}.`);
     }
     note = (engineKind() === 'claude' ? `Ready. Cost about ${ar((r.usd * SAR).toFixed(2))} SAR.` : 'Ready. Written for free on the app server.') + (cutOff(r.stop) ? '\n⚠ The text is very long, so it stopped before the end; the end may be missing. Split it in two.' : '');
+  }
+  if (Array.isArray(notes.appendix?.vocab) && notes.appendix.vocab.length) {
+    const normalize = value => String(value ?? '').normalize('NFKC').toLowerCase()
+      .replace(/\p{M}|ـ/gu, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const source = ` ${normalize(text)} `;
+    const inSource = value => { const phrase = normalize(value); return phrase !== '' && source.includes(` ${phrase} `); };
+    const vocab = notes.appendix.vocab;
+    notes.appendix.vocab = vocab.filter(entry => inSource(entry?.term) && inSource(entry?.meaning));
+    if (notes.appendix.vocab.length < vocab.length) {
+      notes.report ||= {};
+      if (!Array.isArray(notes.report.left_out)) notes.report.left_out = [];
+      notes.report.left_out.push(en ? 'Glossary entries without wording found in the source were omitted.'
+        : 'حُذفت من الملحق مفردات لم يُعثر على ألفاظها أو تعريفاتها في المصدر.');
+    }
   }
   if (!en) { onStatus('Checking verses against the Mushaf…', 1, 'write'); try { await window.Mushaf.check(notes); } catch {} }
   const lesson = {
