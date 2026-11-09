@@ -15,7 +15,7 @@ const WRITE_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-l
 const HEAR_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
 const FILE_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 // notes: the stronger model first, and it may think before writing (slower, much better)
-const NOTES_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
+const NOTES_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const VOICE_MODELS = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 const OWNER_HASH = 'acbe7ee98a566ab6ed2537fc1d67662eddda3739d19aedde6ee8f89f223fe602';   // sha-256 of the owner code (the code itself is not stored here)
 const MAX_BODY = 900_000;            // characters of text: about 150 pages
@@ -63,10 +63,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const keyHeaders = env => ({ 'x-goog-api-key': env.GEMINI_API_KEY });
 const errCode = s => s === 429 ? 'quota' : s === 401 || s === 403 ? 'key' : 'ai';
 
+function rateLimit(text, header) {
+  let details = [];
+  try {
+    const parsed = JSON.parse(text)?.error?.details;
+    if (Array.isArray(parsed)) details = parsed;
+  } catch {}
+  const violations = details.flatMap(detail => detail.violations || []);
+  const retry = details.find(detail => typeof detail.retryDelay === 'string');
+  const retryAfter = Math.ceil(Number(header) || Number.parseFloat(retry?.retryDelay) || 0);
+  const daily = violations.some(v => /perday/i.test((v.quotaId || '') + (v.quotaMetric || '')) && Number(v.quotaValue) !== 0);
+  return { code: daily ? 'quota' : 'rate', retryAfter };
+}
+
 // Ask the AI, trying each model in turn (a model that is missing or out of free quota today is skipped).
 // `variants` lets a request be retried once in a simpler form if the AI refuses an optional setting.
 async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait, think }) {
   let last = { status: 500, text: '' };
+  let busy, rate, quota;
+  const attempts = [];
   for (const model of models) {
     for (let vi = 0; vi < variants.length; vi++) {
       const v = variants[vi];
@@ -88,17 +103,31 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson,
           ...(wait ? { signal: AbortSignal.timeout(wait) } : {}),
         });
         if (r.ok) return new Response(r.body, { headers: { ...h, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-model': model } });
-        last = { status: r.status, text: (await r.text()).slice(0, 500) };
-      } catch { last = { status: 504, text: 'The AI connection timed out.' }; break; }
+        const text = (await r.text()).slice(0, 8000);
+        last = { status: r.status, text };
+        if (r.status === 429) {
+          const limit = { ...rateLimit(text, r.headers.get('retry-after')), status: 429 };
+          if (limit.code === 'quota') quota = limit;
+          else if (!rate || limit.retryAfter > rate.retryAfter) rate = limit;
+        }
+      } catch {
+        last = { status: 504, text: 'The AI connection timed out.' };
+        attempts.push([model, last.status]);
+        break;
+      }
+      attempts.push([model, last.status]);
       const modelProblem = last.status !== 400 || /model|not found|not supported/i.test(last.text);
       if (modelProblem) break;               // try the next model
       if (vi === variants.length - 1) {      // the request itself was refused: stop
         return json({ error: last.text, code: 'bad', status: 400 }, 400, h);
       }
     }
+    if (last.status >= 500) busy = { status: last.status, code: 'ai_busy' };
     if (![404, 429, 400, 403, 500, 502, 503, 504].includes(last.status)) break;
   }
-  return json({ error: last.text || 'AI error', code: errCode(last.status), status: last.status }, last.status === 429 ? 429 : 502, h);
+  const failure = (rate?.retryAfter > 0 ? rate : busy || rate) || quota || { status: last.status, code: errCode(last.status) };
+  console.warn('AI generation failed', { attempts, failure });
+  return json(failure, failure.status === 429 ? 429 : 502, h);
 }
 
 async function boundedForm(req) {
@@ -436,7 +465,7 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
     if (req.method === 'OPTIONS') return new Response(null, { headers: h });
-    if (req.method === 'GET' && path === '/') return json({ ok: true, app: 'jund-notes', version: 8, uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH }, 200, h);
+    if (req.method === 'GET' && path === '/') return json({ ok: true, app: 'jund-notes', version: 9, uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH }, 200, h);
     if (path.startsWith('/push/')) return pushRoutes(req, env, h, path, url);
     if (path === '/widget' || path.startsWith('/widget/')) return widgetRoutes(req, env, h, path, url);
     if (req.method === 'GET' && /^\/ics\/[a-f0-9]{16,64}\.ics$/.test(path)) return icsFeed(env, path.slice(5, -4));
