@@ -329,6 +329,54 @@ const ytId = u => {
 };
 const unxml = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 
+function playlistData(html) {
+  const start = /(?:\bvar\s+ytInitialData|window\[["']ytInitialData["']\])\s*=\s*\{/.exec(html);
+  if (!start) return null;
+  const from = start.index + start[0].length - 1;
+  let depth = 0, quoted = false;
+  for (let i = from; i < html.length; i++) {
+    const c = html[i];
+    if (quoted && c === '\\') { i++; continue; }
+    if (c === '"') quoted = !quoted;
+    if (quoted) continue;
+    if (c === '{') depth++;
+    if (c === '}' && --depth === 0) return JSON.parse(html.slice(from, i + 1));
+  }
+  return null;
+}
+
+function playlistRenderer(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node.playlistVideoListRenderer?.contents)) return node.playlistVideoListRenderer.contents;
+  for (const child of Object.values(node)) {
+    const found = playlistRenderer(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+function playlistFromPage(html) {
+  const data = playlistData(html);
+  const rows = playlistRenderer(data?.contents) || [];
+  const title = data?.metadata?.playlistMetadataRenderer?.title
+    || unxml((html.match(/<meta property="og:title" content="([^"]*)"/) || [])[1] || '');
+  const items = [], seen = new Set();
+  let partial = null;
+  for (const row of rows) {
+    if (row.continuationItemRenderer) { partial = 'more'; continue; }
+    const video = row.playlistVideoRenderer;
+    const lockup = row.lockupViewModel || row.richItemRenderer?.content?.lockupViewModel;
+    const id = video?.videoId || (lockup?.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO' ? lockup.contentId : '');
+    if (!/^[\w-]{11}$/.test(id || '') || video?.isPlayable === false || seen.has(id)) continue;
+    if (items.length === 200) { partial = 'more'; break; }
+    seen.add(id);
+    const text = video?.title?.simpleText ?? video?.title?.runs?.map(run => run.text || '').join('')
+      ?? lockup?.metadata?.lockupMetadataViewModel?.title?.content;
+    items.push({ id, title: typeof text === 'string' ? text : '' });
+  }
+  return { title, items, partial };
+}
+
 /* ---------- reminders when the app is closed (Web Push, no message body) ---------- */
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
@@ -541,31 +589,36 @@ export default {
       const list = url.searchParams.get('list') || '';
       if (!/^[\w-]{10,64}$/.test(list)) return json({ error: 'bad list' }, 400, h);
       if (/^(RD|UL|LL|WL)/.test(list)) return json({ error: 'mix', code: 'mixlist' }, 404, h);   // Mixes / Liked / Watch later are personal: YouTube does not share them
-      // 1) the playlist page itself (up to ~100 videos), 2) the RSS feed (latest 15)
-      let items = [], title = '';
+      let pageStatus = 0, feedStatus = 0;
       try {
-        const r = await fetch(`https://www.youtube.com/playlist?list=${list}&hl=en`, { headers: { 'accept-language': 'en', 'user-agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36' } });
+        const r = await fetch(`https://www.youtube.com/playlist?list=${list}&hl=en`, {
+          headers: { 'accept-language': 'en', 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+          signal: AbortSignal.timeout(8000),
+        });
+        pageStatus = r.status;
         if (r.ok) {
-          const html = await r.text(), seen = new Set();
-          for (const m of html.matchAll(/"playlistVideoRenderer":\{"videoId":"([\w-]{11})"[\s\S]{0,1500}?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/g)) {
-            if (seen.has(m[1])) continue; seen.add(m[1]);
-            let t = m[2]; try { t = JSON.parse('"' + t + '"'); } catch {}
-            items.push({ id: m[1], title: t });
-          }
-          if (!items.length) for (const m of html.matchAll(/"videoId":"([\w-]{11})"/g)) if (!seen.has(m[1])) { seen.add(m[1]); items.push({ id: m[1], title: '' }); }
-          title = unxml((html.match(/<meta property="og:title" content="([^"]*)"/) || [])[1] || '');
+          const result = playlistFromPage(await readCapped(r, 4_000_000));
+          if (result.items.length) return json(result, 200, h);
         }
       } catch {}
-      if (!items.length) {
-        const r = await fetch(`https://www.youtube.com/feeds/videos.xml?playlist_id=${list}`);
+      try {
+        const r = await fetch(`https://www.youtube.com/feeds/videos.xml?playlist_id=${list}`, { signal: AbortSignal.timeout(8000) });
+        feedStatus = r.status;
         if (r.ok) {
-          const xml = await r.text();
-          items = [...xml.matchAll(/<entry>[\s\S]*?<yt:videoId>([\w-]{11})<\/yt:videoId>[\s\S]*?<title>([^<]*)<\/title>/g)].map(m => ({ id: m[1], title: unxml(m[2]) }));
-          title ||= unxml((xml.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
+          const xml = await readCapped(r, 500_000);
+          const title = unxml((xml.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
+          const items = [];
+          for (const [, entry] of xml.matchAll(/<entry\b[^>]*>([\s\S]*?)<\/entry>/g)) {
+            const id = entry.match(/<yt:videoId>([\w-]{11})<\/yt:videoId>/)?.[1];
+            if (id) items.push({ id, title: unxml(entry.match(/<title>([^<]*)<\/title>/)?.[1] || '') });
+          }
+          if (items.length) return json({ title, items, partial: 'feed' }, 200, h);
         }
+      } catch {}
+      if ([400, 404, 410].includes(feedStatus) && (pageStatus === 200 || pageStatus === 404)) {
+        return json({ error: 'no playable videos found', code: 'noplaylist' }, 404, h);
       }
-      if (!items.length) return json({ error: 'playlist not found', code: 'noplaylist' }, 404, h);
-      return json({ title, items: items.slice(0, 200) }, 200, h);
+      return json({ error: 'YouTube playlist temporarily unavailable', code: 'yt_unavailable' }, 502, h);
     }
     if (req.method === 'GET' && path === '/ytmeta') {
       const id = ytId(url.searchParams.get('url') || '');
