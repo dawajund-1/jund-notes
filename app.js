@@ -249,6 +249,10 @@ function initSettings() {
   $('#api-key').value = store.get('key', '');
   $('#model').value = store.get('model', 'claude-opus-5-5');
   $('#model').onchange = () => store.set('model', $('#model').value);
+  $('#claude-effort').value = store.get('claudeEffort', '');
+  $('#claude-effort').onchange = () => store.set('claudeEffort', $('#claude-effort').value);
+  $('#claude-scans').checked = store.get('claudeScans', false);
+  $('#claude-scans').onchange = () => store.set('claudeScans', $('#claude-scans').checked);
   $('#toggle-key').onclick = () => {
     const i = $('#api-key'); i.type = i.type === 'password' ? 'text' : 'password';
     $('#toggle-key').textContent = i.type === 'password' ? 'Show' : 'Hide';
@@ -343,7 +347,8 @@ function initSettings() {
     store.set('key', $('#api-key').value.trim());
     $('#key-status').textContent = 'Testing…';
     try {
-      const r = await callClaude({ system: 'أجب بكلمة واحدة.', messages: [{ role: 'user', content: 'قل: يعمل' }], maxTokens: 20, model: 'claude-sonnet-5-5' });
+      const r = await callClaude({ system: 'أجب بكلمة واحدة.', messages: [{ role: 'user', content: 'قل: يعمل' }], maxTokens: 256, effort: 'low' });
+      if (!r.text.trim() || r.stop !== 'end_turn') throw new Error('Claude did not complete the key test.');
       $('#key-status').textContent = '✓ The key works. (' + r.text.trim() + ')';
     } catch (e) { $('#key-status').textContent = '✗ ' + e.message; }
   };
@@ -364,7 +369,7 @@ function addSpend(model, usage) {
 }
 
 /* ---------- the AI call (streamed) ---------- */
-async function callClaude({ system, messages, maxTokens = 32000, model, onText, signal }) {
+async function callClaude({ system, messages, maxTokens = 32000, model, effort = store.get('claudeEffort', ''), onText, signal }) {
   const key = store.get('key');
   if (!key) throw new Error('No key yet. Add it in Settings first.');
   model ??= store.get('model', 'claude-opus-5-5');
@@ -380,30 +385,34 @@ async function callClaude({ system, messages, maxTokens = 32000, model, onText, 
       },
       body: JSON.stringify({
         model, max_tokens: maxTokens, stream: true,
+        ...(['low', 'medium', 'high'].includes(effort) ? { output_config: { effort } } : {}),
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         messages,
       }),
     });
   } catch (e) {
     if (e.name === 'AbortError') throw e;
-    throw new Error('Could not connect. Check the internet and try again.');
+    if (navigator.onLine === false) throw Object.assign(new Error('No internet connection right now.'), { code: 'offline' });
+    throw aiRetryError('ai_busy');
   }
   if (!res.ok) {
     let msg = '';
     try { msg = (await res.json())?.error?.message || ''; } catch {}
-    if (res.status === 401) throw new Error('The key is not correct. Copy it again from console.anthropic.com and paste it in Settings.');
+    if (res.status === 401) throw Object.assign(new Error(/CORS/i.test(msg) ? 'Your Claude Console organization blocks browser requests.' : 'Claude rejected the key. Check your Claude Console API key in Settings.'), { code: 'key' });
     if (res.status === 400 && /credit|balance|billing/i.test(msg)) throw new Error('Your credit ran out. Add credit at console.anthropic.com → Billing.');
-    if (res.status === 429) throw new Error('Too many requests at once. Wait a minute and try again.');
-    if (res.status === 529 || res.status >= 500) throw new Error('The service is busy. Try again in a few minutes.');
+    if (res.status === 429) throw aiRetryError('rate', Number(res.headers.get('retry-after')) || 0);
+    if (res.status >= 500) throw aiRetryError('ai_busy');
     throw new Error('Error (' + res.status + '): ' + msg);
   }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
-  let buf = '', text = '', usage = {}, stop = '';
+  let buf = '', text = '', usage = {}, stop = '', ended = false;
   for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
+    let chunk;
+    try { chunk = await reader.read(); }
+    catch (e) { if (e.name === 'AbortError') throw e; throw aiRetryError('ai_busy'); }
+    const { done, value } = chunk;
+    buf += done ? dec.decode() + '\n' : dec.decode(value, { stream: true });
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
@@ -412,11 +421,18 @@ async function callClaude({ system, messages, maxTokens = 32000, model, onText, 
       if (ev.type === 'message_start') Object.assign(usage, ev.message?.usage || {});
       else if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') { text += ev.delta.text; onText?.(text); }
       else if (ev.type === 'message_delta') { Object.assign(usage, ev.usage || {}); stop = ev.delta?.stop_reason || stop; }
-      else if (ev.type === 'error') throw new Error('The answer was cut off: ' + (ev.error?.message || ''));
+      else if (ev.type === 'message_stop') ended = true;
+      else if (ev.type === 'error') {
+        reader.cancel().catch(() => {});
+        if (ev.error?.type === 'rate_limit_error') throw aiRetryError('rate');
+        if (['overloaded_error', 'api_error'].includes(ev.error?.type)) throw aiRetryError('ai_busy');
+        throw Object.assign(new Error('Claude could not finish this response.'), { code: 'ai' });
+      }
     }
+    if (done) break;
   }
   const usd = addSpend(model, usage);
-  return { text, usage, usd, stop, model };
+  return { text, usage, usd, stop: ended && stop ? stop : 'incomplete', model };
 }
 
 function parseJSON(text) {
@@ -492,14 +508,14 @@ function aiRetryError(code, retryAfter = 0) {
   return Object.assign(new Error(message), { code, retryAfter });
 }
 
-async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false } = {}) {
+async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false, retries = 2 } = {}) {
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     try { return await run(); }
     catch (e) {
       signal.throwIfAborted();
       const retryable = ['ai_busy', 'rate'].includes(e.code) || (retryFormat && e.code === 'ai_format');
-      if (!retryable || attempt >= 2 || e.retryAfter > waitLimit) throw e;
+      if (!retryable || attempt >= retries || e.retryAfter > waitLimit) throw e;
       const delay = Math.max(1500 * 2 ** attempt, (e.retryAfter || 0) * 1000);
       onRetry(e, Math.ceil(delay / 1000));
       await new Promise((resolve, reject) => {
@@ -545,8 +561,8 @@ async function readStream(res, onText) {
   return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop || 'incomplete' };
 }
 // the strong AI: the free server, or Claude with the owner's own key
-async function callBig({ system, messages, onText, signal, maxTokens, deep, studyNotes }) {
-  if (engineKind() === 'claude') return callClaude({ system, messages, onText, signal, maxTokens });
+async function callBig({ system, messages, onText, signal, maxTokens, deep, studyNotes, writer = engineKind(), model, effort }) {
+  if (writer === 'claude') return callClaude({ system, messages, onText, signal, maxTokens, model, effort });
   return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens, deep, studyNotes });
 }
 
@@ -983,18 +999,18 @@ async function pdfProgress(slot, value) {
   } catch { return undefined; }
 }
 
-async function readScans(scans, signal, onStatus, cache, pages) {
+async function readScans(scans, signal, onStatus, cache, pages, useClaude) {
   const label = scans.map(({ page }) => page).join(', ');
   onStatus(`Reading scanned pages ${label}…`);
   try {
-    const output = await retryNoteStep(() => window.JundAttach.readScanBatch(scans, signal), signal,
-      (_, seconds) => onStatus(`Retrying scanned pages ${label} in ${seconds}s…`), { retryFormat: scans.length === 1 });
+    const output = await retryNoteStep(() => window.JundAttach.readScanBatch(scans, signal, useClaude), signal,
+      (_, seconds) => onStatus(`Retrying scanned pages ${label} in ${seconds}s…`), { retryFormat: scans.length === 1, retries: useClaude ? 1 : 2 });
     for (const { page, text } of output) cache.set(page, text.trim() || pages[page - 1]);
   } catch (e) {
     if (e.code !== 'ai_format' || scans.length < 2) throw e;
     const middle = Math.ceil(scans.length / 2);
-    await readScans(scans.slice(0, middle), signal, onStatus, cache, pages);
-    await readScans(scans.slice(middle), signal, onStatus, cache, pages);
+    await readScans(scans.slice(0, middle), signal, onStatus, cache, pages, useClaude);
+    await readScans(scans.slice(middle), signal, onStatus, cache, pages, useClaude);
   }
 }
 
@@ -1007,8 +1023,9 @@ async function readPdfSource(item, signal, onStatus) {
     pdfOcrCache.set(item.src, new Map(saved?.fingerprint === fingerprint ? saved?.pages : []));
   }
   const cache = pdfOcrCache.get(item.src);
+  const useClaude = engineKind() === 'claude' && store.get('claudeScans', false);
   const read = async scans => {
-    try { await readScans(scans, signal, onStatus, cache, item.pages); }
+    try { await readScans(scans, signal, onStatus, cache, item.pages, useClaude); }
     finally { if (fingerprint) await pdfProgress('ocr', { fingerprint, pages: [...cache] }); }
   };
   let doc;
@@ -1326,13 +1343,18 @@ const notesCheckpoints = new WeakMap();
 async function makeOne({ text, unit, sub, kind, lang, id, complete = false, sourceFile }, onStatus) {
   lang ||= langOf(text);
   const en = lang === 'en';
+  const writer = engineKind();
+  const claude = writer === 'claude';
+  const model = claude ? store.get('model', 'claude-opus-5-5') : undefined;
+  const effort = claude ? store.get('claudeEffort', '') : undefined;
+  const progressSlot = claude ? 'notes-claude' : 'notes';
   const desc = String(store.get('kindOther', '') || '').trim();
   const src = kind === 'other' ? (en
       ? { name: 'SOURCE', ask: `The user describes this input as: "${desc || 'other material'}". Understand it in that light (if it is a speech transcript, expect mishearings; if it is written, do not). Write the study file, the mind map and the check report from it. Stay with what is in it and add nothing:` }
       : { name: 'المصدر', ask: `وصف المستخدم هذا المصدر بأنه: «${desc || 'مادة أخرى'}». افهمه على هذا الأساس (إن كان تفريغًا صوتيًا فتوقّع أخطاء سماع، وإن كان مكتوبًا فلا). اكتب منه الملف الدراسي والخريطة الذهنية وتقرير التحقق. التزم بما فيه ولا تضف:` })
     : (en ? SOURCE_TEXT_EN : SOURCE_TEXT)[kind] || (en ? SOURCE_TEXT_EN : SOURCE_TEXT).transcript;
   let notes, note;
-  if (engineKind() === 'phone') {
+  if (writer === 'phone') {
     const r = await writeOnPhone({ text, unit, sub, src, complete }, onStatus);
     notes = r.notes;
     note = 'Ready. Written on your phone for free.' + (r.cut ? '\n⚠ One part ran long, so its end may be missing.' : '') + (r.partial ? '\n' + r.partial : '');
@@ -1367,7 +1389,7 @@ ${src.name}>>>`;
       ? `\n\nCOMPLETE COVERAGE: this is ${written ? 'written material' : 'a lesson'} the student must study in full. Cover every point${qCount > 5 ? ` and every one of the questions with its answer (there are about ${qCount}; keep their numbers, grouped by topic)` : ''}. Do not drop or shorten anything that carries information. These are full notes, not a "summary": never call the file or its sections a summary, even if the source calls itself one; the title is the topic itself. Think it through and plan the sections before writing.`
       : `\n\nالتغطية الكاملة: هذا ${written ? 'مصدر مكتوب' : 'درس'} سيذاكره الطالب كله. اشمل كل نقطة فيه${qCount > 5 ? `، وكل سؤال مع جوابه (عددها نحو ${qCount}؛ احفظ أرقامها ورتّبها في أبواب بحسب الموضوع)` : ''}. لا تحذف ولا تختصر شيئًا فيه علم. المطلوب ملاحظات كاملة لا «ملخص»: لا تسمِّ الملف ولا أقسامه «ملخصًا» ولو كان المصدر يسمّي نفسه كذلك؛ العنوان هو الموضوع نفسه (مثل: العقيدة الطحاوية). فكّر ورتّب الأقسام أولًا ثم اكتب.`;
     const words = text.split(/\s+/).filter(Boolean).length;
-    const parts = engineKind() === 'claude' || words <= 2200 ? [text] : splitText(text, 1600);
+    const parts = claude ? (complete && words > 4500 ? splitText(text, 4500) : [text]) : (words <= 2200 ? [text] : splitText(text, 1600));
     const expect = Math.max(400, words * 0.8);
     let done = 0;
     const one = async (part, i) => {
@@ -1376,7 +1398,8 @@ ${src.name}>>>`;
       const r = await callBig({
         system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
         messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head }], deep: true, studyNotes: complete,
-        maxTokens: complete && engineKind() === 'server' ? Math.max(4500, Math.min(14000, part.split(/\s+/).length * 8)) : undefined,
+        writer, model, effort,
+        maxTokens: complete && !claude ? Math.max(4500, Math.min(14000, part.split(/\s+/).length * 8)) : undefined,
         signal: controller.signal,
         onText: t => {
           const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
@@ -1386,17 +1409,18 @@ ${src.name}>>>`;
       return r;
     };
     if (parts.length > 1) onStatus(`Writing in ${ar(parts.length)} parts, so nothing is left out…`, 0.02, 'write');
-    const key = JSON.stringify([engineKind(), unit, sub, kind, lang, parts.length]);
-    const resume = complete && sourceFile && engineKind() === 'server';
+    const key = JSON.stringify([writer, unit, sub, kind, lang, parts.length, ...(claude ? [model, effort] : [])]);
+    const resume = complete && sourceFile;
     const fingerprint = resume ? await pdfFingerprint(sourceFile) : null;
-    const saved = fingerprint ? await pdfProgress('notes') : null;
-    const previous = resume ? notesCheckpoints.get(sourceFile) || (saved?.fingerprint === fingerprint ? saved : null) : null;
+    const saved = fingerprint ? await pdfProgress(progressSlot) : null;
+    const memory = resume ? notesCheckpoints.get(sourceFile) : null;
+    const previous = memory?.key === key ? memory : saved?.fingerprint === fingerprint ? saved : null;
     const matches = previous?.key === key && previous.text === text;
     const rs = matches ? previous.parts : new Array(parts.length);
     const fragments = matches ? previous.fragments || {} : {};
     const checkpoint = { fingerprint, key, text, parts: rs, fragments };
     if (resume) notesCheckpoints.set(sourceFile, checkpoint);
-    const persist = async () => { if (fingerprint) await pdfProgress('notes', checkpoint); };
+    const persist = async () => { if (fingerprint) await pdfProgress(progressSlot, checkpoint); };
     const retainSource = (result, source, i) => {
       if (!result.notes || source.length < 300 || JSON.stringify(result.notes.sections).length * 3 >= source.length) return result;
       const notes = structuredClone(result.notes);
@@ -1419,12 +1443,12 @@ ${src.name}>>>`;
             if (r.stop === 'max_tokens') throw Object.assign(new Error('This part exceeded the AI output limit.'), { code: 'notes_limit' });
             let notes;
             try { notes = JSON.parse(r.text); } catch {}
-            if (!Array.isArray(notes?.sections) || !notes.sections.length ||
+            if ((claude && r.stop !== 'end_turn') || !Array.isArray(notes?.sections) || !notes.sections.length ||
               notes.sections.some(section => !Array.isArray(section?.blocks) || !section.blocks.length)) {
               throw Object.assign(new Error('The AI returned an invalid notes format. Retry notes to continue.'), { code: 'ai_format' });
             }
             return { stop: r.stop, usd: r.usd, notes };
-          }, controller.signal, (_, seconds) => onStatus(`Retrying part ${i + 1} of ${parts.length} in ${seconds}s…`, null, 'write'), { retryFormat: true });
+          }, controller.signal, (_, seconds) => onStatus(`Retrying part ${i + 1} of ${parts.length} in ${seconds}s…`, null, 'write'), { retryFormat: true, retries: claude ? 1 : 2 });
           const retained = retainSource(result, source, i);
           if (depth) { fragments[path] = retained; await persist(); }
           return retained;
@@ -1443,7 +1467,7 @@ ${src.name}>>>`;
     };
     const writePart = async i => {
       if (!rs[i]) {
-        if (complete && engineKind() === 'server') {
+        if (complete) {
           rs[i] = await writeComplete(parts[i], i);
           for (const path of Object.keys(fragments)) {
             if (path === String(i) || path.startsWith(`${i}.`)) delete fragments[path];
@@ -1486,21 +1510,21 @@ ${src.name}>>>`;
       (notes.report ||= {}).inferred ||= [];
       notes.report.inferred.unshift(`Questions covered: about ${outQ} of ${qCount}.`);
     }
-    note = (engineKind() === 'claude' ? `Ready. Cost about ${ar((r.usd * SAR).toFixed(2))} SAR.` : 'Ready. Written for free on the app server.') + (cutOff(r.stop) ? '\n⚠ The text is very long, so it stopped before the end; the end may be missing. Split it in two.' : '');
+    note = (claude ? `Ready. Completed Claude responses cost about ${ar((r.usd * SAR).toFixed(2))} SAR.` : 'Ready. Written for free on the app server.') + (cutOff(r.stop) ? '\n⚠ The text is very long, so it stopped before the end; the end may be missing. Split it in two.' : '');
   }
   if (!en) { onStatus('Checking verses against the Mushaf…', 1, 'write'); try { await window.Mushaf.check(notes); } catch {} }
   const lesson = {
     id: id || 'L' + Date.now() + Math.random().toString(36).slice(2, 6),
     subject: { id: sub.id, name: sub.name, place: sub.place || '', book: sub.book || '' },
-    unit, kind, lang, engine: engineKind(), date: new Date().toISOString(), transcript: text, notes,
+    unit, kind, lang, engine: writer, date: new Date().toISOString(), transcript: text, notes,
     chat: [{ who: 'ai', text: note }],
   };
   await saveLesson(lesson);
   if (complete && sourceFile) {
     notesCheckpoints.delete(sourceFile);
     const fingerprint = await pdfFingerprint(sourceFile);
-    const saved = fingerprint ? await pdfProgress('notes') : null;
-    if (saved?.fingerprint && saved.fingerprint === fingerprint) await pdfProgress('notes', null);
+    const saved = fingerprint ? await pdfProgress(progressSlot) : null;
+    if (saved?.fingerprint && saved.fingerprint === fingerprint) await pdfProgress(progressSlot, null);
   }
   return lesson;
 }
@@ -2452,7 +2476,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.12';
+const APP_VERSION = '8.13';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
@@ -2474,7 +2498,7 @@ $('#lib-search').addEventListener('input', () => renderLibrary());
 // start transcribing a YouTube link from anywhere (the Assistant, a share)
 function startYouTube(url) { show('new'); $('#yt').value = url; $('#yt-go').click(); }
 // shared with calendar.js, studio.js and offline.js
-window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, shrinkImage, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
+window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, shrinkImage, callBig, callClaude, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
   saveLesson, download, safeName, addFiles, makeAttachmentNotes, startYouTube, me, keepAwake, engineKind, splitText, cleanHeator: cleanHeard, current: () => current };
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };
