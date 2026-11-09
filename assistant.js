@@ -300,10 +300,52 @@ function requestsNotes(text) {
     || /^(?:اكتب|أكتب|اصنع|أنشئ|انشئ|اعمل|أعمل|استخرج|أعد|اعد|أريد|اريد|أبغى|ابغى|سو|سوي)\s+(?:لي\s+)?(?:ملاحظات|الملاحظات|مذكرة|المذكرة|مذكرات|المذكرات)(?:\s|$|[.،؟!])/.test(ar);
 }
 
+function notePageSelection(text) {
+  const request = text.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) & 15))
+    .replace(/[\u061C\u200E\u200F\u064B-\u065F\u0670]/g, '');
+  const label = /(?:\b(?:PDF\s+)?pages?(?:\s+(?:numbers?\b|nos?\b\.?))?|(?:الصفحات|الصفحة|صفحات|صفحة|ص)(?![\p{L}])(?:\s+رقم)?)/u.source;
+  const separator = /(?:[-–—−]|\b(?:to|through|thru|until)\b|إلى|الى|حتى|لغاية|ل(?=\s*(?:صفحة|ص\s|\d)))/u.source;
+  const number = /\d+(?!\d|[.,]\d)/u.source;
+  const page = label + /\s*[:#]?\s*/.source;
+  const entry = '(' + number + ')(?:\\s*' + separator + '\\s*(?:' + page + ')?(' + number + '))?';
+  const first = new RegExp(/(?:\bfrom\s+|من\s+)?/.source + page + entry, 'giu');
+  const next = new RegExp(/^\s*(?:[,،]\s*|(?:and\b|و)\s*)/.source + '(?:' + page + ')?' + entry, 'iu');
+  const dangling = new RegExp('^\\s*' + separator, 'iu');
+  const ranges = [];
+  let rest = '', consumed = 0, invalid = false;
+  const add = (from, to) => {
+    const range = { from: Number(from), to: Number(to ?? from) };
+    if (!Number.isSafeInteger(range.from) || !Number.isSafeInteger(range.to) || range.from < 1 || range.to < range.from) invalid = true;
+    ranges.push(range);
+  };
+  for (let m; (m = first.exec(request));) {
+    rest += request.slice(consumed, m.index);
+    add(m[1], m[2]);
+    let end = first.lastIndex;
+    for (let extra; (extra = next.exec(request.slice(end)));) {
+      add(extra[1], extra[2]);
+      end += extra[0].length;
+    }
+    if (dangling.test(request.slice(end))) invalid = true;
+    consumed = first.lastIndex = end;
+  }
+  rest += request.slice(consumed);
+  const explicit = new RegExp(/(?:\bfrom\s+|من\s+)/.source + page, 'iu');
+  if (explicit.test(rest)) invalid = true;
+  const only = ranges.length > 0 && /^(?:(?:please\b|فقط|لو سمحت|من فضلك|only\b)|[\s,،.;؛؟?!])*$/iu.test(rest);
+  const merged = [];
+  for (const range of ranges.sort((a, b) => a.from - b.from)) {
+    const last = merged[merged.length - 1];
+    if (last && range.from <= last.to + 1) last.to = Math.max(last.to, range.to);
+    else merged.push(range);
+  }
+  return { ranges: merged, only, invalid, rest: rest.replace(/^[\s,،:؛-]+/, '').trim() };
+}
+
 async function send({ retryNotes = false } = {}) {
   const files = retryNotes ? [] : window.JundAttach?.homeFiles() || [];
   const att = files[0];
-  const input = retryNotes ? (AR_() ? 'أعد الملاحظات من الملف' : 'Make complete study notes again') : $('#as-text').value.trim();
+  const input = retryNotes ? recentAttachment?.noteRequest || (AR_() ? 'أعد الملاحظات من الملف' : 'Make complete study notes again') : $('#as-text').value.trim();
   const t = att && /^[\p{P}\s]*$/u.test(input)
     ? (AR_() ? 'ما محتوى المرفقات؟ لخّصها باختصار.' : 'What do the attachments contain? Summarise them briefly.')
     : input;
@@ -318,19 +360,25 @@ async function send({ retryNotes = false } = {}) {
   const ar = AR_();
   let st;
   try {
-    if (retryNotes || requestsNotes(t)) {
+    const pages = notePageSelection(t);
+    if (retryNotes || requestsNotes(t) || requestsNotes(pages.rest) || pages.only) {
       const sources = recentAttachment?.chatId === chatId ? recentAttachment.files : [];
       if (!sources.length) {
         pend.text = ar ? 'أرفق ملف PDF أو ملفًا نصيًا عبر زر + هنا، ثم أرسل طلب إعداد الملاحظات.' : 'Tap + to attach the PDF or text file here, then send your request to make study notes.';
         return;
       }
+      if (pages.invalid) {
+        pend.text = ar ? 'اكتب نطاقًا صحيحًا، مثل: من صفحة 21 إلى 53.' : 'Enter a valid range, such as pages 21–53.';
+        return;
+      }
+      recentAttachment.noteRequest = t;
       st = S.start(ar ? 'إعداد الملاحظات الدراسية' : 'Making study notes');
-      const results = await J.makeAttachmentNotes(sources, (file, status) => S.note(st, `${file.name} · ${status}`));
+      const results = await J.makeAttachmentNotes(sources, (file, status) => S.note(st, `${file.name} · ${status}`), pages.ranges);
       const saved = results.filter(result => result.lesson);
       const failed = results.filter(result => result.error);
       if (saved.length) {
         pend.text = ar ? 'حُفظت الملاحظات الدراسية في المكتبة.' : 'Your study notes are saved in the Library.';
-        pend.lessons = saved.map(({ lesson }) => ({ id: lesson.id, label: lesson.notes.title || lesson.unit }));
+        pend.lessons = saved.map(({ lesson }) => ({ id: lesson.id, label: pages.ranges.length ? lesson.unit : lesson.notes.title || lesson.unit }));
       } else {
         pend.text = ar ? 'تعذّر إعداد الملاحظات الدراسية.' : 'Mustatar could not make the study notes.';
       }

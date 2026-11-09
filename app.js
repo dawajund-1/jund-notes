@@ -892,9 +892,10 @@ async function readPdf(file) {
   try { return await readPdfPages(doc); }
   finally { await doc.destroy(); }
 }
-async function readPdfPages(doc) {
+async function readPdfPages(doc, from = 1, to = doc.numPages, signal) {
   const pages = [];
-  for (let i = 1; i <= doc.numPages; i++) {
+  for (let i = from; i <= to; i++) {
+    signal?.throwIfAborted();
     const page = await doc.getPage(i);
     const W = page.getViewport({ scale: 1 }).width;
     const tc = await page.getTextContent();
@@ -967,7 +968,7 @@ function pdfFingerprint(file) {
     .then(bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')).catch(() => null));
   return pdfFingerprints.get(file);
 }
-async function pdfProgress(slot, fingerprint, value) {
+async function pdfProgress(slot, fingerprint, value, scope = '') {
   if (!fingerprint) return;
   try {
     pdfProgressDb ??= new Promise((resolve, reject) => {
@@ -980,12 +981,13 @@ async function pdfProgress(slot, fingerprint, value) {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction('progress', value === undefined ? 'readonly' : 'readwrite');
       const store = tx.objectStore('progress');
-      const key = `${slot}:${fingerprint}`;
+      const key = `${slot}:${fingerprint}${scope ? ':' + scope : ''}`;
       let result;
       if (value === undefined) {
         const current = store.get(key);
         current.onsuccess = () => {
           if (current.result) { result = current.result; return; }
+          if (scope) return;
           const legacy = store.get(slot);
           legacy.onsuccess = () => {
             if (legacy.result?.fingerprint === fingerprint) result = legacy.result;
@@ -993,10 +995,12 @@ async function pdfProgress(slot, fingerprint, value) {
         };
       } else if (value === null) {
         store.delete(key);
-        const legacy = store.get(slot);
-        legacy.onsuccess = () => {
-          if (legacy.result?.fingerprint === fingerprint) store.delete(slot);
-        };
+        if (!scope) {
+          const legacy = store.get(slot);
+          legacy.onsuccess = () => {
+            if (legacy.result?.fingerprint === fingerprint) store.delete(slot);
+          };
+        }
       } else if (slot === 'ocr') {
         const current = store.get(key);
         current.onsuccess = () => {
@@ -1025,8 +1029,13 @@ async function readScans(scans, signal, onStatus, cache, pages) {
   }
 }
 
-async function readPdfSource(item, signal, onStatus) {
-  if (!pdfHasScans(item)) return pdfSlice(item);
+async function readPdfSource(item, signal, onStatus, openedDoc) {
+  const join = cache => item.pages.slice(item.from - 1, item.to).map((embedded, i) => {
+    const page = item.from + i;
+    const text = cache?.get(page) ?? embedded;
+    return item.pageLabels && text.trim() ? `[PDF ${page}]\n${text}` : text;
+  }).join('\n\n').trim();
+  if (!pdfHasScans(item)) return item.pageLabels ? join() : pdfSlice(item);
   if (navigator.onLine === false) throw Object.assign(new Error('Connect to the internet to read the scanned PDF pages.'), { code: 'scanoffline' });
   const fingerprint = await pdfFingerprint(item.src);
   if (!pdfOcrCache.has(item.src)) {
@@ -1038,7 +1047,7 @@ async function readPdfSource(item, signal, onStatus) {
     try { await readScans(scans, signal, onStatus, cache, item.pages); }
     finally { await pdfProgress('ocr', fingerprint, { fingerprint, pages: [...cache] }); }
   };
-  let doc;
+  let doc = openedDoc;
   let scans = [], bytes = 0;
   try {
     for (let i = item.from; i <= item.to; i++) {
@@ -1046,7 +1055,7 @@ async function readPdfSource(item, signal, onStatus) {
       const embedded = item.pages[i - 1];
       if (!needsPdfOcr(embedded)) continue;
       if (!cache.has(i)) {
-        onStatus(`Reading scanned page ${i} of ${item.to}…`);
+        onStatus(`Reading scanned page ${i} (${i - item.from + 1}/${item.to - item.from + 1})…`);
         doc ??= await openPdf(item.src);
         const page = await doc.getPage(i), size = page.getViewport({ scale: 1 });
         const viewport = page.getViewport({ scale: 2200 / Math.max(size.width, size.height) });
@@ -1074,8 +1083,8 @@ async function readPdfSource(item, signal, onStatus) {
       }
     }
     if (scans.length) await read(scans);
-    return item.pages.slice(item.from - 1, item.to).map((text, i) => cache.get(item.from + i) ?? text).join('\n\n').trim();
-  } finally { if (doc) await doc.destroy(); }
+    return join(cache);
+  } finally { if (doc && !openedDoc) await doc.destroy(); }
 }
 
 /* audio, video and YouTube items: transcribed one after another, then they are ordinary lessons */
@@ -1350,7 +1359,7 @@ const SOURCE_TEXT_EN = {
 };
 
 const notesCheckpoints = new WeakMap();
-async function makeOne({ text, unit, sub, kind, lang, id, complete = false, sourceFile }, onStatus) {
+async function makeOne({ text, unit, sub, kind, lang, id, complete = false, sourceFile, sourceScope = '' }, onStatus) {
   lang ||= langOf(text);
   const en = lang === 'en';
   const desc = String(store.get('kindOther', '') || '').trim();
@@ -1400,12 +1409,15 @@ ${src.name}>>>`;
     const one = async (part, i, compact = false) => {
       const head = parts.length > 1 ? (en ? `\n\nThis is PART ${i + 1} of ${parts.length} of one source. Write the notes for this part only, completely.` : `\n\nهذا هو الجزء ${i + 1} من ${parts.length} من مصدر واحد. اكتب ملاحظات هذا الجزء وحده كاملة.`) : '';
       const msg = part === text ? user : user.replace(text, () => part);
+      const studyGuide = sourceScope ? (en
+        ? '\n\nOrganize the notes around the source’s argument. For each major claim, connect the evidence and reasoning given in the source, preserving conditions, exceptions and disagreements. Cite the [PDF n] markers where useful. The assembled guide usually runs about 5–50 rendered pages. Use the detail the source warrants, without padding or cutting material to hit a page count. The app handles pagination.'
+        : '\n\nرتّب الملاحظات بحسب تسلسل الحجة في المصدر. اربط كل دعوى رئيسة بدليلها وتعليلها الواردين في المصدر، واحفظ الشروط والاستثناءات والخلاف. أحل إلى علامات [PDF n] حيث تفيد. يقع الملف النهائي عادةً في نحو ٥–٥٠ صفحة بعد التنسيق. اجعل التفصيل مناسبًا للمادة بلا حشو ولا حذف لمجرد بلوغ عدد معين. يتولى التطبيق توزيع الصفحات.') : '';
       const recovery = compact ? (en
         ? '\n\nReturn the complete study sections first, using concise blocks. Preserve every source fact, quote, condition and exception. Omit optional extras that repeat the study sections.'
         : '\n\nأعد الأقسام الدراسية كاملة في نقاط موجزة. احفظ كل معلومة واقتباس وشرط واستثناء من المصدر. احذف الإضافات الاختيارية التي تكرر ما في الأقسام.') : '';
       const r = await callBig({
         system: en ? window.JUND_METHOD_EN : window.JUND_METHOD,
-        messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head + recovery }], deep: true, studyNotes: complete,
+        messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head + studyGuide + recovery }], deep: true, studyNotes: complete,
         // The model also spends this budget on thinking, even for a short scan.
         maxTokens: complete && engineKind() === 'server' ? (compact ? 30000 : 24000) : undefined,
         signal: controller.signal,
@@ -1420,7 +1432,7 @@ ${src.name}>>>`;
     const key = JSON.stringify([engineKind(), unit, sub, kind, lang, parts.length]);
     const resume = complete && sourceFile && engineKind() === 'server';
     const fingerprint = resume ? await pdfFingerprint(sourceFile) : null;
-    const saved = await pdfProgress('notes', fingerprint);
+    const saved = await pdfProgress('notes', fingerprint, undefined, sourceScope);
     const inMemory = resume ? notesCheckpoints.get(sourceFile) : null;
     const previous = inMemory?.key === key && inMemory.text === text ? inMemory : saved;
     const matches = previous?.key === key && previous.text === text;
@@ -1428,7 +1440,7 @@ ${src.name}>>>`;
     const fragments = matches ? previous.fragments || {} : {};
     const checkpoint = { fingerprint, key, text, parts: rs, fragments };
     if (resume) notesCheckpoints.set(sourceFile, checkpoint);
-    const persist = () => pdfProgress('notes', fingerprint, checkpoint);
+    const persist = () => pdfProgress('notes', fingerprint, checkpoint, sourceScope);
     const retainSource = (result, source, i) => {
       if (!result.notes || source.length < 300 || JSON.stringify(result.notes.sections).length * 3 >= source.length) return result;
       const notes = structuredClone(result.notes);
@@ -1519,6 +1531,7 @@ ${src.name}>>>`;
     // the title is the topic, not "a summary of…"
     const noSum = t => String(t || '').replace(/^\s*(مُ?لَ?خَّ?صُ?|ملخص|خلاصة|summary of|summary:?)\s*(كِتَابِ|كتاب|درس|مادة)?\s*/i, '').replace(/[«»"]/g, '').trim();
     notes.title = noSum(notes.title) || unit; notes.subtitle = noSum(notes.subtitle);
+    if (sourceScope) notes.subtitle = [notes.subtitle, (en ? 'Source PDF pages ' : 'صفحات المصدر ') + sourceScope].filter(Boolean).join(' · ');
     for (const sec of notes.sections || []) sec.heading = String(sec.heading || '').replace(/^\s*(ملخص|خلاصة)\s+/, '');
     // how many of the source's questions made it into the notes
     if (qCount > 5) {
@@ -1553,13 +1566,13 @@ ${src.name}>>>`;
   if (complete && sourceFile) {
     notesCheckpoints.delete(sourceFile);
     const fingerprint = await pdfFingerprint(sourceFile);
-    await pdfProgress('notes', fingerprint, null);
+    await pdfProgress('notes', fingerprint, null, sourceScope);
   }
   return lesson;
 }
 
 // Chat and New notes share the same generator and lesson storage.
-async function makeAttachmentNotes(files, onProgress) {
+async function makeAttachmentNotes(files, onProgress, pageRanges = []) {
   if (controller) throw new Error('Mustatar is already making notes. Wait for them to finish.');
   if (engineKind() === 'claude' && !store.get('key')) throw new Error('Add your Claude key in Settings before making notes.');
   controller = new AbortController();
@@ -1575,11 +1588,27 @@ async function makeAttachmentNotes(files, onProgress) {
       let phase = 'read';
       try {
         status('Reading the source…');
-        let text;
+        let text, sourceScope = '';
         if (isPdfFile(file)) {
-          const pages = await readPdf(file);
-          text = await readPdfSource({ src: file, pages, from: 1, to: pages.length }, controller.signal, status);
+          const doc = await openPdf(file);
+          try {
+            const ranges = pageRanges.length ? pageRanges : [{ from: 1, to: doc.numPages }];
+            if (ranges.some(({ from, to }) => !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 1 || to < from || to > doc.numPages)) {
+              throw new Error(window.ZadLang === 'ar' ? `حدّد صفحات صحيحة من 1 إلى ${doc.numPages} حسب ترتيبها في ملف PDF.`
+                : `Choose PDF pages from 1 to ${doc.numPages}, in file order.`);
+            }
+            if (pageRanges.length) sourceScope = ranges.map(({ from, to }) => from === to ? String(from) : `${from}–${to}`).join(', ');
+            const sources = [];
+            for (const { from, to } of ranges) {
+              status(`Reading PDF pages ${from}–${to}…`);
+              const selected = await readPdfPages(doc, from, to, controller.signal);
+              const pages = new Array(from - 1).concat(selected);
+              sources.push(await readPdfSource({ src: file, pages, from, to, pageLabels: !!sourceScope }, controller.signal, status, doc));
+            }
+            text = sources.filter(Boolean).join('\n\n');
+          } finally { await doc.destroy(); }
         } else if (file.type.startsWith('text/') || /\.txt$/i.test(file.name)) {
+          if (pageRanges.length) throw new Error(window.ZadLang === 'ar' ? 'تحديد الصفحات متاح لملفات PDF فقط.' : 'Page ranges are available for PDF files.');
           text = (await file.text()).trim();
         } else {
           throw new Error('For recordings, videos or photos, use Menu → New notes → Choose files.');
@@ -1587,10 +1616,10 @@ async function makeAttachmentNotes(files, onProgress) {
         if (!text) throw new Error('No readable text was found in this file.');
         const lang = pickLang(text);
         if (lang === 'en' && engineKind() === 'phone') throw new Error('Choose the app server in Settings to write English notes.');
-        const unit = file.name.replace(/\.[^.]+$/, '');
+        const unit = file.name.replace(/\.[^.]+$/, '') + (sourceScope ? ` (${lang === 'ar' ? 'ص' : 'pp.'} ${sourceScope})` : '');
         const sub = window.guessSubject?.(unit + ' ' + text.slice(0, 4000)) || { id: 'other:General', name: 'General' };
         phase = 'write';
-        const lesson = await makeOne({ text, unit, sub, kind: 'book', lang, complete: true, sourceFile: file }, status);
+        const lesson = await makeOne({ text, unit, sub, kind: 'book', lang, complete: true, sourceFile: file, sourceScope }, status);
         results.push({ file, lesson });
       } catch (error) { results.push({ file, error, phase }); }
     }
