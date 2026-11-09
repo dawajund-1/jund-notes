@@ -464,12 +464,14 @@ async function serverFetch(path, init = {}) {
   try { res = await fetch(base + path, init); }
   catch (e) {
     if (e.name === 'AbortError') throw e;
-    throw Object.assign(new Error('No internet connection right now.'), { code: 'offline' });
+    if (navigator.onLine === false) throw Object.assign(new Error('No internet connection right now.'), { code: 'offline' });
+    throw Object.assign(new Error('Could not reach Mustatar’s AI server. Try again in a moment.'), { code: 'server' });
   }
   if (!res.ok) {
     let j = {}; try { j = await res.json(); } catch {}
     if (j.code === 'quota') throw Object.assign(new Error(store.get('userKey') ? 'Your own free daily AI limit is used up. It resets every day at about 10–11 am Saudi time.' : 'The shared free daily AI limit is used up. It resets every day at about 10–11 am Saudi time. Tip: add your own free AI key in Settings → AI key, to get your own limit.'), { code: 'quota' });
     if (j.code === 'toolong') throw Object.assign(new Error('Too big for one go. Choose fewer pages or a shorter file.'), { code: 'toolong' });
+    if (j.code === 'upload') throw Object.assign(new Error('The AI server could not read this attachment. Try again or choose a smaller file.'), { code: 'upload' });
     if ((j.code === 'key' || j.code === 'nokey') && store.get('userKey')) throw Object.assign(new Error('Your own AI key is not working. Check it in Settings → AI key, or remove it.'), { code: 'key' });
     if (j.code === 'key' || j.code === 'nokey') throw Object.assign(new Error('The server key is wrong or not added yet. Finish the server setup steps.'), { code: 'key' });
     if (j.code === 'owner') throw Object.assign(new Error('wrong code'), { code: 'owner', status: 403 });
@@ -2158,7 +2160,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.7';
+const APP_VERSION = '8.8';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});

@@ -285,7 +285,10 @@ function paintWork(pend) {
 async function send() {
   const files = window.JundAttach?.homeFiles() || [];
   const att = files[0];
-  const t = $('#as-text').value.trim() || (att ? (window.ZadLang === 'ar' ? 'ما في هذا الملف؟ لخّصه باختصار.' : 'What is in this file? Summarise it briefly.') : '');
+  const input = $('#as-text').value.trim();
+  const t = att && /^[\p{P}\s]*$/u.test(input)
+    ? (AR_() ? 'ما محتوى المرفقات؟ لخّصها باختصار.' : 'What do the attachments contain? Summarise them briefly.')
+    : input;
   if (!t || busy) return;
   busy = true; $('#as-send').disabled = true;
   log.push({ who: 'me', text: (att ? files.map(f => '📎 ' + f.name).join('\n') + '\n' : '') + t }); if (att) window.JundAttach.clearHome(); $('#as-text').value = ''; $('#as-text').style.height = 'auto';
@@ -310,6 +313,7 @@ async function send() {
       r = await J.callServer({ system: SYSTEM(), user, maxTokens: 3000, onText: x => S.note(st, ar ? `${x.length} حرفًا` : `${x.length} characters`) });
       S.ok(st, '');
     }
+    if (att && /^(incomplete|max_tokens)$/.test(r.stop || '')) throw new Error(ar ? 'لم يكتمل الرد على المرفقات. حاول مرة أخرى أو أرسل صفحات أقل.' : 'The response to the attachments was incomplete. Try again or send fewer pages.');
     const out = J.parseJSON(r.text);
     const acts = out.actions || [];
     if (acts.length) {
