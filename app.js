@@ -2141,7 +2141,11 @@ $('#save-pdf').onclick = () => {
   $('#frame-' + currentTab).classList.add('print-me');
   const old = document.title;
   document.title = current ? `${current.subject.name} - ${current.unit}${currentTab === 'map' ? ' - mind map' : ''}` : bookTitle;
-  setTimeout(() => { window.print(); setTimeout(() => { document.title = old; }, 1000); }, 50);
+  setTimeout(() => {
+    if (window.MustatarAndroid) window.MustatarAndroid.postMessage(JSON.stringify({ action: 'print' }));
+    else window.print();
+    setTimeout(() => { document.title = old; }, 1000);
+  }, 50);
 };
 
 /* ---------- chat: edits and questions ---------- */
@@ -2481,6 +2485,25 @@ $('#font').onchange = () => { store.set('font', $('#font').value); applyFont(); 
 applyFont();
 
 /* ---------- text shared from another app (Samsung recorder → Share) ---------- */
+if (window.MustatarAndroid) {
+  window.JundNativeShare = async (text, path, name) => {
+    show('assistant'); window.JundAttach?.homeSetup();
+    if (path && /^\/__mustatar_share\/[0-9a-f-]{36}$/.test(path)) {
+      try {
+        const response = await fetch(path, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Shared file is unavailable');
+        const blob = await response.blob();
+        window.JundAttach?.addHome([new File([blob], name, { type: blob.type })]);
+      } catch { window.JundCal?.toast('Could not open the shared file. Please add it using +.'); }
+      finally { window.MustatarAndroid.postMessage(JSON.stringify({ action: 'shareDone', path })); }
+    }
+    if (text) {
+      const input = $('#as-text'); if (!input) return;
+      input.value = text; input.dispatchEvent(new Event('input'));
+    }
+  };
+  document.addEventListener('DOMContentLoaded', () => window.MustatarAndroid.postMessage(JSON.stringify({ action: 'ready' })), { once: true });
+}
 async function receiveShared() {
   const u = new URL(location.href);
   let text = u.searchParams.get('text') || '';
