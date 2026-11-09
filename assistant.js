@@ -70,12 +70,17 @@ function build() {
       <button type="button" class="q" id="hm-focus"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 1.5M10 3h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Focus</button>
     </div>
       <div class="as-input">
+        <details class="as-ai" id="as-ai" data-noi18n>
+          <summary id="as-ai-summary"></summary>
+          <div class="as-ai-controls" id="as-ai-controls"></div>
+        </details>
         <textarea id="as-text" rows="1" dir="auto" placeholder="Message Mustatar…"></textarea>
         <div class="as-tools"><button type="button" class="tool-btn as-mic" id="as-mic" aria-label="Talk with Mustatar"><svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button><span class="as-sp"></span><button type="button" class="as-go" id="as-send" aria-label="Send"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
       </div>
       <div class="muted as-hint" id="as-hint"></div>
     </div>`;
   $('#as-send').onclick = send;
+  J.bindAiControls($('#as-ai-controls'), 'chat', $('#as-ai-summary'));
   setTimeout(() => window.JundAttach?.homeSetup(), 0);
   $('#as-text').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); send(); } });
   $('#as-text').addEventListener('input', () => { const t = $('#as-text'); t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight) + 'px'; });
@@ -308,6 +313,8 @@ async function send({ retryNotes = false } = {}) {
     ? (AR_() ? 'ما محتوى المرفقات؟ لخّصها باختصار.' : 'What do the attachments contain? Summarise them briefly.')
     : input;
   if (!t || busy) return;
+  const ai = J.aiProfile('chat');
+  $('#as-ai').open = false;
   busy = true; $('#as-send').disabled = true;
   if (att) recentAttachment = { chatId, files };
   log.push({ who: 'me', text: (att ? files.map(f => '📎 ' + f.name).join('\n') + '\n' : '') + t });
@@ -353,15 +360,16 @@ async function send({ retryNotes = false } = {}) {
     let r;
     if (att) {
       st = S.start(ar ? `قراءة الملف: ${att.name}` : `Reading the file: ${att.name}`, `${(att.size / 1048576).toFixed(1)} MB`);
-      r = await window.JundAttach.askFiles(files, { system: SYSTEM(), user: user + '\n\n(The file above is attached to this message. Read it to answer; if it has dates, times or tasks and the student asks, add them with actions.)', json: true, maxTokens: 6000,
+      r = await window.JundAttach.askFiles(files, { ai, system: SYSTEM(), user: user + '\n\n(The file above is attached to this message. Read it to answer; if it has dates, times or tasks and the student asks, add them with actions.)', json: true,
         onText: x => S.note(st, ar ? `يكتب… ${x.length} حرفًا` : `writing… ${x.length} characters`) });
-      S.ok(st, ar ? 'تمت القراءة' : 'read');
     } else {
       st = S.start(ar ? 'التفكير والكتابة' : 'Thinking and writing');
-      r = await J.callServer({ system: SYSTEM(), user, maxTokens: 3000, onText: x => S.note(st, ar ? `${x.length} حرفًا` : `${x.length} characters`) });
-      S.ok(st, '');
+      r = await J.callAssistant({ ai, system: SYSTEM(), user, onText: x => S.note(st, ar ? `${x.length} حرفًا` : `${x.length} characters`) });
     }
-    if (att && /^(incomplete|max_tokens)$/.test(r.stop || '')) throw new Error(ar ? 'لم يكتمل الرد على المرفقات. حاول مرة أخرى أو أرسل صفحات أقل.' : 'The response to the attachments was incomplete. Try again or send fewer pages.');
+    if (!r.text?.trim() || !['end_turn', 'STOP'].includes(r.stop)) {
+      throw new Error(ar ? 'لم يكتمل الرد. حاول مرة أخرى أو قلّل حجم الطلب.' : 'The reply was incomplete. Try again or shorten the request.');
+    }
+    S.ok(st, r.model || '');
     const out = J.parseJSON(r.text);
     const acts = out.actions || [];
     if (acts.length) {

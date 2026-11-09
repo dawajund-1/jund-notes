@@ -731,6 +731,12 @@ body.vx-open { overflow: hidden; }
 #screen-assistant .as-input:focus-within { border-color: color-mix(in srgb, var(--gold) 55%, transparent); }
 #screen-assistant .as-input textarea { width: 100%; border: 0; background: transparent; padding: 2px 4px; min-height: 30px; font-size: 1rem; line-height: 1.5; outline: none; box-shadow: none; resize: none; color: var(--ink); }
 .as-tools { display: flex; align-items: center; gap: 4px; }
+.as-ai { color: var(--ink-2); font-size: .82rem; }
+.as-ai summary { cursor: pointer; padding: 4px; overflow-wrap: anywhere; }
+.as-ai-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.as-ai-controls .field { margin: 0; min-width: 0; }
+.as-ai-controls .field:first-child, .as-ai-controls small { grid-column: 1 / -1; }
+.as-ai-controls select { width: 100%; }
 .as-sp { flex: 1; }
 .tool-btn { width: 38px; height: 38px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink-2); }
 .tool-btn:hover, .tool-btn:active { color: var(--ink); background: var(--bg); }
