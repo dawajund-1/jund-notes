@@ -898,6 +898,8 @@ async function readPdfPages(doc) {
     const page = await doc.getPage(i);
     const W = page.getViewport({ scale: 1 }).width;
     const tc = await page.getTextContent();
+    const letters = tc.items.map(item => item.str || '').join('');
+    const pageRtl = (letters.match(/\p{Script=Arabic}/gu) || []).length >= (letters.match(/\p{Script=Latin}/gu) || []).length;
     // 1. pieces → lines (same height)
     const lines = [];
     for (const it of tc.items) {
@@ -940,15 +942,16 @@ async function readPdfPages(doc) {
     const mirrored = firstOf(joined, '»', '«') || (!/[«»]/.test(joined) && firstOf(joined, ')', '('));
     if (mirrored) for (const z of segs) if (z.rtl) z.text = z.text.replace(/[«»()]/g, c => ({ '«': '»', '»': '«', '(': ')', ')': '(' }[c]));
     for (const z of segs) z.text = (z.text || '').replace(/ملسو هيلع هللا ىلص/g, 'ﷺ');
-    // 3. two columns? read the right column fully, then the left (Arabic order)
+    // 3. Read both columns in the source page's reading direction.
     const mid = W / 2;
     const left = segs.filter(z => z.x1 < mid + W * 0.02), right = segs.filter(z => z.x0 > mid - W * 0.02);
     const twoCol = left.length > 3 && right.length > 3 && left.length + right.length >= segs.length * 0.8;
-    const order = (list) => list.sort((a, b) => b.y - a.y || b.x0 - a.x0).map(z => z.text).filter(Boolean).join('\n');
+    const order = (list) => list.sort((a, b) => b.y - a.y || (pageRtl ? b.x0 - a.x0 : a.x0 - b.x0)).map(z => z.text).filter(Boolean).join('\n');
     let text;
     if (twoCol) {
       const spans = segs.filter(z => !left.includes(z) && !right.includes(z));
-      text = [order(spans.filter(z => z.y > Math.max(...right.map(r => r.y), ...left.map(r => r.y)))), order(right), order(left),
+      const columns = pageRtl ? [right, left] : [left, right];
+      text = [order(spans.filter(z => z.y > Math.max(...right.map(r => r.y), ...left.map(r => r.y)))), ...columns.map(order),
         order(spans.filter(z => z.y <= Math.max(...right.map(r => r.y), ...left.map(r => r.y))))].filter(Boolean).join('\n');
     } else text = order(segs);
     pages.push(text.normalize('NFKC'));
@@ -964,7 +967,8 @@ function pdfFingerprint(file) {
     .then(bytes => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')).catch(() => null));
   return pdfFingerprints.get(file);
 }
-async function pdfProgress(slot, value) {
+async function pdfProgress(slot, fingerprint, value) {
+  if (!fingerprint) return;
   try {
     pdfProgressDb ??= new Promise((resolve, reject) => {
       const req = indexedDB.open('mustatar-pdf-progress', 1);
@@ -976,8 +980,31 @@ async function pdfProgress(slot, value) {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction('progress', value === undefined ? 'readonly' : 'readwrite');
       const store = tx.objectStore('progress');
-      const req = value === undefined ? store.get(slot) : store.put(value, slot);
-      tx.oncomplete = () => resolve(req.result);
+      const key = `${slot}:${fingerprint}`;
+      let result;
+      if (value === undefined) {
+        const current = store.get(key);
+        current.onsuccess = () => {
+          if (current.result) { result = current.result; return; }
+          const legacy = store.get(slot);
+          legacy.onsuccess = () => {
+            if (legacy.result?.fingerprint === fingerprint) result = legacy.result;
+          };
+        };
+      } else if (value === null) {
+        store.delete(key);
+        const legacy = store.get(slot);
+        legacy.onsuccess = () => {
+          if (legacy.result?.fingerprint === fingerprint) store.delete(slot);
+        };
+      } else if (slot === 'ocr') {
+        const current = store.get(key);
+        current.onsuccess = () => {
+          const pages = new Map([...(current.result?.pages || []), ...value.pages]);
+          store.put({ ...value, pages: [...pages] }, key);
+        };
+      } else store.put(value, key);
+      tx.oncomplete = () => resolve(result);
       tx.onabort = tx.onerror = () => reject(tx.error);
     });
   } catch { return undefined; }
@@ -1003,13 +1030,13 @@ async function readPdfSource(item, signal, onStatus) {
   if (navigator.onLine === false) throw Object.assign(new Error('Connect to the internet to read the scanned PDF pages.'), { code: 'scanoffline' });
   const fingerprint = await pdfFingerprint(item.src);
   if (!pdfOcrCache.has(item.src)) {
-    const saved = fingerprint ? await pdfProgress('ocr') : null;
-    pdfOcrCache.set(item.src, new Map(saved?.fingerprint === fingerprint ? saved?.pages : []));
+    const saved = await pdfProgress('ocr', fingerprint);
+    pdfOcrCache.set(item.src, new Map(saved?.pages));
   }
   const cache = pdfOcrCache.get(item.src);
   const read = async scans => {
     try { await readScans(scans, signal, onStatus, cache, item.pages); }
-    finally { if (fingerprint) await pdfProgress('ocr', { fingerprint, pages: [...cache] }); }
+    finally { await pdfProgress('ocr', fingerprint, { fingerprint, pages: [...cache] }); }
   };
   let doc;
   let scans = [], bytes = 0;
@@ -1393,14 +1420,15 @@ ${src.name}>>>`;
     const key = JSON.stringify([engineKind(), unit, sub, kind, lang, parts.length]);
     const resume = complete && sourceFile && engineKind() === 'server';
     const fingerprint = resume ? await pdfFingerprint(sourceFile) : null;
-    const saved = fingerprint ? await pdfProgress('notes') : null;
-    const previous = resume ? notesCheckpoints.get(sourceFile) || (saved?.fingerprint === fingerprint ? saved : null) : null;
+    const saved = await pdfProgress('notes', fingerprint);
+    const inMemory = resume ? notesCheckpoints.get(sourceFile) : null;
+    const previous = inMemory?.key === key && inMemory.text === text ? inMemory : saved;
     const matches = previous?.key === key && previous.text === text;
     const rs = matches ? previous.parts : new Array(parts.length);
     const fragments = matches ? previous.fragments || {} : {};
     const checkpoint = { fingerprint, key, text, parts: rs, fragments };
     if (resume) notesCheckpoints.set(sourceFile, checkpoint);
-    const persist = async () => { if (fingerprint) await pdfProgress('notes', checkpoint); };
+    const persist = () => pdfProgress('notes', fingerprint, checkpoint);
     const retainSource = (result, source, i) => {
       if (!result.notes || source.length < 300 || JSON.stringify(result.notes.sections).length * 3 >= source.length) return result;
       const notes = structuredClone(result.notes);
@@ -1525,8 +1553,7 @@ ${src.name}>>>`;
   if (complete && sourceFile) {
     notesCheckpoints.delete(sourceFile);
     const fingerprint = await pdfFingerprint(sourceFile);
-    const saved = fingerprint ? await pdfProgress('notes') : null;
-    if (saved?.fingerprint && saved.fingerprint === fingerprint) await pdfProgress('notes', null);
+    await pdfProgress('notes', fingerprint, null);
   }
   return lesson;
 }
