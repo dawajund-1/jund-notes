@@ -311,7 +311,7 @@
         <label class="field">
           <span>Claude key</span>
           <input id="api-key" type="password" autocomplete="off" spellcheck="false" dir="ltr" placeholder="sk-ant-...">
-          <small class="muted">The key stays on this phone and is only sent to Anthropic when notes are made.</small>
+          <small class="muted">Your Claude Console API key is saved on this device. Requests to Claude use your API balance.</small>
         </label>
         <div class="row-gap">
           <button type="button" class="ghost" id="toggle-key">Show</button>
@@ -320,12 +320,21 @@
         </div>
         <div id="key-status" class="muted"></div>
         <label class="field">
-          <span>Quality</span>
+          <span>Claude model</span>
           <select id="model">
-            <option value="claude-opus-5-5">Best in Arabic (Opus) — about 2 SAR a lesson</option>
-            <option value="claude-sonnet-5-5">Good and cheaper (Sonnet) — about 1 SAR a lesson</option>
+            <option value="claude-opus-5-5">Claude Opus 5.5 · detailed notes</option>
+            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 · faster, lower cost</option>
           </select>
         </label>
+        <label class="field">
+          <span>Claude effort</span>
+          <select id="claude-effort">
+            <option value="">Model default</option>
+            <option value="medium">Medium · faster</option>
+            <option value="high">High · more thorough</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="claude-scans"> Use Claude Sonnet to read scanned PDF pages too (uses API balance)</label>
       </div>
       <div class="field">
         <span>Spent so far</span>
