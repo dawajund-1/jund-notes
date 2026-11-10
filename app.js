@@ -482,8 +482,8 @@ async function serverFetch(path, init = {}) {
   }
   return res;
 }
-async function callServer({ system, user, maxTokens = 30000, onText, signal, json = true, deep = false, studyNotes = false }) {
-  const res = await serverFetch('/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens, json, deep, studyNotes }) });
+async function callServer({ system, user, maxTokens = 30000, onText, signal, json = true, deep = false, studyNotes = false, assistant = false, preferBackup = false }) {
+  const res = await serverFetch('/write', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ system, user, maxTokens, json, deep, studyNotes, assistant, preferBackup }) });
   return readStream(res, onText);
 }
 const cutOff = s => s === 'max_tokens' || s === 'incomplete';
@@ -492,7 +492,7 @@ function aiRetryError(code, retryAfter = 0) {
   return Object.assign(new Error(message), { code, retryAfter });
 }
 
-async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false, requestLimitMs = 180_000, maxAttempts = 3 } = {}) {
+async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false, retryTimeout = false, requestLimitMs = 180_000, maxAttempts = 3 } = {}) {
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     const request = new AbortController();
@@ -513,7 +513,8 @@ async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat
       clearTimeout(timeout);
       signal.removeEventListener('abort', cancel);
     }
-    const retryable = ['ai_busy', 'rate'].includes(error.code) || (retryFormat && error.code === 'ai_format');
+    const retryable = ['ai_busy', 'rate'].includes(error.code) || (retryFormat && error.code === 'ai_format') ||
+      (retryTimeout && error.code === 'ai_timeout');
     if (!retryable || attempt + 1 >= maxAttempts || error.retryAfter > waitLimit) throw error;
     const delay = Math.max(1500 * 2 ** attempt, (error.retryAfter || 0) * 1000);
     onRetry(error, Math.ceil(delay / 1000));
@@ -559,9 +560,9 @@ async function readStream(res, onText) {
   return { text, usd: 0, stop: stop === 'MAX_TOKENS' ? 'max_tokens' : stop || 'incomplete' };
 }
 // the strong AI: the free server, or Claude with the owner's own key
-async function callBig({ system, messages, onText, signal, maxTokens, deep, studyNotes }) {
+async function callBig({ system, messages, onText, signal, maxTokens, deep, studyNotes, preferBackup }) {
   if (engineKind() === 'claude') return callClaude({ system, messages, onText, signal, maxTokens });
-  return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens, deep, studyNotes });
+  return callServer({ system, user: messages.map(m => m.content).join('\n\n'), onText, signal, maxTokens, deep, studyNotes, preferBackup });
 }
 
 async function getJSON(text, signal) {
@@ -1053,16 +1054,30 @@ async function readScans(scans, signal, onStatus, cache, pages, readLocal) {
       }
     }, signal,
       (_, seconds) => onStatus(`Retrying scanned pages ${label} in ${seconds}s…`),
-      { retryFormat: scans.length === 1, maxAttempts: needsPairs ? 1 : 3 });
+      { retryFormat: scans.length === 1, maxAttempts: scans.length === 1 ? 2 : 1 });
     for (const { page, text } of output) cache.set(page, text.trim() || pages[page - 1]);
   } catch (e) {
     const pending = scans.filter(({ page }) => !cache.has(page));
-    if (!canUseBackup(e) || scans.length === 1 || !pending.length || (!needsPairs && e.code !== 'ai_format')) throw e;
+    if (!canUseBackup(e) || !pending.length) throw e;
+    if (scans.length === 1) {
+      const page = pending[0].page;
+      const message = window.ZadLang === 'ar'
+        ? `تعذّرت قراءة صفحة PDF رقم ${page}. ستُستأنف المحاولة من الصفحات التي لم تُقرأ.`
+        : `Could not read PDF page ${page}. Retry notes to resume from the unread pages.`;
+      throw Object.assign(new Error(`${message} ${errText(e)}`, { cause: e }), { code: 'scan_page' });
+    }
+    if (!needsPairs && (e.code === 'quota' || e.code === 'key' || (e.code === 'rate' && e.retryAfter > 60))) throw e;
     // Groq's free scan route accepts at most two pages per request.
     const size = needsPairs ? 2 : 1;
+    let failed;
     for (let start = 0; start < pending.length; start += size) {
-      await readScans(pending.slice(start, start + size), signal, onStatus, cache, pages, readLocal);
+      try { await readScans(pending.slice(start, start + size), signal, onStatus, cache, pages, readLocal); }
+      catch (error) {
+        if (needsPairs || error.code !== 'scan_page') throw error;
+        failed ??= error;
+      }
     }
+    if (failed) throw failed;
   }
 }
 
@@ -1461,7 +1476,7 @@ ${src.name}>>>`;
     const parts = engineKind() === 'claude' || words <= 2200 ? [text] : splitText(text, 1600);
     const expect = Math.max(400, words * 0.8);
     let done = 0, documentGuide = '';
-    const one = async (part, i, compact = false, signal = controller.signal) => {
+    const one = async (part, i, compact = false, signal = controller.signal, preferBackup = false) => {
       const head = parts.length > 1 ? (en ? `\n\nThis is PART ${i + 1} of ${parts.length} of one source. Write the notes for this part only, completely.` : `\n\nهذا هو الجزء ${i + 1} من ${parts.length} من مصدر واحد. اكتب ملاحظات هذا الجزء وحده كاملة.`) : '';
       const msg = part === text ? user : user.replace(text, () => part);
       const studyGuide = complete ? (en
@@ -1475,7 +1490,7 @@ ${src.name}>>>`;
         messages: [{ role: 'user', content: msg + full(countQuestions(part)) + head + studyGuide + documentGuide + recovery }], deep: true, studyNotes: complete,
         // The model also spends this budget on thinking, even for a short scan.
         maxTokens: complete && engineKind() === 'server' ? (compact ? 30000 : 24000) : undefined,
-        signal,
+        signal, preferBackup,
         onText: t => {
           const w = t.split(/\s+/).length, mins = Math.floor((Date.now() - t0) / 60000);
           if (parts.length === 1) onStatus(`Writing… ${ar(w)} words${mins ? ' — ' + ar(mins) + ' min' : ''}`, Math.min(0.95, w / expect), 'write');
@@ -1527,14 +1542,18 @@ ${src.name}>>>`;
         if (outlines[i]) continue;
         const status = en ? `Planning the document (${i + 1}/${planSources.length})` : `تخطيط الملاحظات (${i + 1}/${planSources.length})`;
         onStatus(status, 0.02, 'write');
+        let preferBackup = false;
         const plan = await retryNoteStep(async signal => {
           const result = await callBig({
             system: planSystem, messages: [{ role: 'user', content: source }],
-            deep: true, studyNotes: true, maxTokens: 12000, signal,
+            deep: true, studyNotes: true, maxTokens: 12000, signal, preferBackup,
           });
           if (result.stop === 'incomplete') throw aiRetryError('ai_busy');
           return decodeNotes(result);
-        }, controller.signal, (_, seconds) => onStatus(`${status} · ${seconds}s`, 0.02, 'write'), { retryFormat: true });
+        }, controller.signal, (_, seconds) => {
+          preferBackup = true;
+          onStatus(`${status} · ${seconds}s`, 0.02, 'write');
+        }, { retryFormat: true, retryTimeout: true });
         const outline = plan.sections.map(section =>
           [section.heading, ...section.blocks.map(block => block.text)].filter(Boolean).join(' · ')).join('\n');
         outlines[i] = { title: plan.title, outline };
@@ -1563,14 +1582,14 @@ ${src.name}>>>`;
       const sourceWords = source.trim().split(/\s+/).length;
       const canSplit = depth < 3 && sourceWords >= 100;
       if (!fragments[path]?.split) {
-        let compact = false;
+        let compact = false, preferBackup = false;
         try {
           const result = await retryNoteStep(async requestSignal => {
-            let r = await one(source, i, compact, requestSignal);
+            let r = await one(source, i, compact, requestSignal, preferBackup);
             if (r.stop === 'max_tokens' && !canSplit && !compact) {
               compact = true;
               onStatus(`Retrying part ${i + 1} of ${parts.length} with a larger writing budget…`, null, 'write');
-              r = await one(source, i, compact, requestSignal);
+              r = await one(source, i, compact, requestSignal, preferBackup);
             }
             if (r.stop === 'incomplete') throw aiRetryError('ai_busy');
             if (r.stop === 'max_tokens') throw Object.assign(new Error('This part exceeded the AI output limit.'), { code: 'notes_limit' });
@@ -1578,13 +1597,16 @@ ${src.name}>>>`;
             try { notes = decodeNotes(r); } catch (error) {
               if (canSplit || compact) throw error;
               compact = true;
-              r = await one(source, i, compact, requestSignal);
+              r = await one(source, i, compact, requestSignal, preferBackup);
               if (r.stop === 'incomplete') throw aiRetryError('ai_busy');
               if (r.stop === 'max_tokens') throw Object.assign(new Error('This part exceeded the AI output limit.'), { code: 'notes_limit' });
               notes = decodeNotes(r);
             }
             return { stop: r.stop, usd: r.usd, notes };
-          }, controller.signal, (_, seconds) => onStatus(`Retrying part ${i + 1} of ${parts.length} in ${seconds}s…`, null, 'write'));
+          }, controller.signal, (_, seconds) => {
+            preferBackup = true;
+            onStatus(`Retrying part ${i + 1} of ${parts.length} in ${seconds}s…`, null, 'write');
+          }, { retryTimeout: true });
           const retained = retainSource(result, source, i);
           if (depth) { fragments[path] = retained; await persist(); }
           return retained;
@@ -2665,7 +2687,7 @@ setTimeout(() => document.querySelectorAll('#screen-settings > .card').forEach((
 document.querySelectorAll('#screen-settings > details.card').forEach(d => { d.classList.add('set-sec'); d.classList.remove('card'); });
 show('assistant');
 receiveShared();
-const APP_VERSION = '8.12';
+const APP_VERSION = '8.13';
 renderQueue(); setTimeout(processQueue, 2500);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update(); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(() => {}); }); }).catch(() => {});
@@ -2688,6 +2710,7 @@ $('#lib-search').addEventListener('input', () => renderLibrary());
 function startYouTube(url) { show('new'); $('#yt').value = url; $('#yt-go').click(); }
 // shared with calendar.js, studio.js and offline.js
 window.JN = { store, cloud, esc, ar, show, callServer, serverFetch, readStream, shrinkImage, callBig, parseJSON, getJSON, langOf, errText, allLessons, openLesson,
+  noteRetry: value => pdfProgress('attachment', 'latest', value),
   saveLesson, download, safeName, addFiles, makeAttachmentNotes, startYouTube, me, keepAwake, engineKind, splitText, cleanHeator: cleanHeard, current: () => current };
 // for testing only
 window.__jn = { openLesson, paginateNotes, idb, makeBook, makeYearBook, pending: () => pending };
