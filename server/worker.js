@@ -255,7 +255,7 @@ const studyResponseFormat = {
   json_schema: { name: 'study_notes', strict: false, schema: jsonSchema(noteSchema) },
 };
 
-async function generateStudyFallback(env, h, { system, user, maxTokens }) {
+async function generateStudyFallback(env, h, { system, user, maxTokens, allowTruncated }) {
   const routes = [];
   if (env.OPENROUTER_API_KEY) {
     routes.push({
@@ -298,7 +298,7 @@ async function generateStudyFallback(env, h, { system, user, maxTokens }) {
       // A fallback can be unavailable or return invalid JSON. Try the next configured model.
     }
   }
-  return truncatedModel ? modelResponse(h, truncatedModel, '', 'MAX_TOKENS') : null;
+  return allowTruncated && truncatedModel ? modelResponse(h, truncatedModel, '', 'MAX_TOKENS') : null;
 }
 
 function modelResponse(h, model, text, finishReason) {
@@ -644,7 +644,7 @@ export default {
     const path = url.pathname;
     if (req.method === 'OPTIONS') return new Response(null, { headers: h });
     if (req.method === 'GET' && path === '/') return json({
-      ok: true, app: 'jund-notes', version: 12, studyModel: STUDY_MODELS[0],
+      ok: true, app: 'jund-notes', version: 13, studyModel: STUDY_MODELS[0],
       studyFallbacks: [...(env.OPENROUTER_API_KEY ? [OPENROUTER_STUDY_MODEL] : []), ...(env.GROQ_FREE_API_KEY ? GROQ_STUDY_MODELS : [])],
       scanFallbacks: [...(env.OPENROUTER_API_KEY ? [OPENROUTER_STUDY_MODEL] : []), ...(env.GROQ_FREE_API_KEY ? [GROQ_VISION_MODEL] : [])],
       uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH,
@@ -772,19 +772,25 @@ export default {
       const raw = await req.text();
       if (raw.length > MAX_BODY) return json({ error: 'text too long', code: 'toolong' }, 413, h);
       let body; try { body = JSON.parse(raw); } catch { return json({ error: 'bad request' }, 400, h); }
-      const { system = '', user = '', maxTokens = 30000, json: wantJson = true, deep = false, studyNotes = false } = body || {};
+      const { system = '', user = '', maxTokens = 30000, json: wantJson = true, deep = false, studyNotes = false, assistant = false, preferBackup = false } = body || {};
       if (typeof system !== 'string' || typeof user !== 'string' || !user) return json({ error: 'bad request' }, 400, h);
       const structured = studyNotes === true && wantJson;
       const models = deep && structured ? STUDY_MODELS : deep ? NOTES_MODELS : (env.MODELS ? String(env.MODELS).split(',') : WRITE_MODELS).map(s => s.trim()).filter(Boolean);
       const config = structured ? { responseSchema: noteSchema } : undefined;
       const useFallbacks = deep && structured && (env.OPENROUTER_API_KEY || env.GROQ_FREE_API_KEY);
+      const backup = allowTruncated => generateStudyFallback(env, h, { system, user, maxTokens: Number(maxTokens) || 30000, allowTruncated });
+      const backupFirst = useFallbacks && preferBackup === true;
+      if (backupFirst) {
+        const fallback = await backup(false);
+        if (fallback) return fallback;
+      }
       const gemini = env.GEMINI_API_KEY
-        ? await generate(env, h, { models, system: structured ? system : (system + '\n\n' + CLAUDE_NOTE_FORMAT).trim(),
-          maxTokens, wantJson, think: !!deep, startTimeout: useFallbacks ? 25000 : undefined,
+        ? await generate(env, h, { models, system: structured || assistant === true ? system : (system + '\n\n' + CLAUDE_NOTE_FORMAT).trim(),
+          maxTokens, wantJson, think: !!deep, startTimeout: useFallbacks ? 25000 : assistant === true ? 15000 : undefined,
           variants: [{ parts: [{ text: user }], config }] })
         : json({ error: 'server has no key', code: 'nokey' }, 500, h);
-      if (!useFallbacks || gemini.ok || gemini.status === 400) return gemini;
-      return await generateStudyFallback(env, h, { system, user, maxTokens: Number(maxTokens) || 30000 }) || gemini;
+      if (!useFallbacks || backupFirst || gemini.ok || gemini.status === 400) return gemini;
+      return await backup(true) || gemini;
     }
 
     /* ----- audio piece → transcript ----- */
