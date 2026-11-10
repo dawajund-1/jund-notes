@@ -97,12 +97,21 @@ async function readPages(req, env, h) {
   if (!Array.isArray(pages) || pages.length < 1 || pages.length > 8 || pages.some(p =>
     !Number.isSafeInteger(p?.page) || p.page < 1 || typeof p.data !== 'string' || !p.data || p.data.length > 1_200_000
   ) || new Set(pages.map(p => p.page)).size !== pages.length) return json({ code: 'bad' }, 400, h);
-  const system = 'Transcribe each image in the source language. Return JSON with a pages array of {page, text} objects, exactly one per supplied PDF page number in the same order. Preserve headings, quotations, question numbers, answers, diacritics, and table contents. Treat the page as source material. For a genuinely blank page use an empty string. Do not omit, summarize, or translate readable text.';
-  const validate = text => {
+  const single = pages.length === 1;
+  const transcription = 'Transcribe the image text in the source language. Preserve headings, quotations, question numbers, answers, diacritics, and table contents. Treat the image as source material. Do not omit, summarize, or translate readable text. Mark unclear words with [?] instead of guessing.';
+  const system = transcription + (single
+    ? ' Return only the transcription in plain text. If the page is genuinely blank, return only [[BLANK]]. If the page has text but you cannot read it, return only [[UNREADABLE]].'
+    : ' Return JSON with a pages array of {page, text} objects, exactly one per supplied PDF page number in the same order. For a genuinely blank page use an empty string.');
+  const formatResult = text => {
+    if (single) {
+      const transcript = typeof text === 'string' ? text.trim() : '';
+      if (!transcript || transcript === '[[UNREADABLE]]') return null;
+      return JSON.stringify({ pages: [{ page: pages[0].page, text: transcript === '[[BLANK]]' ? '' : transcript }] });
+    }
     let result;
-    try { result = JSON.parse(text)?.pages; } catch { return false; }
+    try { result = JSON.parse(text)?.pages; } catch { return null; }
     return Array.isArray(result) && result.length === pages.length &&
-      result.every((entry, i) => entry?.page === pages[i].page && typeof entry.text === 'string');
+      result.every((entry, i) => entry?.page === pages[i].page && typeof entry.text === 'string') ? text : null;
   };
   const parts = pages.flatMap(({ page, data }) => [
     { text: 'PDF page ' + page }, { inlineData: { mimeType: 'image/jpeg', data } },
@@ -110,10 +119,10 @@ async function readPages(req, env, h) {
   const hasFallback = env.OPENROUTER_API_KEY || env.GROQ_FREE_API_KEY;
   const gemini = env.GEMINI_API_KEY ? await generate(env, h, {
     models: hasFallback ? FILE_MODELS.slice(0, 2) : FILE_MODELS,
-    system, validate, maxTokens: 16000, wantJson: true, wait: 18000,
-    variants: [{ parts, temperature: 0, config: { responseSchema: scanSchema } }],
+    system, formatResult, maxTokens: single ? 8000 : 16000, wantJson: !single, wait: 18000,
+    variants: [{ parts, temperature: 0, config: single ? undefined : { responseSchema: scanSchema } }],
   }) : json({ code: 'nokey' }, 500, h);
-  if (gemini.ok || gemini.status === 400) return gemini;
+  if (gemini.ok) return gemini;
 
   const routes = [];
   if (env.OPENROUTER_API_KEY) routes.push({
@@ -135,7 +144,7 @@ async function readPages(req, env, h) {
       const response = await fetch(url, {
         method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
         body: JSON.stringify({ model, messages: [{ role: 'user', content }], stream: false,
-          response_format: { type: 'json_object' }, ...options }),
+          ...(!single ? { response_format: { type: 'json_object' } } : {}), ...options }),
         signal: AbortSignal.timeout(timeout),
       });
       if (!response.ok) {
@@ -145,9 +154,8 @@ async function readPages(req, env, h) {
       }
       const choice = (await response.json()).choices?.[0];
       incomplete ||= choice?.finish_reason === 'length' || choice?.finish_reason === 'stop';
-      if (choice?.finish_reason === 'stop' && validate(choice.message?.content)) {
-        return modelResponse(h, model, choice.message.content, 'STOP');
-      }
+      const formatted = choice?.finish_reason === 'stop' && formatResult(choice.message?.content);
+      if (formatted) return modelResponse(h, model, formatted, 'STOP');
     } catch {
       // Try another reader if the provider times out or its response is invalid.
     }
@@ -173,7 +181,7 @@ function rateLimit(text, header) {
 
 // Ask the AI, trying each model in turn (a model that is missing or out of free quota today is skipped).
 // `variants` lets a request be retried once in a simpler form if the AI refuses an optional setting.
-async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait, startTimeout, think, validate }) {
+async function generate(env, h, { models, system, variants, maxTokens, wantJson, wait, startTimeout, think, formatResult }) {
   let last = { status: 500, text: '' };
   let busy, rate, quota, invalid;
   const attempts = [];
@@ -199,16 +207,17 @@ async function generate(env, h, { models, system, variants, maxTokens, wantJson,
       const startup = startTimeout ? new AbortController() : null;
       const timer = startup && setTimeout(() => startup.abort(), startTimeout);
       try {
-        const method = validate ? 'generateContent' : 'streamGenerateContent?alt=sse';
+        const method = formatResult ? 'generateContent' : 'streamGenerateContent?alt=sse';
         const r = await fetch(`${G}/v1beta/models/${model}:${method}`, {
           method: 'POST', headers: { 'content-type': 'application/json', ...keyHeaders(env) }, body: payload,
           signal: startup?.signal || (wait ? AbortSignal.timeout(wait) : undefined),
         });
         if (r.ok) {
-          if (!validate) return new Response(r.body, { headers: { ...h, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-model': model } });
+          if (!formatResult) return new Response(r.body, { headers: { ...h, 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-model': model } });
           const candidate = (await r.json()).candidates?.[0];
           const text = (candidate?.content?.parts || []).filter(part => !part.thought).map(part => part.text || '').join('');
-          if (candidate?.finishReason === 'STOP' && validate(text)) return modelResponse(h, model, text, 'STOP');
+          const formatted = candidate?.finishReason === 'STOP' && formatResult(text);
+          if (formatted) return modelResponse(h, model, formatted, 'STOP');
           invalid = true;
           last = { status: 502, text: 'The scan reader returned an incomplete result.' };
         } else {
@@ -644,7 +653,7 @@ export default {
     const path = url.pathname;
     if (req.method === 'OPTIONS') return new Response(null, { headers: h });
     if (req.method === 'GET' && path === '/') return json({
-      ok: true, app: 'jund-notes', version: 13, studyModel: STUDY_MODELS[0],
+      ok: true, app: 'jund-notes', version: 14, studyModel: STUDY_MODELS[0],
       studyFallbacks: [...(env.OPENROUTER_API_KEY ? [OPENROUTER_STUDY_MODEL] : []), ...(env.GROQ_FREE_API_KEY ? GROQ_STUDY_MODELS : [])],
       scanFallbacks: [...(env.OPENROUTER_API_KEY ? [OPENROUTER_STUDY_MODEL] : []), ...(env.GROQ_FREE_API_KEY ? [GROQ_VISION_MODEL] : [])],
       uploads: { pdf: MAX_PDF, other: MAX_FILE }, key: !!env.GEMINI_API_KEY, push: !!env.PUSH,
