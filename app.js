@@ -492,7 +492,7 @@ function aiRetryError(code, retryAfter = 0) {
   return Object.assign(new Error(message), { code, retryAfter });
 }
 
-async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false, requestLimitMs = 180_000 } = {}) {
+async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat = false, requestLimitMs = 180_000, maxAttempts = 3 } = {}) {
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     const request = new AbortController();
@@ -514,7 +514,7 @@ async function retryNoteStep(run, signal, onRetry, { waitLimit = 60, retryFormat
       signal.removeEventListener('abort', cancel);
     }
     const retryable = ['ai_busy', 'rate'].includes(error.code) || (retryFormat && error.code === 'ai_format');
-    if (!retryable || attempt >= 2 || error.retryAfter > waitLimit) throw error;
+    if (!retryable || attempt + 1 >= maxAttempts || error.retryAfter > waitLimit) throw error;
     const delay = Math.max(1500 * 2 ** attempt, (error.retryAfter || 0) * 1000);
     onRetry(error, Math.ceil(delay / 1000));
     await new Promise((resolve, reject) => {
@@ -1028,18 +1028,41 @@ async function pdfProgress(slot, fingerprint, value, scope = '') {
   } catch { return undefined; }
 }
 
-async function readScans(scans, signal, onStatus, cache, pages) {
+async function readScans(scans, signal, onStatus, cache, pages, readLocal) {
   const label = scans.map(({ page }) => page).join(', ');
+  const canUseBackup = error => ['ai_busy', 'rate', 'quota', 'ai_format', 'ai_timeout', 'key', 'server'].includes(error.code);
+  const needsPairs = scans.length > 2;
   onStatus(`Reading scanned pages ${label}…`);
   try {
-    const output = await retryNoteStep(requestSignal => window.JundAttach.readScanBatch(scans, requestSignal), signal,
-      (_, seconds) => onStatus(`Retrying scanned pages ${label} in ${seconds}s…`), { retryFormat: scans.length === 1 });
+    const output = await retryNoteStep(async requestSignal => {
+      const pending = scans.filter(({ page }) => !cache.has(page));
+      if (!pending.length) return [];
+      try {
+        return await window.JundAttach.readScanBatch(pending, requestSignal);
+      } catch (error) {
+        requestSignal.throwIfAborted();
+        if (needsPairs || !readLocal || !canUseBackup(error)) throw error;
+        for (const scan of pending) {
+          requestSignal.throwIfAborted();
+          const text = await readLocal(scan, requestSignal);
+          if (text) cache.set(scan.page, text);
+        }
+        requestSignal.throwIfAborted();
+        if (pending.some(({ page }) => !cache.has(page))) throw error;
+        return [];
+      }
+    }, signal,
+      (_, seconds) => onStatus(`Retrying scanned pages ${label} in ${seconds}s…`),
+      { retryFormat: scans.length === 1, maxAttempts: needsPairs ? 1 : 3 });
     for (const { page, text } of output) cache.set(page, text.trim() || pages[page - 1]);
   } catch (e) {
-    if (e.code !== 'ai_format' || scans.length < 2) throw e;
-    const middle = Math.ceil(scans.length / 2);
-    await readScans(scans.slice(0, middle), signal, onStatus, cache, pages);
-    await readScans(scans.slice(middle), signal, onStatus, cache, pages);
+    const pending = scans.filter(({ page }) => !cache.has(page));
+    if (!canUseBackup(e) || scans.length === 1 || !pending.length || (!needsPairs && e.code !== 'ai_format')) throw e;
+    // Groq's free scan route accepts at most two pages per request.
+    const size = needsPairs ? 2 : 1;
+    for (let start = 0; start < pending.length; start += size) {
+      await readScans(pending.slice(start, start + size), signal, onStatus, cache, pages, readLocal);
+    }
   }
 }
 
@@ -1057,8 +1080,23 @@ async function readPdfSource(item, signal, onStatus, openedDoc) {
     pdfOcrCache.set(item.src, new Map(saved?.pages));
   }
   const cache = pdfOcrCache.get(item.src);
+  let localReader;
+  const localTried = new Set();
+  const readLocal = async ({ page, blob }, requestSignal) => {
+    if (localReader === false || localTried.has(page)) return '';
+    localTried.add(page);
+    onStatus(`Reading scanned page ${page} on this device…`);
+    try {
+      localReader ??= await (await import('./scan-ocr.js')).createScanReader(requestSignal);
+      return await localReader.read(blob, requestSignal);
+    } catch {
+      await localReader?.close?.();
+      localReader = false;
+      return '';
+    }
+  };
   const read = async scans => {
-    try { await readScans(scans, signal, onStatus, cache, item.pages); }
+    try { await readScans(scans, signal, onStatus, cache, item.pages, readLocal); }
     finally { await pdfProgress('ocr', fingerprint, { fingerprint, pages: [...cache] }); }
   };
   let doc = openedDoc;
@@ -1098,7 +1136,10 @@ async function readPdfSource(item, signal, onStatus, openedDoc) {
     }
     if (scans.length) await read(scans);
     return join(cache);
-  } finally { if (doc && !openedDoc) await doc.destroy(); }
+  } finally {
+    await localReader?.close?.();
+    if (doc && !openedDoc) await doc.destroy();
+  }
 }
 
 /* audio, video and YouTube items: transcribed one after another, then they are ordinary lessons */
